@@ -155,24 +155,15 @@ func (p *Padding) Draw(ctx components.DrawContext) components.Surface {
 	maxW, maxH := ctx.Max.Width, ctx.Max.Height
 	innerW := maxW - p.Insets.Horizontal()
 	innerH := maxH - p.Insets.Vertical()
-	if maxW <= 0 {
+	if maxW <= 0 || innerW < 0 {
 		innerW = 0
 	}
-	if maxH <= 0 {
-		innerH = 0
-	}
-	if innerW < 0 {
-		innerW = 0
-	}
-	if innerH < 0 {
+	if maxH <= 0 || innerH < 0 {
 		innerH = 0
 	}
 	var child components.Surface
 	if p.Child != nil {
 		cmax := components.Size{Width: innerW, Height: innerH}
-		if maxW <= 0 {
-			cmax.Width = 0
-		}
 		if maxH <= 0 {
 			cmax.Height = 10000
 		}
@@ -388,9 +379,6 @@ func resolvePositioned(p *Positioned, sw, sh int, cs components.Size) components
 	return components.Point{X: x, Y: y}
 }
 
-// IntPtr is a helper for Positioned edges.
-func IntPtr(v int) *int { return &v }
-
 // Clickable wraps a child with mouse/key activation.
 type Clickable struct {
 	Child   components.Widget
@@ -465,16 +453,12 @@ func (c *Container) Draw(ctx components.DrawContext) components.Surface {
 	pad := c.Padding
 	innerMaxW := maxW - pad.Horizontal() - border*2
 	innerMaxH := maxH - pad.Vertical() - border*2
-	if maxW <= 0 {
+	if maxW <= 0 || innerMaxW < 0 {
 		innerMaxW = 0
 	}
 	if maxH <= 0 {
 		innerMaxH = 10000
-	}
-	if innerMaxW < 0 {
-		innerMaxW = 0
-	}
-	if innerMaxH < 0 {
+	} else if innerMaxH < 0 {
 		innerMaxH = 0
 	}
 
@@ -491,15 +475,11 @@ func (c *Container) Draw(ctx components.DrawContext) components.Surface {
 	} else if maxW > 0 {
 		w = maxW
 	}
+	// Height: >0 explicit, <0 fill max, 0 hug content.
 	if c.Height > 0 {
 		h = c.Height
-	} else if maxH > 0 && c.Height == 0 && c.Width > 0 {
-		// explicit width only — hug height
 	} else if maxH > 0 && c.Height < 0 {
 		h = maxH
-	}
-	if w < contentW && c.Width == 0 && maxW <= 0 {
-		w = contentW
 	}
 	if h < 1 {
 		h = contentH
@@ -716,54 +696,7 @@ func (f *FlexRow) Draw(ctx components.DrawContext) components.Surface {
 	if maxH <= 0 {
 		maxH = 1
 	}
-	s := components.Surface{Size: components.Size{Width: maxW, Height: maxH}, Widget: f}
-
-	type slot struct {
-		w     components.Widget
-		flex  int
-		surf  components.Surface
-		fixed int
-	}
-	slots := make([]slot, len(f.Children))
-	fixedTotal, flexSum := 0, 0
-	for i, ch := range f.Children {
-		slots[i].w = ch
-		if fl, ok := ch.(*Flexible); ok && fl.Flex > 0 {
-			slots[i].flex = fl.Flex
-			flexSum += fl.Flex
-		} else {
-			child := ch.Draw(ctx.WithConstraints(components.Size{}, components.Size{Width: maxW, Height: maxH}))
-			slots[i].surf = child
-			slots[i].fixed = child.Size.Width
-			fixedTotal += child.Size.Width
-			if i > 0 {
-				fixedTotal += f.Gap
-			}
-		}
-	}
-	remain := maxW - fixedTotal
-	if remain < 0 {
-		remain = 0
-	}
-	x := 0
-	for i, sl := range slots {
-		if i > 0 {
-			x += f.Gap
-		}
-		if sl.flex > 0 {
-			share := remain
-			if flexSum > 0 {
-				share = remain * sl.flex / flexSum
-			}
-			child := sl.w.Draw(ctx.WithConstraints(components.Size{}, components.Size{Width: share, Height: maxH}))
-			s.Children = append(s.Children, components.SubSurface{Origin: components.Point{X: x, Y: 0}, Surface: child})
-			x += share
-		} else {
-			s.Children = append(s.Children, components.SubSurface{Origin: components.Point{X: x, Y: 0}, Surface: sl.surf})
-			x += sl.fixed
-		}
-	}
-	return s
+	return flexLayout(f, f.Children, f.Gap, maxW, maxH, false, ctx)
 }
 
 // FlexColumn lays out children vertically.
@@ -789,7 +722,20 @@ func (f *FlexColumn) Draw(ctx components.DrawContext) components.Surface {
 	if maxH <= 0 {
 		maxH = 24
 	}
-	s := components.Surface{Size: components.Size{Width: maxW, Height: maxH}, Widget: f}
+	return flexLayout(f, f.Children, f.Gap, maxW, maxH, true, ctx)
+}
+
+// flexLayout is the shared engine behind FlexRow and FlexColumn. When vertical
+// is true the main axis is Y (column); otherwise it is X (row).
+func flexLayout(parent components.Widget, children []components.Widget, gap, maxW, maxH int, vertical bool, ctx components.DrawContext) components.Surface {
+	s := components.Surface{Size: components.Size{Width: maxW, Height: maxH}, Widget: parent}
+
+	main := func(size components.Size) int {
+		if vertical {
+			return size.Height
+		}
+		return size.Width
+	}
 
 	type slot struct {
 		w     components.Widget
@@ -797,43 +743,58 @@ func (f *FlexColumn) Draw(ctx components.DrawContext) components.Surface {
 		surf  components.Surface
 		fixed int
 	}
-	slots := make([]slot, len(f.Children))
+	slots := make([]slot, len(children))
 	fixedTotal, flexSum := 0, 0
-	for i, ch := range f.Children {
+	for i, ch := range children {
 		slots[i].w = ch
 		if fl, ok := ch.(*Flexible); ok && fl.Flex > 0 {
 			slots[i].flex = fl.Flex
 			flexSum += fl.Flex
-		} else {
-			child := ch.Draw(ctx.WithConstraints(components.Size{}, components.Size{Width: maxW, Height: maxH}))
-			slots[i].surf = child
-			slots[i].fixed = child.Size.Height
-			fixedTotal += child.Size.Height
-			if i > 0 {
-				fixedTotal += f.Gap
-			}
+			continue
+		}
+		child := ch.Draw(ctx.WithConstraints(components.Size{}, components.Size{Width: maxW, Height: maxH}))
+		slots[i].surf = child
+		slots[i].fixed = main(child.Size)
+		fixedTotal += slots[i].fixed
+		if i > 0 {
+			fixedTotal += gap
 		}
 	}
-	remain := maxH - fixedTotal
+
+	mainMax := maxW
+	if vertical {
+		mainMax = maxH
+	}
+	remain := mainMax - fixedTotal
 	if remain < 0 {
 		remain = 0
 	}
-	y := 0
+
+	pos := 0
 	for i, sl := range slots {
 		if i > 0 {
-			y += f.Gap
+			pos += gap
+		}
+		origin := components.Point{X: pos, Y: 0}
+		if vertical {
+			origin = components.Point{X: 0, Y: pos}
 		}
 		if sl.flex > 0 {
 			share := remain
 			if flexSum > 0 {
 				share = remain * sl.flex / flexSum
 			}
-			child := sl.w.Draw(ctx.WithConstraints(components.Size{}, components.Size{Width: maxW, Height: share}))
-			s.Children = append(s.Children, components.SubSurface{Origin: components.Point{X: 0, Y: y}, Surface: child})
-			y += share
+			var child components.Surface
+			if vertical {
+				child = sl.w.Draw(ctx.WithConstraints(components.Size{}, components.Size{Width: maxW, Height: share}))
+			} else {
+				child = sl.w.Draw(ctx.WithConstraints(components.Size{}, components.Size{Width: share, Height: maxH}))
+			}
+			s.Children = append(s.Children, components.SubSurface{Origin: origin, Surface: child})
+			pos += share
 		} else {
-			s.Children = append(s.Children, components.SubSurface{Origin: components.Point{X: 0, Y: y}, Surface: sl.surf})
-			y += sl.fixed
+			s.Children = append(s.Children, components.SubSurface{Origin: origin, Surface: sl.surf})
+			pos += sl.fixed
 		}
 	}
 	return s
