@@ -3,10 +3,10 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"iter"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/pulseaiclub/phi/internal/llm"
@@ -23,8 +23,7 @@ type Engine struct {
 	maxRounds int
 	skillPath string
 
-	mu       sync.Mutex
-	messages []llm.Message
+	session *Session
 }
 
 // NewEngine wires an LLM client and tool executor.
@@ -36,6 +35,7 @@ func NewEngine(cfg llm.ModelConfig) *Engine {
 		executor:  NewExecutor(tools.NewRegistry(toolList)),
 		maxRounds: defaultMaxToolRounds,
 		skillPath: cfg.SkillPath,
+		session:   NewSession(),
 	}
 }
 
@@ -58,12 +58,10 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 				content = instr + "\n\n" + content
 			}
 		}
-		engine.mu.Lock()
-		engine.messages = append(engine.messages, llm.Message{
+		engine.session.Append(llm.Message{
 			Role:    llm.RoleUser,
 			Content: content,
 		})
-		engine.mu.Unlock()
 
 		for round := 0; ; round++ {
 			if round > engine.maxRounds {
@@ -74,9 +72,7 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 				return
 			}
 
-			engine.mu.Lock()
-			msgs := append([]llm.Message(nil), engine.messages...)
-			engine.mu.Unlock()
+			msgs := engine.session.BuildContext()
 
 			msg, ok := engine.streamTurn(ctx, yield, msgs)
 			if !ok {
@@ -84,23 +80,17 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 			}
 
 			if len(msg.ToolCalls) == 0 {
-				engine.mu.Lock()
-				engine.messages = append(engine.messages, msg)
-				engine.mu.Unlock()
+				engine.session.Append(msg)
 				return
 			}
 
-			engine.mu.Lock()
-			engine.messages = append(engine.messages, msg)
-			engine.mu.Unlock()
+			engine.session.Append(msg)
 
 			toolMsgs := engine.executor.Run(ctx, msg.ToolCalls, func(td session.ToolData) bool {
 				return yield(td, nil)
 			})
 
-			engine.mu.Lock()
-			engine.messages = append(engine.messages, toolMsgs...)
-			engine.mu.Unlock()
+			engine.session.Append(toolMsgs...)
 
 			if ctx.Err() != nil {
 				return
@@ -150,7 +140,7 @@ func (engine *Engine) streamTurn(
 
 		case llm.StreamEventTypeDone:
 			if len(event.Partial.Choices) == 0 {
-				yield(nil, fmt.Errorf("agent: stream finished with no assistant choice"))
+				yield(nil, errors.New("agent: stream finished with no assistant choice"))
 				return llm.Message{}, false
 			}
 			final = event.Partial.Choices[0].Message
