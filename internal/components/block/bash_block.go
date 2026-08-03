@@ -62,11 +62,7 @@ func (bashBlock *BashBlock) Handle(ctx *components.EventContext, ev xui.Event) {
 	case xui.KeyEvent:
 		if e.Code == xui.KeyEnter || (e.Code == xui.KeyRune && e.Rune == ' ') {
 			if bashBlock.hasBody() {
-				bashBlock.Expanded = !bashBlock.Expanded
-				if bashBlock.OnToggle != nil {
-					bashBlock.OnToggle(bashBlock.Expanded)
-				}
-				ctx.ConsumeAndRedraw()
+				bashBlock.toggle(ctx)
 			}
 		}
 	case xui.MouseEvent:
@@ -84,13 +80,18 @@ func (bashBlock *BashBlock) Handle(ctx *components.EventContext, ev xui.Event) {
 		}
 		// Only the title toggles expand; body stays selectable for copy-on-select.
 		if bashBlock.hasBody() && e.Y >= 0 && e.Y < bashBlock.titleH {
-			bashBlock.Expanded = !bashBlock.Expanded
-			if bashBlock.OnToggle != nil {
-				bashBlock.OnToggle(bashBlock.Expanded)
-			}
-			ctx.ConsumeAndRedraw()
+			bashBlock.toggle(ctx)
 		}
 	}
+}
+
+// toggle flips expansion, notifies OnToggle, and schedules a redraw.
+func (bashBlock *BashBlock) toggle(ctx *components.EventContext) {
+	bashBlock.Expanded = !bashBlock.Expanded
+	if bashBlock.OnToggle != nil {
+		bashBlock.OnToggle(bashBlock.Expanded)
+	}
+	ctx.ConsumeAndRedraw()
 }
 
 // CopyText returns "$ command" plus output when present.
@@ -118,53 +119,17 @@ func (bashBlock *BashBlock) Draw(ctx components.DrawContext) components.Surface 
 	}
 	bashBlock.showMoreHit = hitRange{}
 
-	prefixStyle := th.Success
-	switch bashBlock.Status {
-	case BashError:
-		prefixStyle = th.Destructive
-	case BashRunning:
-		prefixStyle = th.ToolName
-	case BashCancelled:
-		prefixStyle = th.Muted
-	}
-
-	cmdStyle := th.Foreground
-	if bashBlock.Status == BashCancelled {
-		cmdStyle.Strikethrough = true
-	}
-
-	title := []components.Span{
-		{Text: "$ ", Style: prefixStyle},
-		{Text: bashBlock.Command, Style: cmdStyle},
-	}
-	if bashBlock.Status == BashDone && bashBlock.ExitCode != 0 {
-		title = append(title,
-			components.Span{Text: " (", Style: xui.Style{Italic: true}},
-			components.Span{Text: "exit code: ", Style: xui.Style{Italic: true}},
-			components.Span{Text: fmt.Sprintf("%d", bashBlock.ExitCode), Style: xui.Style{Italic: true, Fg: th.Destructive.Fg}},
-			components.Span{Text: ")", Style: xui.Style{Italic: true}},
-		)
-	}
-	if bashBlock.hasBody() {
-		arrow := " ▶"
-		if bashBlock.Expanded {
-			arrow = " ▼"
-		}
-		title = append(title, components.Span{Text: arrow, Style: th.Muted})
-	}
-
-	titleWrapped := components.WrapSpans(title, w, ctx.Method)
-	var bodyLines []components.RichLine
+	titleWrapped := components.WrapSpans(bashBlock.titleSpans(th), w, ctx.Method)
 	titleH := len(titleWrapped)
 	bashBlock.titleH = titleH
+
+	var bodyLines []components.RichLine
 	if bashBlock.Expanded && bashBlock.hasBody() {
-		var hit hitRange
-		bodyLines = bashBodyLines(bashBlock.Output, true, th, w-2, ctx.Method, &hit)
-		if hit.valid {
-			hit.y += titleH
-			hit.x0 += 2
-			hit.x1 += 2
-			bashBlock.showMoreHit = hit
+		bodyLines = bashBodyLines(bashBlock.Output, true, th, w-2, ctx.Method, &bashBlock.showMoreHit)
+		if bashBlock.showMoreHit.valid {
+			bashBlock.showMoreHit.y += titleH
+			bashBlock.showMoreHit.x0 += 2
+			bashBlock.showMoreHit.x1 += 2
 		}
 	}
 
@@ -185,21 +150,61 @@ func (bashBlock *BashBlock) Draw(ctx components.DrawContext) components.Surface 
 	return s
 }
 
+// titleSpans builds the "$ command [exit code] [arrow]" header spans.
+func (bashBlock *BashBlock) titleSpans(th components.Theme) []components.Span {
+	prefixStyle := th.Success
+	switch bashBlock.Status {
+	case BashError:
+		prefixStyle = th.Destructive
+	case BashRunning:
+		prefixStyle = th.ToolName
+	case BashCancelled:
+		prefixStyle = th.Muted
+	}
+
+	cmdStyle := th.Foreground
+	if bashBlock.Status == BashCancelled {
+		cmdStyle.Strikethrough = true
+	}
+
+	title := []components.Span{
+		{Text: "$ ", Style: prefixStyle},
+		{Text: bashBlock.Command, Style: cmdStyle},
+	}
+	if bashBlock.Status == BashDone && bashBlock.ExitCode != 0 {
+		it := xui.Style{Italic: true}
+		title = append(title,
+			components.Span{Text: " (", Style: it},
+			components.Span{Text: "exit code: ", Style: it},
+			components.Span{Text: fmt.Sprintf("%d", bashBlock.ExitCode), Style: xui.Style{Italic: true, Fg: th.Destructive.Fg}},
+			components.Span{Text: ")", Style: it},
+		)
+	}
+	if bashBlock.hasBody() {
+		arrow := " ▶"
+		if bashBlock.Expanded {
+			arrow = " ▼"
+		}
+		title = append(title, components.Span{Text: arrow, Style: th.Muted})
+	}
+	return title
+}
+
 func bashBodyLines(output string, showMore bool, th components.Theme, width int, method xui.WidthMethod, hit *hitRange) []components.RichLine {
 	if output == "" {
 		return nil
 	}
-	text := strings.ReplaceAll(output, "\r", "")
-	text = strings.TrimRight(text, "\n")
+	text := strings.TrimRight(strings.ReplaceAll(output, "\r", ""), "\n")
 	lines := strings.Split(text, "\n")
-	dim := th.Muted
-	dim.Dim = true
+
 	fg := th.Foreground
 	fg.Dim = true
 
 	var spans []components.Span
+	tail := lines
 	if len(lines) > MaxBashPreviewLines {
 		n := len(lines) - MaxBashPreviewLines
+		tail = lines[n:]
 		trunc := fmt.Sprintf("[... %d lines truncated ...] ", n)
 		spans = append(spans, components.Span{Text: trunc, Style: fg})
 		if showMore {
@@ -214,11 +219,9 @@ func bashBodyLines(output string, showMore bool, th components.Theme, width int,
 			spans = append(spans, components.Span{Text: link, Style: th.Accent})
 		}
 		spans = append(spans, components.Span{Text: "\n", Style: fg})
-		spans = append(spans, components.Span{Text: strings.Join(lines[len(lines)-MaxBashPreviewLines:], "\n") + "\n", Style: fg})
-	} else {
-		spans = append(spans, components.Span{Text: strings.Join(lines, "\n") + "\n", Style: fg})
-		_ = dim
 	}
+	spans = append(spans, components.Span{Text: strings.Join(tail, "\n") + "\n", Style: fg})
+
 	if width < 1 {
 		width = 1
 	}
