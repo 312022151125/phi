@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	components2 "github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/xui"
 )
 
@@ -34,7 +34,7 @@ type BashBlock struct {
 	Status   BashStatus
 	ExitCode int
 	Expanded bool
-	Theme    components2.Theme
+	Theme    components.Theme
 
 	// OnToggle is called when the user expands/collapses (click title / Enter).
 	OnToggle func(expanded bool)
@@ -50,14 +50,14 @@ type hitRange struct {
 	x0, x1, y int
 }
 
-func (bashBlock *BashBlock) theme() components2.Theme {
+func (bashBlock *BashBlock) theme() components.Theme {
 	if bashBlock.Theme.Success.Fg.Kind == 0 && bashBlock.Theme.Foreground.Fg.Kind == 0 {
-		return components2.DefaultTheme()
+		return components.DefaultTheme()
 	}
 	return bashBlock.Theme
 }
 
-func (bashBlock *BashBlock) Handle(ctx *components2.EventContext, ev xui.Event) {
+func (bashBlock *BashBlock) Handle(ctx *components.EventContext, ev xui.Event) {
 	switch e := ev.(type) {
 	case xui.KeyEvent:
 		if e.Code == xui.KeyEnter || (e.Code == xui.KeyRune && e.Rune == ' ') {
@@ -110,7 +110,7 @@ func (bashBlock *BashBlock) hasBody() bool {
 	return strings.TrimSpace(bashBlock.Output) != "" || (bashBlock.Status == BashError)
 }
 
-func (bashBlock *BashBlock) Draw(ctx components2.DrawContext) components2.Surface {
+func (bashBlock *BashBlock) Draw(ctx components.DrawContext) components.Surface {
 	th := bashBlock.theme()
 	w := ctx.Max.Width
 	if w <= 0 {
@@ -133,16 +133,16 @@ func (bashBlock *BashBlock) Draw(ctx components2.DrawContext) components2.Surfac
 		cmdStyle.Strikethrough = true
 	}
 
-	title := []components2.Span{
+	title := []components.Span{
 		{Text: "$ ", Style: prefixStyle},
 		{Text: bashBlock.Command, Style: cmdStyle},
 	}
 	if bashBlock.Status == BashDone && bashBlock.ExitCode != 0 {
 		title = append(title,
-			components2.Span{Text: " (", Style: xui.Style{Italic: true}},
-			components2.Span{Text: "exit code: ", Style: xui.Style{Italic: true}},
-			components2.Span{Text: fmt.Sprintf("%d", bashBlock.ExitCode), Style: xui.Style{Italic: true, Fg: th.Destructive.Fg}},
-			components2.Span{Text: ")", Style: xui.Style{Italic: true}},
+			components.Span{Text: " (", Style: xui.Style{Italic: true}},
+			components.Span{Text: "exit code: ", Style: xui.Style{Italic: true}},
+			components.Span{Text: fmt.Sprintf("%d", bashBlock.ExitCode), Style: xui.Style{Italic: true, Fg: th.Destructive.Fg}},
+			components.Span{Text: ")", Style: xui.Style{Italic: true}},
 		)
 	}
 	if bashBlock.hasBody() {
@@ -150,11 +150,11 @@ func (bashBlock *BashBlock) Draw(ctx components2.DrawContext) components2.Surfac
 		if bashBlock.Expanded {
 			arrow = " ▼"
 		}
-		title = append(title, components2.Span{Text: arrow, Style: th.Muted})
+		title = append(title, components.Span{Text: arrow, Style: th.Muted})
 	}
 
-	titleWrapped := components2.WrapSpans(title, w, ctx.Method)
-	var bodyLines []components2.RichLine
+	titleWrapped := components.WrapSpans(title, w, ctx.Method)
+	var bodyLines []components.RichLine
 	titleH := len(titleWrapped)
 	bashBlock.titleH = titleH
 	if bashBlock.Expanded && bashBlock.hasBody() {
@@ -172,20 +172,20 @@ func (bashBlock *BashBlock) Draw(ctx components2.DrawContext) components2.Surfac
 	if h < 1 {
 		h = 1
 	}
-	s := components2.NewSurface(w, h, bashBlock)
+	s := components.NewSurface(w, h, bashBlock)
 	y := 0
 	for _, line := range titleWrapped {
-		components2.PaintSpans(&s, 0, y, line, ctx.Method)
+		components.PaintSpans(&s, 0, y, line, ctx.Method)
 		y++
 	}
 	for _, line := range bodyLines {
-		components2.PaintSpans(&s, 2, y, line, ctx.Method)
+		components.PaintSpans(&s, 2, y, line, ctx.Method)
 		y++
 	}
 	return s
 }
 
-func bashBodyLines(output string, showMore bool, th components2.Theme, width int, method xui.WidthMethod, hit *hitRange) []components2.RichLine {
+func bashBodyLines(output string, showMore bool, th components.Theme, width int, method xui.WidthMethod, hit *hitRange) []components.RichLine {
 	if output == "" {
 		return nil
 	}
@@ -197,11 +197,11 @@ func bashBodyLines(output string, showMore bool, th components2.Theme, width int
 	fg := th.Foreground
 	fg.Dim = true
 
-	var spans []components2.Span
+	var spans []components.Span
 	if len(lines) > MaxBashPreviewLines {
 		n := len(lines) - MaxBashPreviewLines
 		trunc := fmt.Sprintf("[... %d lines truncated ...] ", n)
-		spans = append(spans, components2.Span{Text: trunc, Style: fg})
+		spans = append(spans, components.Span{Text: trunc, Style: fg})
 		if showMore {
 			link := "Show more"
 			if hit != nil {
@@ -211,16 +211,16 @@ func bashBodyLines(output string, showMore bool, th components2.Theme, width int
 				hit.x1 = hit.x0 + xui.StringWidth(link, method)
 				hit.y = 0
 			}
-			spans = append(spans, components2.Span{Text: link, Style: th.Accent})
+			spans = append(spans, components.Span{Text: link, Style: th.Accent})
 		}
-		spans = append(spans, components2.Span{Text: "\n", Style: fg})
-		spans = append(spans, components2.Span{Text: strings.Join(lines[len(lines)-MaxBashPreviewLines:], "\n") + "\n", Style: fg})
+		spans = append(spans, components.Span{Text: "\n", Style: fg})
+		spans = append(spans, components.Span{Text: strings.Join(lines[len(lines)-MaxBashPreviewLines:], "\n") + "\n", Style: fg})
 	} else {
-		spans = append(spans, components2.Span{Text: strings.Join(lines, "\n") + "\n", Style: fg})
+		spans = append(spans, components.Span{Text: strings.Join(lines, "\n") + "\n", Style: fg})
 		_ = dim
 	}
 	if width < 1 {
 		width = 1
 	}
-	return components2.WrapSpans(spans, width, method)
+	return components.WrapSpans(spans, width, method)
 }

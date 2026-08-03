@@ -1,7 +1,7 @@
 package block
 
 import (
-	components "github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/text"
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/xui"

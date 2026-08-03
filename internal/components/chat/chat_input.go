@@ -278,6 +278,8 @@ func (c *ChatInput) insert(s string) {
 // sanitizeComposerText keeps the composer free of terminal-breaking controls.
 // Tabs become spaces; other C0 controls (except newline) are dropped. Raw tabs
 // painted into the tty expand to tab-stops and desync the cell renderer.
+// Block-element UI chrome (e.g. ▎ from transcript selection) is also stripped —
+// those glyphs can disagree with tty ambiguous-width and shift the caret.
 func sanitizeComposerText(s string) string {
 	if s == "" {
 		return ""
@@ -285,7 +287,7 @@ func sanitizeComposerText(s string) string {
 	s = strings.ReplaceAll(s, "\r\n", "\n")
 	s = strings.ReplaceAll(s, "\r", "\n")
 	if !strings.ContainsFunc(s, func(r rune) bool {
-		return r == '\t' || (r < 0x20 && r != '\n') || r == 0x7f
+		return r == '\t' || (r < 0x20 && r != '\n') || r == 0x7f || isComposerChrome(r)
 	}) {
 		return s
 	}
@@ -299,11 +301,22 @@ func sanitizeComposerText(s string) string {
 			b.WriteString("    ")
 		case r < 0x20, r == 0x7f:
 			// drop
+		case isComposerChrome(r):
+			// drop transcript chrome
 		default:
 			b.WriteRune(r)
 		}
 	}
 	return b.String()
+}
+
+func isComposerChrome(r rune) bool {
+	switch r {
+	case '▎', '▌', '┃':
+		return true
+	default:
+		return false
+	}
 }
 
 func (c *ChatInput) notifyChange() {

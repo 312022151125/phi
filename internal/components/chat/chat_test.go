@@ -183,6 +183,9 @@ func TestSanitizeComposerTextDropsControls(t *testing.T) {
 	if got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
+	if got := sanitizeComposerText("▎hello"); got != "hello" {
+		t.Fatalf("chrome strip: got %q", got)
+	}
 }
 
 func TestChatInputPendingSkills(t *testing.T) {
@@ -275,5 +278,37 @@ func TestChatInputCJKBlockCursorKeepsWidth(t *testing.T) {
 	cell := s.Buffer[cy*s.Size.Width+cx]
 	if cell.Char != "中" || cell.Width != 2 {
 		t.Fatalf("block cursor cell = %+v, want 中 width 2", cell)
+	}
+}
+
+func TestCursorAfterCJKPasteAtTextEnd(t *testing.T) {
+	sample := "13个技能 你把这个 skills挪动过去"
+	c := &ChatInput{MinBodyRows: 3, PaddingX: 1, UseBlockCursor: false}
+	c.Handle(&components.EventContext{}, xui.PasteEvent{Text: sample})
+	w := 80
+	s := c.Draw(components.DrawContext{Max: components.Size{Width: w, Height: 10}, Method: xui.WidthUnicode})
+	if s.Cursor == nil {
+		t.Fatal("nil cursor")
+	}
+	cy := s.Cursor.Y
+	var lastContentEnd int
+	for x := 0; x < w; {
+		cell := s.Buffer[cy*w+x]
+		step := int(cell.Width)
+		if step < 1 {
+			step = 1
+		}
+		if !cell.Trail && cell.Char != "" && cell.Char != " " && cell.Char != "│" {
+			lastContentEnd = x + step
+		}
+		x += step
+	}
+	if s.Cursor.X != lastContentEnd {
+		t.Fatalf("cursorX=%d want text end %d", s.Cursor.X, lastContentEnd)
+	}
+	// Insertion caret must not sit on the last CJK primary (IME would overlay it).
+	cell := s.Buffer[cy*w+s.Cursor.X]
+	if xui.StringWidth(cell.Char, xui.WidthUnicode) == 2 {
+		t.Fatalf("cursor on wide glyph %q", cell.Char)
 	}
 }

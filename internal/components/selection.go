@@ -58,6 +58,7 @@ func ExtractSurfaceText(s Surface, ax, ay, ex, ey int) string {
 			continue
 		}
 		var line strings.Builder
+		skippedChrome := false
 		// Step by cell width — same as Surface.Render — so continuation
 		// columns filled with " " are not copied as real spaces.
 		for x := 0; x < w; {
@@ -78,11 +79,21 @@ func ExtractSurfaceText(s Surface, ax, ay, ex, ey int) string {
 				if ch == "" {
 					ch = " "
 				}
+				// Skip UI chrome (user-block left rule, etc.) so clipboard
+				// paste into the composer is plain text only.
+				if isSelectionChrome(ch) {
+					skippedChrome = true
+					x += step
+					continue
+				}
 				line.WriteString(ch)
 			}
 			x += step
 		}
 		text := strings.TrimRight(line.String(), " ")
+		if skippedChrome {
+			text = strings.TrimPrefix(text, " ")
+		}
 		if y > y0 {
 			b.WriteByte('\n')
 		}
@@ -184,4 +195,14 @@ func EntryCopyText(w Widget) string {
 		return c.CopyText()
 	}
 	return ""
+}
+
+// isSelectionChrome reports glyphs used as transcript chrome, not message body.
+func isSelectionChrome(ch string) bool {
+	switch ch {
+	case "▎", "▌":
+		return true
+	default:
+		return false
+	}
 }

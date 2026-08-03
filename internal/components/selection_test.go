@@ -37,6 +37,17 @@ func TestExtractSurfaceTextCJKNoContinuationSpaces(t *testing.T) {
 	}
 }
 
+func TestExtractSurfaceTextSkipsRuleChrome(t *testing.T) {
+	s := NewSurface(20, 1, nil)
+	s.SetCell(0, 0, xui.Cell{Char: "▎", Width: 1})
+	s.SetCell(1, 0, xui.Cell{Char: " ", Width: 1})
+	s.Print(2, 0, "你好", xui.Style{}, xui.WidthUnicode)
+	got := ExtractSurfaceText(s, 0, 0, 19, 0)
+	if got != "你好" {
+		t.Fatalf("got %q, want 你好", got)
+	}
+}
+
 func TestInTextSelection(t *testing.T) {
 	if !InTextSelection(2, 0, 0, 0, 5, 0) {
 		t.Fatal("mid single line")

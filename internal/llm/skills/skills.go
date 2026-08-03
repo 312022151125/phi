@@ -38,7 +38,6 @@ type Skill struct {
 	Description   string
 	License       string
 	Compatibility string
-	Metadata      map[string]string
 	Body          string
 	Path          string
 	SkillFilePath string

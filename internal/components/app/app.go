@@ -169,8 +169,9 @@ func acceptsKeyboardFocus(w components.Widget) bool {
 func (a *App) draw() error {
 	cols, rows := a.vx.Screen().Size()
 	ctx := components.DrawContext{
-		Min: components.Size{},
-		Max: components.Size{Width: cols, Height: rows},
+		Min:    components.Size{},
+		Max:    components.Size{Width: cols, Height: rows},
+		Method: xui.WidthUnicode,
 	}
 	surf := a.root.Draw(ctx)
 	a.lastSurf = surf
