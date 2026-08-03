@@ -1,0 +1,79 @@
+package transcript
+
+import (
+	"testing"
+
+	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/xui"
+)
+
+// rowStub is a fixed-height Widget used to exercise MessageList without
+// importing the block subpackage (avoids components↔block test-type cycles).
+type rowStub struct {
+	text string
+	h    int
+}
+
+func (r *rowStub) Handle(_ *components.EventContext, _ xui.Event) {}
+
+func (r *rowStub) Draw(ctx components.DrawContext) components.Surface {
+	w := ctx.Max.Width
+	if w < 1 {
+		w = 1
+	}
+	h := r.h
+	if h < 1 {
+		h = 1
+	}
+	s := components.NewSurface(w, h, r)
+	s.Print(0, 0, r.text, xui.Style{}, ctx.Method)
+	return s
+}
+
+func TestMessageListBottomPin(t *testing.T) {
+	list := &MessageList{
+		Entries: []components.Widget{
+			&rowStub{text: "one", h: 1},
+			&rowStub{text: "two", h: 1},
+			&rowStub{text: "three", h: 1},
+		},
+	}
+	s := list.Draw(components.DrawContext{Max: components.Size{Width: 40, Height: 4}})
+	if len(s.Children) == 0 {
+		t.Fatal("expected visible children")
+	}
+	last := s.Children[len(s.Children)-1]
+	if last.Origin.Y+last.Surface.Size.Height > 4 {
+		t.Fatalf("last overflows: origin=%+v h=%d", last.Origin, last.Surface.Size.Height)
+	}
+}
+
+func TestMessageListVirtualizes(t *testing.T) {
+	const n = 80
+	entries := make([]components.Widget, n)
+	for i := 0; i < n; i++ {
+		entries[i] = &rowStub{text: "row", h: 1}
+	}
+	list := &MessageList{Entries: entries}
+	const viewH = 6
+	s := list.Draw(components.DrawContext{Max: components.Size{Width: 40, Height: viewH}})
+	if len(s.Children) >= n {
+		t.Fatalf("expected windowed draw, children=%d for %d entries", len(s.Children), n)
+	}
+	if len(s.Children) > viewH+2 {
+		t.Fatalf("too many realized children: %d (viewH=%d)", len(s.Children), viewH)
+	}
+	first, last := list.VisibleRange()
+	if first < 0 || last < first {
+		t.Fatalf("visible range %d..%d", first, last)
+	}
+	if last != n-1 {
+		t.Fatalf("bottom pin: last visible=%d want %d", last, n-1)
+	}
+	list.ScrollFromBottom = 40
+	s2 := list.Draw(components.DrawContext{Max: components.Size{Width: 40, Height: viewH}})
+	f2, l2 := list.VisibleRange()
+	if len(s2.Children) == 0 || l2 >= n-1 && f2 == first {
+		t.Fatalf("scroll did not move window: %d..%d (was %d..%d)", f2, l2, first, last)
+	}
+}

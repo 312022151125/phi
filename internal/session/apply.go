@@ -1,0 +1,161 @@
+package session
+
+import "fmt"
+
+// Apply returns a new snapshot with ev applied (immutable reducer).
+func Apply(s Snapshot, ev Event) Snapshot {
+	out := Snapshot{
+		Messages: append([]Message(nil), s.Messages...),
+		Tools:    cloneTools(s.Tools),
+	}
+	switch e := ev.(type) {
+	case UserAppend:
+		id := e.ID
+		if id == "" {
+			id = fmt.Sprintf("user-%d", len(out.Messages)+1)
+		}
+		out.Messages = append(out.Messages, Message{
+			ID:   id,
+			Role: RoleUser,
+			Text: e.Text,
+		})
+	case AssistantMessageUpdate:
+		m := e.Message
+		m.Role = RoleAssistant
+		if m.Text == "" {
+			m.Text = m.FlatText()
+		}
+		if i, ok := assistantReplaceIndex(out.Messages, m); ok {
+			if m.ID == "" {
+				m.ID = out.Messages[i].ID
+			}
+			out.Messages[i] = m
+		} else {
+			if m.ID == "" {
+				m.ID = fmt.Sprintf("assistant-%d", len(out.Messages)+1)
+			}
+			out.Messages = append(out.Messages, m)
+		}
+		for _, b := range m.Content {
+			if b.Type != BlockToolUse || b.ID == "" {
+				continue
+			}
+			if _, exists := out.Tools[b.ID]; exists {
+				continue
+			}
+			if out.Tools == nil {
+				out.Tools = make(map[string]ToolRun)
+			}
+			out.Tools[b.ID] = ToolRun{
+				ToolUseID: b.ID,
+				Status:    ToolInProgress,
+				Detail:    b.Input,
+			}
+		}
+	case ToolData:
+		if out.Tools == nil {
+			out.Tools = make(map[string]ToolRun)
+		}
+		run := e.Run
+		if prev, ok := out.Tools[run.ToolUseID]; ok {
+			if run.Detail == "" {
+				run.Detail = prev.Detail
+			}
+			if run.Status == ToolInProgress && run.Output == "" && prev.Output != "" {
+				run.Output = prev.Output
+			}
+		}
+		out.Tools[run.ToolUseID] = run
+	case CancelStreaming:
+		if i := lastAssistantIndex(out.Messages); i >= 0 && out.Messages[i].State == StateStreaming {
+			out.Messages[i].State = StateCancelled
+		}
+		for id, run := range out.Tools {
+			switch run.Status {
+			case ToolInProgress, ToolQueued:
+				run.Status = ToolCancelled
+				out.Tools[id] = run
+			}
+		}
+	}
+	return out
+}
+
+// assistantReplaceIndex finds the assistant row to replace for message-update.
+// Streaming turns always replace the last assistant. Otherwise same ID replaces.
+func assistantReplaceIndex(msgs []Message, update Message) (int, bool) {
+	if len(msgs) == 0 {
+		return -1, false
+	}
+	last := len(msgs) - 1
+	if msgs[last].Role != RoleAssistant {
+		return -1, false
+	}
+	if msgs[last].State == StateStreaming {
+		return last, true
+	}
+	if update.ID != "" && update.ID == msgs[last].ID {
+		return last, true
+	}
+	return -1, false
+}
+
+func cloneTools(in map[string]ToolRun) map[string]ToolRun {
+	if in == nil {
+		return nil
+	}
+	out := make(map[string]ToolRun, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func lastAssistantIndex(msgs []Message) int {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		if msgs[i].Role == RoleAssistant {
+			return i
+		}
+	}
+	return -1
+}
+
+// IsStreaming reports whether inference or tools are still active.
+func IsStreaming(s Snapshot) bool {
+	if i := lastAssistantIndex(s.Messages); i >= 0 && s.Messages[i].State == StateStreaming {
+		return true
+	}
+	return HasRunningTools(s)
+}
+
+// HasRunningTools reports in-progress or queued tool runs.
+func HasRunningTools(s Snapshot) bool {
+	for _, run := range s.Tools {
+		switch run.Status {
+		case ToolInProgress, ToolQueued:
+			return true
+		}
+	}
+	return false
+}
+
+// RunningToolCount returns how many tools are in-progress/queued.
+func RunningToolCount(s Snapshot) int {
+	n := 0
+	for _, run := range s.Tools {
+		switch run.Status {
+		case ToolInProgress, ToolQueued:
+			n++
+		}
+	}
+	return n
+}
+
+// LastAssistant returns the last assistant message, if any.
+func LastAssistant(s Snapshot) (Message, bool) {
+	i := lastAssistantIndex(s.Messages)
+	if i < 0 {
+		return Message{}, false
+	}
+	return s.Messages[i], true
+}

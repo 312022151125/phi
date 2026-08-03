@@ -1,0 +1,40 @@
+package tui
+
+import "github.com/pulseaiclub/phi/internal/session"
+
+// Msg is a UI-thread message. Producers send; Editor.Update applies.
+// Share memory by communicating — not the other way around.
+type Msg interface {
+	isMsg()
+}
+
+// SubmitMsg asks the UI to accept a user prompt.
+type SubmitMsg struct{ Text string }
+
+func (SubmitMsg) isMsg() {}
+
+// CancelStreamMsg aborts the in-flight agent stream.
+type CancelStreamMsg struct{}
+
+func (CancelStreamMsg) isMsg() {}
+
+// SessionEventMsg carries a session model event from the agent pipeline.
+type SessionEventMsg struct{ Event session.Event }
+
+func (SessionEventMsg) isMsg() {}
+
+// SetActivityMsg sets footer/stream activity status.
+type SetActivityMsg struct{ Activity Activity }
+
+func (SetActivityMsg) isMsg() {}
+
+// RedrawMsg only asks for a frame (e.g. delayed activity clear).
+type RedrawMsg struct{}
+
+func (RedrawMsg) isMsg() {}
+
+// ClearIfActivityMsg sets Idle only when current activity still matches If.
+// Used for delayed "Stopped" → Idle without clobbering a newer state.
+type ClearIfActivityMsg struct{ If Activity }
+
+func (ClearIfActivityMsg) isMsg() {}

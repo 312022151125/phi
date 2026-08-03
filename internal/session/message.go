@@ -1,0 +1,175 @@
+package session
+
+// Role is the speaker of a transcript message.
+type Role int
+
+const (
+	RoleUser Role = iota
+	RoleAssistant
+)
+
+// State is the assistant message lifecycle.
+type State int
+
+const (
+	StateStreaming State = iota
+	StateComplete
+	StateCancelled
+	StateError
+)
+
+func (s State) String() string {
+	switch s {
+	case StateStreaming:
+		return "streaming"
+	case StateComplete:
+		return "complete"
+	case StateCancelled:
+		return "cancelled"
+	case StateError:
+		return "error"
+	default:
+		return "unknown"
+	}
+}
+
+// StopReason is set when an assistant message completes.
+type StopReason int
+
+const (
+	StopNone StopReason = iota
+	StopEndTurn
+	StopToolUse
+	StopMaxTokens
+)
+
+// BlockType is an assistant content block discriminant.
+type BlockType int
+
+const (
+	BlockText BlockType = iota
+	BlockThinking
+	BlockToolUse
+)
+
+// ContentBlock is one assistant content part.
+type ContentBlock struct {
+	Type BlockType
+
+	// Text / Thinking
+	Text string
+
+	// ToolUse
+	ID       string
+	Name     string
+	Input    string // display / JSON-ish input
+	Complete bool
+}
+
+// ToolStatus is the tool run status.
+type ToolStatus int
+
+const (
+	ToolQueued ToolStatus = iota
+	ToolInProgress
+	ToolDone
+	ToolError
+	ToolCancelled
+	ToolRejected
+)
+
+func (s ToolStatus) String() string {
+	switch s {
+	case ToolQueued:
+		return "queued"
+	case ToolInProgress:
+		return "in-progress"
+	case ToolDone:
+		return "done"
+	case ToolError:
+		return "error"
+	case ToolCancelled:
+		return "cancelled"
+	case ToolRejected:
+		return "rejected"
+	default:
+		return "unknown"
+	}
+}
+
+// ToolRun is the live execution state for a tool_use id.
+type ToolRun struct {
+	ToolUseID string
+	Status    ToolStatus
+	Output    string
+	Error     string
+	Detail    string // optional one-line detail (path, cmd summary)
+}
+
+// Message is one session message. Assistant rows carry Content blocks and State.
+type Message struct {
+	ID         string
+	Role       Role
+	State      State      // assistant
+	StopReason StopReason // assistant when complete
+	Text       string     // user visible text
+	Content    []ContentBlock
+}
+
+// FlatText joins assistant text blocks.
+func (m Message) FlatText() string {
+	if m.Role == RoleUser {
+		return m.Text
+	}
+	var out string
+	for _, b := range m.Content {
+		if b.Type == BlockText {
+			out += b.Text
+		}
+	}
+	if out == "" {
+		return m.Text
+	}
+	return out
+}
+
+// Event is applied to session state.
+type Event interface {
+	isSessionEvent()
+}
+
+// UserAppend appends a user message.
+type UserAppend struct {
+	ID   string
+	Text string
+}
+
+func (UserAppend) isSessionEvent() {}
+
+// AssistantMessageUpdate replaces the last assistant with the same turn, or
+// appends if the last message is not a streaming/incomplete assistant —
+// mirrors assistant message-update semantics.
+type AssistantMessageUpdate struct {
+	Message Message
+}
+
+func (AssistantMessageUpdate) isSessionEvent() {}
+
+// ToolData updates a tool run by tool_use id.
+type ToolData struct {
+	Run ToolRun
+}
+
+func (ToolData) isSessionEvent() {}
+
+// CancelStreaming marks the current streaming assistant as cancelled and
+// cancels in-progress / queued tools.
+type CancelStreaming struct{}
+
+func (CancelStreaming) isSessionEvent() {}
+
+// Snapshot is the full session state the TUI projects from.
+type Snapshot struct {
+	Messages []Message
+	Tools    map[string]ToolRun
+}

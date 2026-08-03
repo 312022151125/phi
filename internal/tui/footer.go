@@ -1,0 +1,25 @@
+package tui
+
+import (
+	"github.com/pulseaiclub/xui"
+	"github.com/pulseaiclub/phi/internal/components"
+)
+
+func (editor *Editor) drawFooter(ctx components.DrawContext, width int) components.Surface {
+	footer := components.NewSurface(width, 1, nil)
+	dim := editor.theme.Muted
+	msg := editor.activity.Label(editor.snap)
+
+	if msg != "" {
+		x := 1
+		if editor.activity.ShowSpinner() && editor.spin != nil {
+			g := editor.spin.Glyph()
+			footer.Print(x, 0, g, editor.theme.ToolName, ctx.Method)
+			x += xui.StringWidth(g, ctx.Method)
+			footer.Print(x, 0, " ", dim, ctx.Method)
+			x += xui.StringWidth(" ", ctx.Method)
+		}
+		footer.Print(x, 0, msg, dim, ctx.Method)
+	}
+	return footer
+}

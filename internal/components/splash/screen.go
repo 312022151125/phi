@@ -1,0 +1,169 @@
+package splash
+
+import (
+	"strings"
+
+	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/xui"
+)
+
+// Screen is the splash screen: animated sphere + intro copy.
+// Shown when the transcript is empty at startup.
+type Screen struct {
+	Sphere *Sphere
+	Theme  components.Theme
+	// Brand is the product name in the hero line (default "phi").
+	Brand string
+	Hint  string // optional tip under the help line; empty uses the default
+}
+
+func (w *Screen) brand() string {
+	if w.Brand == "" {
+		return "Phi"
+	}
+	return w.Brand
+}
+
+func (w *Screen) hintLines() []string {
+	if w.Hint != "" {
+		return wrapHint(w.Hint, 48)
+	}
+	return []string{
+		"Type a message below and press Enter to start",
+	}
+}
+
+func wrapHint(s string, width int) []string {
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return nil
+	}
+	var lines []string
+	var cur string
+	for _, word := range words {
+		if cur == "" {
+			cur = word
+			continue
+		}
+		if len(cur)+1+len(word) > width {
+			lines = append(lines, cur)
+			cur = word
+			continue
+		}
+		cur += " " + word
+	}
+	if cur != "" {
+		lines = append(lines, cur)
+	}
+	return lines
+}
+
+func (w *Screen) Handle(ctx *components.EventContext, ev xui.Event) {
+	if w.Sphere != nil {
+		w.Sphere.Handle(ctx, ev)
+	}
+}
+
+func (w *Screen) Draw(ctx components.DrawContext) components.Surface {
+	maxW, maxH := ctx.Max.Width, ctx.Max.Height
+	if maxW <= 0 {
+		maxW = 80
+	}
+	if maxH <= 0 {
+		maxH = 24
+	}
+	root := components.Surface{Size: components.Size{Width: maxW, Height: maxH}, Widget: w}
+
+	th := w.Theme
+	if th == (components.Theme{}) {
+		th = components.DefaultTheme()
+	}
+
+	sphere := w.Sphere
+	if sphere == nil {
+		sphere = &Sphere{}
+	}
+	// Fit sphere into available space; default is 40×40.
+	sphereSize := 40
+	if maxH < sphereSize+2 {
+		sphereSize = maxH - 2
+	}
+	if sphereSize > maxW/2 {
+		sphereSize = maxW / 2
+	}
+	if sphereSize < 12 {
+		sphereSize = 12
+	}
+	sphere.Width, sphere.Height = sphereSize, sphereSize
+	sphereSurf := sphere.Draw(ctx.WithConstraints(components.Size{}, components.Size{Width: sphereSize, Height: sphereSize}))
+
+	const gap = 2
+	textW := maxW - sphereSize - gap - 4
+	if textW < 20 {
+		textW = 20
+	}
+	if textW > 50 {
+		textW = 50
+	}
+
+	fg := th.Foreground
+	if fg.Fg.Kind == 0 {
+		fg = xui.Style{Fg: xui.RGBColor(0xb8, 0xe0, 0xc8)}
+	}
+	helpKey := th.Success
+	if helpKey == (xui.Style{}) {
+		helpKey = xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xff)}
+	}
+	muted := th.Muted
+
+	lines := []struct {
+		spans []components.Span
+	}{
+		{spans: []components.Span{{Text: w.brand(), Style: fg}}},
+		{spans: []components.Span{{Text: "terminal coding agent", Style: muted}}},
+		{spans: nil}, // blank
+		{spans: []components.Span{
+			{Text: "Ctrl+K", Style: helpKey},
+			{Text: " command palette", Style: muted},
+		}},
+	}
+	for _, h := range w.hintLines() {
+		lines = append(lines, struct{ spans []components.Span }{spans: []components.Span{{Text: h, Style: muted}}})
+	}
+
+	textH := len(lines)
+	if textH < 1 {
+		textH = 1
+	}
+	textSurf := components.NewSurface(textW, textH, nil)
+	for y, line := range lines {
+		if line.spans == nil {
+			continue
+		}
+		components.PaintSpans(&textSurf, 0, y, line.spans, ctx.Method)
+	}
+
+	blockW := sphereSize + gap + textW
+	blockH := sphereSize
+	if textH > blockH {
+		blockH = textH
+	}
+	ox := (maxW - blockW) / 2
+	oy := (maxH - blockH) / 2
+	if ox < 0 {
+		ox = 0
+	}
+	if oy < 0 {
+		oy = 0
+	}
+	textOY := oy + (blockH-textH)/2
+	if textOY < 0 {
+		textOY = 0
+	}
+
+	root.Children = []components.SubSurface{
+		{Origin: components.Point{X: ox, Y: oy}, Surface: sphereSurf},
+		{Origin: components.Point{X: ox + sphereSize + gap, Y: textOY}, Surface: textSurf},
+	}
+	return root
+}

@@ -1,0 +1,5 @@
+.idea/
+/phi
+/dist/
+*.log
+phi-debug.log

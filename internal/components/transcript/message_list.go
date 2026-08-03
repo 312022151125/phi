@@ -1,0 +1,296 @@
+package transcript
+
+import (
+	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/xui"
+)
+
+// MessageList is a bottom-anchored scrollable transcript with windowed
+// (virtualized) drawing: only entries that intersect the viewport are Draw()'n
+// each frame. Off-screen heights are cached so scroll extent stays correct.
+type MessageList struct {
+	Entries []components.Widget
+	// ScrollFromBottom is how many rows above the natural bottom pin.
+	// 0 means stick to bottom (follow mode).
+	ScrollFromBottom int
+	PaddingX         int
+	ItemSpacing      int // default 1
+	Theme components.Theme
+	// Selected is the highlighted entry index for block copy; -1 = none.
+	Selected int
+
+	// totalH is last measured content height (for scroll clamping).
+	totalH int
+	viewH  int
+
+	// height cache (virtualization)
+	heights []int
+	cacheW  int
+
+	// last layout for hit-testing (viewport-visible items, list-local Y).
+	lastPad    int
+	lastOrigin int
+	lastItems  []listItemGeom
+}
+
+type listItemGeom struct {
+	index int
+	y, h  int // list-local (screen within the list surface)
+}
+
+func (m *MessageList) spacing() int {
+	if m.ItemSpacing <= 0 {
+		return 1
+	}
+	return m.ItemSpacing
+}
+
+func (m *MessageList) padX() int {
+	if m.PaddingX < 0 {
+		return 0
+	}
+	if m.PaddingX == 0 {
+		return 1
+	}
+	return m.PaddingX
+}
+
+// InvalidateHeights drops cached row heights (call after an entry's size changes
+// in a way Draw won't see until remount — e.g. external expand). Visible rows
+// remasure every frame already.
+func (m *MessageList) InvalidateHeights() {
+	m.heights = nil
+	m.cacheW = 0
+}
+
+func (m *MessageList) syncHeightCache(n, innerW int) {
+	if m.cacheW != innerW {
+		m.heights = make([]int, n)
+		m.cacheW = innerW
+		return
+	}
+	if len(m.heights) < n {
+		m.heights = append(m.heights, make([]int, n-len(m.heights))...)
+	} else if len(m.heights) > n {
+		m.heights = m.heights[:n]
+	}
+}
+
+func (m *MessageList) measure(i int, childCtx components.DrawContext) int {
+	if i < 0 || i >= len(m.Entries) || m.Entries[i] == nil {
+		return 1
+	}
+	surf := m.Entries[i].Draw(childCtx)
+	h := surf.Size.Height
+	if h < 1 {
+		h = 1
+	}
+	return h
+}
+
+func (m *MessageList) contentOffsets(n, gap int) (tops []int, total int) {
+	tops = make([]int, n)
+	y := 0
+	for i := 0; i < n; i++ {
+		if i > 0 {
+			y += gap
+		}
+		tops[i] = y
+		h := 1
+		if i < len(m.heights) && m.heights[i] > 0 {
+			h = m.heights[i]
+		}
+		y += h
+	}
+	return tops, y
+}
+
+func (m *MessageList) Handle(ctx *components.EventContext, ev xui.Event) {
+	switch e := ev.(type) {
+	case xui.KeyEvent:
+		switch e.Code {
+		case xui.KeyPageUp:
+			m.ScrollFromBottom += m.viewH
+			ctx.ConsumeAndRedraw()
+			return
+		case xui.KeyPageDown:
+			m.ScrollFromBottom -= m.viewH
+			if m.ScrollFromBottom < 0 {
+				m.ScrollFromBottom = 0
+			}
+			ctx.ConsumeAndRedraw()
+			return
+		}
+	case xui.MouseEvent:
+		if e.Button == xui.MouseWheelUp {
+			m.ScrollFromBottom += 3
+			ctx.ConsumeAndRedraw()
+			return
+		}
+		if e.Button == xui.MouseWheelDown {
+			m.ScrollFromBottom -= 3
+			if m.ScrollFromBottom < 0 {
+				m.ScrollFromBottom = 0
+			}
+			ctx.ConsumeAndRedraw()
+			return
+		}
+	}
+	// Prefer last-visible entries; fall back to all if layout not ready.
+	if len(m.lastItems) > 0 {
+		for i := len(m.lastItems) - 1; i >= 0; i-- {
+			idx := m.lastItems[i].index
+			if idx < 0 || idx >= len(m.Entries) {
+				continue
+			}
+			m.Entries[idx].Handle(ctx, ev)
+			if ctx.Consume {
+				return
+			}
+		}
+		return
+	}
+	for i := len(m.Entries) - 1; i >= 0; i-- {
+		m.Entries[i].Handle(ctx, ev)
+		if ctx.Consume {
+			return
+		}
+	}
+}
+
+func (m *MessageList) Draw(ctx components.DrawContext) components.Surface {
+	w := ctx.Max.Width
+	h := ctx.Max.Height
+	if w <= 0 {
+		w = 40
+	}
+	if h <= 0 {
+		h = 10
+	}
+	m.viewH = h
+	pad := m.padX()
+	innerW := w - pad*2
+	if innerW < 1 {
+		innerW = 1
+	}
+	gap := m.spacing()
+	n := len(m.Entries)
+	childCtx := ctx.WithConstraints(components.Size{}, components.Size{Width: innerW, Height: 10000})
+
+	m.syncHeightCache(n, innerW)
+
+	// Ensure every row has a height (measure missing only — O(new/invalidated)).
+	for i := 0; i < n; i++ {
+		if m.heights[i] < 1 {
+			m.heights[i] = m.measure(i, childCtx)
+		}
+	}
+
+	var root components.Surface
+	for pass := 0; pass < 2; pass++ {
+		tops, totalH := m.contentOffsets(n, gap)
+		m.totalH = totalH
+		maxScroll := m.totalH - h
+		if maxScroll < 0 {
+			maxScroll = 0
+		}
+		if m.ScrollFromBottom > maxScroll {
+			m.ScrollFromBottom = maxScroll
+		}
+		if m.ScrollFromBottom < 0 {
+			m.ScrollFromBottom = 0
+		}
+		originY := h - m.totalH + m.ScrollFromBottom
+		m.lastPad = pad
+		m.lastOrigin = originY
+
+		root = components.Surface{Size: components.Size{Width: w, Height: h}, Widget: m}
+		m.lastItems = m.lastItems[:0]
+		heightChanged := false
+
+		for i := 0; i < n; i++ {
+			itemH := m.heights[i]
+			if itemH < 1 {
+				itemH = 1
+			}
+			top := originY + tops[i]
+			bot := top + itemH
+			if bot <= 0 || top >= h {
+				continue // outside viewport — skip Draw
+			}
+			surf := m.Entries[i].Draw(childCtx)
+			nh := surf.Size.Height
+			if nh < 1 {
+				nh = 1
+			}
+			if nh != m.heights[i] {
+				m.heights[i] = nh
+				heightChanged = true
+			}
+			if i == m.Selected && m.Selected >= 0 {
+				hl := xui.Style{Bg: xui.RGBColor(0x2a, 0x2e, 0x24)}
+				components.ApplyBlockHighlight(&surf, hl)
+			}
+			root.Children = append(root.Children, components.SubSurface{
+				Origin:  components.Point{X: pad, Y: top},
+				Surface: surf,
+			})
+			m.lastItems = append(m.lastItems, listItemGeom{index: i, y: top, h: nh})
+		}
+
+		if !heightChanged || pass == 1 {
+			break
+		}
+		// Visible row height changed (expand/collapse) — relayout once.
+	}
+	return root
+}
+
+// StickToBottom resets follow mode.
+func (m *MessageList) StickToBottom() {
+	m.ScrollFromBottom = 0
+}
+
+// ContentOrigin is the list-local Y of content row 0 after the last Draw.
+// Viewport Y → content Y: y - ContentOrigin(); reverse: y + ContentOrigin().
+func (m *MessageList) ContentOrigin() int {
+	return m.lastOrigin
+}
+
+// IndexAtPoint returns the entry index under list-local (x,y), or -1.
+func (m *MessageList) IndexAtPoint(x, y int) int {
+	_ = x
+	for _, it := range m.lastItems {
+		if y >= it.y && y < it.y+it.h {
+			return it.index
+		}
+	}
+	return -1
+}
+
+// SelectedCopyText returns the copyable text of the selected entry.
+func (m *MessageList) SelectedCopyText() string {
+	if m.Selected < 0 || m.Selected >= len(m.Entries) {
+		return ""
+	}
+	return components.EntryCopyText(m.Entries[m.Selected])
+}
+
+// LastCopyText returns copyable text from the last entry that supports it.
+func (m *MessageList) LastCopyText() string {
+	for i := len(m.Entries) - 1; i >= 0; i-- {
+		if t := components.EntryCopyText(m.Entries[i]); t != "" {
+			return t
+		}
+	}
+	return ""
+}
+
+// VisibleRange returns the inclusive [first, last] entry indices realized in
+// the last Draw, or (-1, -1) if none.
+func (m *MessageList) VisibleRange() (first, last int) {
+	if len(m.lastItems) == 0 {
+		return -1, -1
+	}
+	return m.lastItems[0].index, m.lastItems[len(m.lastItems)-1].index
+}
