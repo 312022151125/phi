@@ -8,7 +8,6 @@ import (
 )
 
 // PaletteCommands returns sample commands for the tui demo.
-// settings → theme opens a nested "Select Theme" list.
 func PaletteCommands(onRun func(msg string)) []palette.PaletteCommand {
 	run := func(msg string) func() {
 		return func() {
@@ -17,24 +16,11 @@ func PaletteCommands(onRun func(msg string)) []palette.PaletteCommand {
 			}
 		}
 	}
-	themes := []palette.PaletteCommand{
-		{ID: "theme-terminal", Verb: "Terminal (current) (builtin)", Run: run("theme: Terminal")},
-		{ID: "theme-dark", Verb: "Dark (builtin)", Run: run("theme: Dark")},
-	}
 
 	models := []palette.PaletteCommand{
 		{ID: "model-deepseek-v4-pro", Verb: "deepseek", Run: run("model: Model")},
 	}
-
 	return []palette.PaletteCommand{
-		{
-			ID:           "settings-theme",
-			Noun:         "settings",
-			Verb:         "theme",
-			Keywords:     []string{"color", "appearance"},
-			SubmenuTitle: "Select Theme",
-			Submenu:      themes,
-		},
 		{
 			ID:           "settings-model",
 			Noun:         "settings",

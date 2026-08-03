@@ -79,7 +79,7 @@ func NewEditor(vx *xui.XUI, theme components.Theme, cwd string, model string, sk
 		vx:        vx,
 		theme:     theme,
 		Chat:      newChatInput(theme, model, cwd),
-		spin:      status.NewSpinner(theme.ToolName),
+		spin:      status.NewWaveSpinner(theme.ToolName),
 		startedAt: time.Now(),
 		welcome: splash.Screen{
 			Sphere: &splash.Sphere{Fast: true},
