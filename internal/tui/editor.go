@@ -7,6 +7,7 @@ import (
 
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/app"
+	"github.com/pulseaiclub/phi/internal/components/block"
 	"github.com/pulseaiclub/phi/internal/components/chat"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/components/mention"
@@ -144,6 +145,7 @@ func NewEditor(vx *xui.XUI, theme components.Theme, cwd string, model string, sk
 		PaletteCommands(func(msg string) {
 			editor.list.StickToBottom()
 		}),
+		ThemeCommand(editor.applyTheme),
 		SkillsCommand(skillPath, addSkill),
 		palette.PaletteCommand{
 			ID:       "clipboard-copy-last",
@@ -158,6 +160,59 @@ func NewEditor(vx *xui.XUI, theme components.Theme, cwd string, model string, sk
 		},
 	)
 	return editor
+}
+
+// applyTheme switches the live chrome + transcript widgets to a builtin theme.
+func (editor *Editor) applyTheme(name string) {
+	th, ok := components.ThemeByName(name)
+	if !ok {
+		return
+	}
+	editor.theme = th
+	editor.Chat.Theme = th
+	editor.Chat.BorderStyle = th.Border
+	editor.Chat.TextStyle = th.Foreground
+	editor.Chat.TopRightLabel.Style = th.Success
+	editor.Chat.BottomRightLabel.Style = th.Muted
+	editor.palette.Theme = th
+	editor.mention.Theme = th
+	editor.toast.Theme = th
+	editor.welcome.Theme = th
+	editor.list.Theme = th
+	if editor.spin != nil {
+		editor.spin.Style = th.ToolName
+	}
+	if editor.mapper != nil {
+		editor.mapper.theme = th
+	}
+	applyThemeToWidgets(editor.list.Entries, th)
+	editor.list.InvalidateHeights()
+	if editor.lastUsage.Reported() {
+		editor.updateTokenDisplay(editor.lastUsage)
+	}
+	editor.toast.Show("Theme: "+name, toast.ToastSuccess, 2*time.Second)
+	if editor.vx != nil {
+		editor.vx.QueueRefresh()
+	}
+}
+
+func applyThemeToWidgets(entries []components.Widget, th components.Theme) {
+	for _, w := range entries {
+		switch b := w.(type) {
+		case *block.UserBlock:
+			b.Theme = th
+		case *block.AssistantBlock:
+			b.Theme = th
+		case *block.ThinkingBlock:
+			b.Theme = th
+		case *block.CompactionBlock:
+			b.Theme = th
+		case *block.ToolBlock:
+			b.Theme = th
+		case *block.BashBlock:
+			b.Theme = th
+		}
+	}
 }
 
 // Publish sends a message onto the bus from any goroutine / widget callback.

@@ -28,8 +28,8 @@ func ThemeNames() []string {
 	return []string{"Dark", "Darcula", "Pink", "Terminal"}
 }
 
-// DefaultTheme returns the default dark RGB palette.
-func DefaultTheme() Theme { return DarculaTheme() }
+// DefaultTheme returns the terminal default palette (ANSI / terminal colors).
+func DefaultTheme() Theme { return TerminalTheme() }
 
 // DarkTheme is the fixed RGB dark palette ("Dark").
 func DarkTheme() Theme {

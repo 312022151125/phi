@@ -9,6 +9,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestThemeCommand_Submenu(t *testing.T) {
+	var got string
+	cmd := ThemeCommand(func(name string) { got = name })
+	assert.Equal(t, "settings", cmd.Noun)
+	assert.Equal(t, "theme", cmd.Verb)
+	assert.Equal(t, "Select Theme", cmd.SubmenuTitle)
+	require.Len(t, cmd.Submenu, 4)
+	assert.Equal(t, "Dark (builtin)", cmd.Submenu[0].Verb)
+	assert.Equal(t, "Pink (builtin)", cmd.Submenu[2].Verb)
+
+	cmd.Submenu[2].Run()
+	assert.Equal(t, "Pink", got)
+}
+
 func TestSkillsCommand_SubmenuFromDisk(t *testing.T) {
 	dir := t.TempDir()
 	skillDir := filepath.Join(dir, "extract-and-distill")

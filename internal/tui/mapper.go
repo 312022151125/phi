@@ -104,8 +104,12 @@ func (m *Mapper) patchItem(w components.Widget, it session.Item) bool {
 		}
 		return true
 	case session.ItemCompaction:
-		_, ok := w.(*block.CompactionBlock)
-		return ok
+		c, ok := w.(*block.CompactionBlock)
+		if !ok {
+			return false
+		}
+		c.Theme = m.theme
+		return true
 	case session.ItemTool:
 		return m.patchTool(w, it)
 	}
