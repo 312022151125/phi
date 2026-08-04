@@ -1,5 +1,13 @@
 package llm
 
+import "context"
+
+// Compactor compresses conversation history into a concise summary.
+// Implemented by *Client; consumed by session compaction.
+type Compactor interface {
+	Compact(ctx context.Context, summary string) (string, error)
+}
+
 // Role identifies the participant in a chat message.
 type Role string
 
