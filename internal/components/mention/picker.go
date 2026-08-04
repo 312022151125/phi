@@ -257,7 +257,7 @@ func (p *Picker) Draw(ctx components.DrawContext) components.Surface {
 	}
 	layout.DrawRoundedBorder(&panel, layout.BorderRounded, th.Border, nil, nil, nil, nil, ctx.Method)
 
-	// Soft blue selection bar (closer to Cursor @-menu than palette yellow).
+	// Soft blue selection bar (distinct from palette yellow).
 	selBg := xui.RGBColor(0x3a, 0x5a, 0x7a)
 
 	padL := 1

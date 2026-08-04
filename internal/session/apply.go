@@ -29,6 +29,10 @@ func Apply(s Snapshot, ev Event) Snapshot {
 			if m.ID == "" {
 				m.ID = out.Messages[i].ID
 			}
+			// Keep last known usage when a streaming delta omits it.
+			if !m.Usage.Reported() && out.Messages[i].Usage.Reported() {
+				m.Usage = out.Messages[i].Usage
+			}
 			out.Messages[i] = m
 		} else {
 			if m.ID == "" {

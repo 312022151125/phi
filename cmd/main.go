@@ -31,7 +31,7 @@ func main() {
 
 	cwd, _ := os.Getwd()
 	th := components.DefaultTheme()
-	m := tui.NewEditor(vx, th, cwd, config.Name, config.SkillPath)
+	m := tui.NewEditor(vx, th, cwd, config.Name, config.SkillPath, config.ContextWindow)
 
 	app := app.NewApp(vx)
 	app.Anim = true

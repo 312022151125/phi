@@ -124,7 +124,7 @@ func (engine *Engine) streamTurn(
 	for event, err := range engine.client.Stream(ctx, messages) {
 		if err != nil {
 			if thinking != "" || text != "" {
-				_ = yield(emitMessage(id, session.StateError, session.StopNone, thinking, text, nil), nil)
+				_ = yield(emitMessage(id, session.StateError, session.StopNone, thinking, text, nil, llm.Usage{}), nil)
 			}
 			yield(nil, err)
 			return llm.Message{}, false
@@ -146,7 +146,7 @@ func (engine *Engine) streamTurn(
 			if event.Delta.Content != "" {
 				text += event.Delta.Content
 			}
-			if !yield(emitMessage(id, session.StateStreaming, session.StopNone, thinking, text, nil), nil) {
+			if !yield(emitMessage(id, session.StateStreaming, session.StopNone, thinking, text, nil, llm.Usage{}), nil) {
 				return llm.Message{}, false
 			}
 
@@ -170,7 +170,7 @@ func (engine *Engine) streamTurn(
 
 	if !gotDone {
 		if ctx.Err() != nil {
-			_ = yield(emitMessage(id, session.StateCancelled, session.StopNone, thinking, text, nil), nil)
+			_ = yield(emitMessage(id, session.StateCancelled, session.StopNone, thinking, text, nil, llm.Usage{}), nil)
 			return llm.Message{}, false
 		}
 		yield(nil, fmt.Errorf("agent: stream closed without assistant output"))
@@ -182,7 +182,7 @@ func (engine *Engine) streamTurn(
 	if len(blocks) > 0 {
 		reason = session.StopToolUse
 	}
-	if !yield(emitMessage(id, session.StateComplete, reason, thinking, text, blocks), nil) {
+	if !yield(emitMessage(id, session.StateComplete, reason, thinking, text, blocks, final.Usage), nil) {
 		return llm.Message{}, false
 	}
 	return final, true
@@ -230,6 +230,7 @@ func emitMessage(
 	thinking,
 	text string,
 	tools []session.ContentBlock,
+	usage llm.Usage,
 ) session.Event {
 	return session.AssistantMessageUpdate{Message: session.Message{
 		ID:         id,
@@ -237,6 +238,11 @@ func emitMessage(
 		StopReason: reason,
 		Content:    buildContent(thinking, text, tools),
 		Text:       text,
+		Usage: session.TokenUsage{
+			PromptTokens:     usage.PromptTokens,
+			CompletionTokens: usage.CompletionTokens,
+			TotalTokens:      usage.TotalTokens,
+		},
 	}}
 }
 

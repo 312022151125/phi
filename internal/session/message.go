@@ -114,6 +114,30 @@ type Message struct {
 	StopReason StopReason // assistant when complete
 	Text       string     // user visible text
 	Content    []ContentBlock
+	// Usage is token consumption for the latest assistant turn (UI + diagnostics).
+	// Zero means unknown / not yet reported by the provider.
+	Usage TokenUsage
+}
+
+// TokenUsage is a UI-facing copy of provider token counts for one completion.
+type TokenUsage struct {
+	PromptTokens     int
+	CompletionTokens int
+	TotalTokens      int
+}
+
+// Reported is true when the provider sent any non-zero token count.
+func (u TokenUsage) Reported() bool {
+	return u.TotalTokens > 0 || u.PromptTokens > 0 || u.CompletionTokens > 0
+}
+
+// ContextTokens is the best available estimate of tokens occupying the context
+// window (prefer prompt/input; fall back to total).
+func (u TokenUsage) ContextTokens() int {
+	if u.PromptTokens > 0 {
+		return u.PromptTokens
+	}
+	return u.TotalTokens
 }
 
 // FlatText joins assistant text blocks.

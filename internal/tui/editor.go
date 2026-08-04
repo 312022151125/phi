@@ -54,6 +54,10 @@ type Editor struct {
 	listIDs []string // parallels list.Entries (item ids)
 
 	mentionGen int // bumped to invalidate in-flight @-file searches
+
+	contextWindow int
+	lastUsage     session.TokenUsage
+	usageStats    string // panda-style ↑↓Σ for footer
 }
 
 func newChatInput(theme components.Theme, model string, cwd string) chat.ChatInput {
@@ -66,10 +70,7 @@ func newChatInput(theme components.Theme, model string, cwd string) chat.ChatInp
 		BorderStyle:    theme.Border,
 		TextStyle:      theme.Foreground,
 		CursorStyle:    xui.Style{Reverse: true},
-		// TopLeftLabel: layout.BorderLabel{
-		// 	Text:  "4% of 300k",
-		// 	Style: theme.Muted,
-		// },
+		// TopLeftLabel filled by updateTokenDisplay after the first usage report.
 		TopRightLabel: layout.BorderLabel{
 			Text:  model,
 			Style: theme.Success,
@@ -81,14 +82,15 @@ func newChatInput(theme components.Theme, model string, cwd string) chat.ChatInp
 	}
 }
 
-func NewEditor(vx *xui.XUI, theme components.Theme, cwd string, model string, skillPath string) *Editor {
+func NewEditor(vx *xui.XUI, theme components.Theme, cwd string, model string, skillPath string, contextWindow int) *Editor {
 	editor := &Editor{
-		vx:        vx,
-		theme:     theme,
-		cwd:       cwd,
-		Chat:      newChatInput(theme, model, cwd),
-		spin:      status.NewWaveSpinner(theme.ToolName),
-		startedAt: time.Now(),
+		vx:            vx,
+		theme:         theme,
+		cwd:           cwd,
+		contextWindow: contextWindow,
+		Chat:          newChatInput(theme, model, cwd),
+		spin:          status.NewWaveSpinner(theme.ToolName),
+		startedAt:     time.Now(),
 		welcome: splash.Screen{
 			Sphere: &splash.Sphere{Fast: true},
 			Theme:  theme,
@@ -212,6 +214,9 @@ func (editor *Editor) drainBus() {
 
 func (editor *Editor) applySessionEvent(ev session.Event) {
 	editor.snap = session.Apply(editor.snap, ev)
+	if upd, ok := ev.(session.AssistantMessageUpdate); ok && upd.Message.Usage.Reported() {
+		editor.updateTokenDisplay(upd.Message.Usage)
+	}
 }
 
 func (editor *Editor) handleSubmit(text string) {
