@@ -106,20 +106,24 @@ func (w *Screen) Draw(ctx components.DrawContext) components.Surface {
 		textW = 50
 	}
 
-	fg := th.Foreground
-	if fg.Fg.Kind == 0 {
-		fg = xui.Style{Fg: xui.RGBColor(0xb8, 0xe0, 0xc8)}
+	// Brand near-white; only Ctrl+K carries the accent punch.
+	brand := xui.Style{Fg: xui.RGBColor(0xe8, 0xec, 0xf2), Bold: true}
+	if th.Foreground.Fg.Kind == xui.ColorRGB {
+		brand = xui.Style{Fg: th.Foreground.Fg, Bold: true}
 	}
 	helpKey := th.Success
 	if helpKey == (xui.Style{}) {
-		helpKey = xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xff)}
+		helpKey = th.Keybind
+	}
+	if helpKey == (xui.Style{}) {
+		helpKey = xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xa0), Bold: true}
 	}
 	muted := th.Muted
 
 	lines := []struct {
 		spans []components.Span
 	}{
-		{spans: []components.Span{{Text: w.brand(), Style: fg}}},
+		{spans: []components.Span{{Text: w.brand(), Style: brand}}},
 		{spans: []components.Span{{Text: "terminal coding agent", Style: muted}}},
 		{spans: nil}, // blank
 		{spans: []components.Span{
