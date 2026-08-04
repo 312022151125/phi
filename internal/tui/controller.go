@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/pulseaiclub/phi/internal/agent"
-	"github.com/pulseaiclub/phi/internal/config"
+	"github.com/pulseaiclub/phi/internal/project"
 	"github.com/pulseaiclub/phi/internal/session"
 )
 
@@ -27,10 +27,11 @@ type Controller struct {
 
 func NewController(bus *Bus) *Controller {
 	c := &Controller{bus: bus}
-	if cfg, err := config.Load(); err != nil {
+	proj := project.GetDefaultProject()
+	if err := proj.LoadConfig(); err != nil {
 		c.engineErr = err
 	} else {
-		c.engine = agent.NewEngine(cfg)
+		c.engine = agent.NewEngine(proj.Config().Model())
 	}
 	return c
 }
@@ -43,10 +44,11 @@ func (c *Controller) SetModel(name string) error {
 	if name == "" {
 		return fmt.Errorf("empty model name")
 	}
-	cfg, err := config.Load()
-	if err != nil {
+	proj := project.GetDefaultProject()
+	if err := proj.LoadConfig(); err != nil {
 		return err
 	}
+	cfg := proj.Config().Model()
 	cfg.Name = name
 	c.Cancel()
 	c.engine = agent.NewEngine(cfg)

@@ -4,19 +4,20 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pulseaiclub/xui"
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/app"
-	"github.com/pulseaiclub/phi/internal/config"
+	"github.com/pulseaiclub/phi/internal/project"
 	"github.com/pulseaiclub/phi/internal/tui"
+	"github.com/pulseaiclub/xui"
 )
 
 func main() {
-	config, err := config.Load()
-	if err != nil {
+	proj := project.GetDefaultProject()
+	if err := proj.LoadConfig(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return
 	}
+	cfg := proj.Config().Model()
 
 	vx, err := xui.New(xui.Options{Mouse: true, BracketedPaste: true})
 	if err != nil {
@@ -31,7 +32,7 @@ func main() {
 
 	cwd, _ := os.Getwd()
 	th := components.DefaultTheme()
-	m := tui.NewEditor(vx, th, cwd, config.Name, config.SkillPath, config.ContextWindow)
+	m := tui.NewEditor(vx, th, cwd, cfg.Name, cfg.SkillPath, cfg.ContextWindow)
 
 	app := app.NewApp(vx)
 	app.Anim = true
