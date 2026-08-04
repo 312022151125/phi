@@ -7,13 +7,13 @@ import (
 	"github.com/pulseaiclub/xui"
 )
 
-// Classic density charset (dim → bright).
+// Classic sphere charset.
 const sphereCharset = " .:-=+*#%@"
 
-// Default palette: soft graphite → near-white (logo-like on dark terminals).
+// Default sphere palette endpoints (dark green → bright green).
 var (
-	spherePrimary   = rgb{48, 52, 60}
-	sphereSecondary = rgb{236, 240, 248}
+	spherePrimary   = rgb{0, 55, 0}
+	sphereSecondary = rgb{0, 255, 136}
 )
 
 type rgb struct{ r, g, b uint8 }
@@ -32,13 +32,13 @@ func lerpRGB(a, b rgb, t float64) rgb {
 	}
 }
 
-// Sphere draws an animated φ mark: thick ring + vertical stroke (top→bottom).
+// Sphere is an ASCII sphere for the splash screen.
 // Drive animation by advancing Time (seconds) each frame with App.Anim.
 type Sphere struct {
 	Width  int // default 40
 	Height int // default 40
 	Time   float64
-	// Fast speeds the downward glow flow (1.8x when true, else 1x).
+	// Fast speeds noise scroll (1.8x when true, else 1x).
 	Fast bool
 
 	noise   glowNoise
@@ -89,17 +89,12 @@ func (o *Sphere) Draw(ctx components.DrawContext) components.Surface {
 	const kx = 0.5
 	cx := float64(w) / 2
 	cy := float64(h) / 2
-	// Fit ring + protruding stem tips inside the canvas.
 	rx := math.Max(1, float64(w)/2-1)
 	ry := math.Max(1, float64(h)/(2*kx)-1)
-	radius := math.Min(rx, ry) * 0.72 // leave room for stem tips
+	radius := math.Min(rx, ry)
+	r2 := radius * radius
+	invR2 := 1 / r2
 	invKx := 1 / kx
-
-	innerR := radius * 0.58 // thick annulus like the logo
-	stemHalf := radius * 0.085
-	stemLen := radius * 1.32 // extends past the ring
-	gapHalf := stemHalf * 2.1
-	centerGap := radius * 0.07
 
 	speed := 1.0
 	if o.Fast {
@@ -111,21 +106,23 @@ func (o *Sphere) Draw(ctx components.DrawContext) components.Surface {
 
 	for row := 0; row < h; row++ {
 		py := (float64(row) - cy) * invKx
-		for col := 0; col < w; col++ {
+		py2 := py * py
+		if py2 >= r2 {
+			continue
+		}
+		half := math.Sqrt(r2 - py2)
+		x0 := int(math.Max(0, math.Floor(cx-half)))
+		x1 := int(math.Min(float64(w-1), math.Ceil(cx+half)))
+		for col := x0; col <= x1; col++ {
 			px := float64(col) - cx
-			g := phiCoverage(px, py, radius, innerR, stemHalf, stemLen, gapHalf, centerGap)
+			d2 := px*px + py2
+			if d2 >= r2 {
+				continue
+			}
+			falloff := 1 - d2*invR2
+			g := o.noise.sample(float64(col), float64(row), o.Time, speed) * falloff
 			if g <= 0 {
 				continue
-			}
-			// Downward flow: a bright band travels top → bottom along the mark.
-			flow := 0.55 + 0.45*math.Sin(py*0.22-o.Time*speed*2.6)
-			noise := o.noise.sample(float64(col), float64(row), o.Time, speed*0.35)
-			g *= 0.62 + 0.28*flow + 0.10*noise
-			if g <= 0.02 {
-				continue
-			}
-			if g > 1 {
-				g = 1
 			}
 			gi := int(math.Min(float64(nChars-1), math.Floor(g*float64(nChars))))
 			pi := int(math.Min(float64(nPal-1), math.Floor(g*float64(nPal))))
@@ -137,86 +134,4 @@ func (o *Sphere) Draw(ctx components.DrawContext) components.Surface {
 		}
 	}
 	return s
-}
-
-// phiCoverage returns [0,1] coverage for the φ mark at aspect-corrected (px, py).
-// Ring is split where the stroke crosses; stroke tapers to points and has a
-// small center break. The stem is tilted slightly (/) like the brand mark.
-func phiCoverage(px, py, outerR, innerR, stemHalf, stemLen, gapHalf, centerGap float64) float64 {
-	d := math.Hypot(px, py)
-
-	// ~10° from vertical toward / (bottom-left → top-right).
-	const tilt = 0.18
-	ct, st := math.Cos(tilt), math.Sin(tilt)
-	lx := px*ct + py*st // distance from tilted stem axis
-	ly := -px*st + py*ct
-	ax := math.Abs(lx)
-	ay := math.Abs(ly)
-
-	var cover float64
-
-	// Annulus, with clearance gaps where the stem cuts through.
-	if d <= outerR && d >= innerR {
-		ringSoft := softBand(d, innerR, outerR, (outerR-innerR)*0.18)
-		if ax >= gapHalf {
-			cover = math.Max(cover, ringSoft)
-		} else {
-			edge := smoothstep(gapHalf*0.35, gapHalf, ax)
-			cover = math.Max(cover, ringSoft*edge)
-		}
-	}
-
-	// Tilted stroke: widest near the ring band, tapering to needle tips.
-	if ay <= stemLen {
-		t := ay / stemLen // 0 center → 1 tip
-		taper := 1 - t*t
-		ringCross := 0.0
-		midR := (innerR + outerR) * 0.5
-		band := (outerR - innerR) * 0.55
-		if d >= innerR*0.8 && d <= outerR*1.08 {
-			ringCross = 1 - math.Abs(d-midR)/(band+1e-6)
-			if ringCross < 0 {
-				ringCross = 0
-			}
-		}
-		halfW := stemHalf * (0.75 + 0.35*taper + 0.65*ringCross)
-		if ax <= halfW*1.7 {
-			stem := 1 - smoothstep(halfW*0.45, halfW*1.55, ax)
-			stem *= 0.55 + 0.45*taper
-			if ay < centerGap {
-				stem *= smoothstep(centerGap*0.2, centerGap, ay)
-			}
-			stem *= 1 - smoothstep(stemLen*0.78, stemLen, ay)
-			cover = math.Max(cover, stem)
-		}
-	}
-
-	return cover
-}
-
-func softBand(d, inner, outer, feather float64) float64 {
-	if feather < 1e-6 {
-		if d >= inner && d <= outer {
-			return 1
-		}
-		return 0
-	}
-	return smoothstep(inner-feather, inner+feather, d) * (1 - smoothstep(outer-feather, outer+feather, d))
-}
-
-func smoothstep(edge0, edge1, x float64) float64 {
-	if edge0 == edge1 {
-		if x < edge0 {
-			return 0
-		}
-		return 1
-	}
-	t := (x - edge0) / (edge1 - edge0)
-	if t < 0 {
-		t = 0
-	}
-	if t > 1 {
-		t = 1
-	}
-	return t * t * (3 - 2*t)
 }
