@@ -15,8 +15,8 @@ import (
 	"github.com/pulseaiclub/phi/internal/components/status"
 	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/components/transcript"
-	"github.com/pulseaiclub/phi/internal/filesearch"
 	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/pulseaiclub/phi/internal/util/filesearch"
 	"github.com/pulseaiclub/xui"
 )
 
