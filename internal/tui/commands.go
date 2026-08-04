@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/llm/skills"
 )
@@ -29,6 +30,33 @@ func PaletteCommands(onRun func(msg string)) []palette.PaletteCommand {
 			SubmenuTitle: "Select Model",
 			Submenu:      models,
 		},
+	}
+}
+
+// ThemeCommand returns a settings → theme submenu listing builtin palettes.
+func ThemeCommand(apply func(name string)) palette.PaletteCommand {
+	names := components.ThemeNames()
+	submenu := make([]palette.PaletteCommand, 0, len(names))
+	for _, name := range names {
+		n := name
+		submenu = append(submenu, palette.PaletteCommand{
+			ID:       "theme-" + strings.ToLower(n),
+			Verb:     n + " (builtin)",
+			Keywords: []string{n, "theme", "color"},
+			Run: func() {
+				if apply != nil {
+					apply(n)
+				}
+			},
+		})
+	}
+	return palette.PaletteCommand{
+		ID:           "settings-theme",
+		Noun:         "settings",
+		Verb:         "theme",
+		Keywords:     []string{"theme", "color", "appearance", "dark", "darcula", "pink"},
+		SubmenuTitle: "Select Theme",
+		Submenu:      submenu,
 	}
 }
 

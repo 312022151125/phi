@@ -23,8 +23,13 @@ type Theme struct {
 	Command     xui.Style // command accent
 }
 
+// ThemeNames lists builtin theme display names in picker order.
+func ThemeNames() []string {
+	return []string{"Dark", "Darcula", "Pink", "Terminal"}
+}
+
 // DefaultTheme returns the default dark RGB palette.
-func DefaultTheme() Theme { return DarkTheme() }
+func DefaultTheme() Theme { return DarculaTheme() }
 
 // DarkTheme is the fixed RGB dark palette ("Dark").
 func DarkTheme() Theme {
@@ -41,6 +46,42 @@ func DarkTheme() Theme {
 		SelectionFg: xui.Style{Fg: xui.RGBColor(0x00, 0x00, 0x00), Bold: true},
 		Keybind:     xui.Style{Fg: xui.RGBColor(0x61, 0xaf, 0xef), Bold: true},
 		Command:     xui.Style{Fg: xui.RGBColor(0xe5, 0xc0, 0x7b)},
+	}
+}
+
+// DarculaTheme follows IntelliJ IDEA Darcula (warm orange accents, cool text).
+func DarculaTheme() Theme {
+	return Theme{
+		Foreground:  xui.Style{Fg: xui.RGBColor(0xa9, 0xb7, 0xc6)},
+		Muted:       xui.Style{Fg: xui.RGBColor(0x80, 0x80, 0x80), Dim: true},
+		Success:     xui.Style{Fg: xui.RGBColor(0x6a, 0x87, 0x59), Bold: true},
+		Accent:      xui.Style{Fg: xui.RGBColor(0x58, 0x9d, 0xf6), Underline: true},
+		Warning:     xui.Style{Fg: xui.RGBColor(0xcc, 0x78, 0x32)},
+		Destructive: xui.Style{Fg: xui.RGBColor(0xff, 0x6b, 0x68)},
+		Border:      xui.Style{Fg: xui.RGBColor(0x55, 0x55, 0x55)},
+		ToolName:    xui.Style{Fg: xui.RGBColor(0x68, 0x97, 0xbb)},
+		SelectionBg: xui.Style{Bg: xui.RGBColor(0x21, 0x42, 0x83)},
+		SelectionFg: xui.Style{Fg: xui.RGBColor(0xff, 0xff, 0xff), Bold: true},
+		Keybind:     xui.Style{Fg: xui.RGBColor(0x58, 0x9d, 0xf6), Bold: true},
+		Command:     xui.Style{Fg: xui.RGBColor(0xcc, 0x78, 0x32)},
+	}
+}
+
+// PinkTheme is a soft rose/lavender dark palette (readable, not neon).
+func PinkTheme() Theme {
+	return Theme{
+		Foreground:  xui.Style{Fg: xui.DefaultColor()},
+		Muted:       xui.Style{Fg: xui.RGBColor(0xb8, 0xa0, 0xac), Dim: true},
+		Success:     xui.Style{Fg: xui.RGBColor(0x8f, 0xc9, 0xb0), Bold: true},
+		Accent:      xui.Style{Fg: xui.RGBColor(0xf0, 0xa0, 0xc8), Underline: true},
+		Warning:     xui.Style{Fg: xui.RGBColor(0xf0, 0xb4, 0x8c)},
+		Destructive: xui.Style{Fg: xui.RGBColor(0xe8, 0x6e, 0x8c)},
+		Border:      xui.Style{Fg: xui.RGBColor(0x6e, 0x52, 0x62)},
+		ToolName:    xui.Style{Fg: xui.RGBColor(0xc4, 0xa0, 0xe8)},
+		SelectionBg: xui.Style{Bg: xui.RGBColor(0xe8, 0x96, 0xb4)},
+		SelectionFg: xui.Style{Fg: xui.RGBColor(0x2a, 0x14, 0x1e), Bold: true},
+		Keybind:     xui.Style{Fg: xui.RGBColor(0xb0, 0xa8, 0xe8), Bold: true},
+		Command:     xui.Style{Fg: xui.RGBColor(0xe8, 0x82, 0xaa)},
 	}
 }
 
@@ -67,6 +108,10 @@ func ThemeByName(name string) (Theme, bool) {
 	switch strings.ToLower(strings.TrimSpace(name)) {
 	case "dark":
 		return DarkTheme(), true
+	case "darcula", "dura":
+		return DarculaTheme(), true
+	case "pink", "sakura":
+		return PinkTheme(), true
 	case "terminal":
 		return TerminalTheme(), true
 	default:

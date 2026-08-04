@@ -1,5 +1,5 @@
 BINARY   ?= phi
-MAIN_SRC  = ./cmd/main.go
+MAIN_SRC  = ./cmd
 
 GOBIN    ?= $(shell go env GOBIN)
 GOPATH   ?= $(shell go env GOPATH)

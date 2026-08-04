@@ -12,7 +12,7 @@ type Expandable struct {
 	Child      components.Widget
 	Expanded   bool
 	Expandable bool // if false, title only
-	Theme components.Theme
+	Theme      components.Theme
 	OnChanged  func(expanded bool)
 }
 
@@ -180,7 +180,7 @@ func (s *Spinner) Glyph() string {
 type ScrollView struct {
 	Child  components.Widget
 	Offset int // rows scrolled from top
-	Theme components.Theme
+	Theme  components.Theme
 }
 
 func (s *ScrollView) Handle(ctx *components.EventContext, ev xui.Event) {
@@ -264,7 +264,7 @@ type ListTile struct {
 	Subtitle string
 	Trailing components.Widget
 	Selected bool
-	Theme components.Theme
+	Theme    components.Theme
 	OnTap    func()
 }
 
@@ -340,7 +340,7 @@ func (l *ListTile) Draw(ctx components.DrawContext) components.Surface {
 type StatusLine struct {
 	Left    string
 	Right   string
-	Theme components.Theme
+	Theme   components.Theme
 	Spinner *Spinner // optional leading spinner on Left
 }
 
@@ -377,7 +377,7 @@ type ToolHeader struct {
 	Name    string
 	Detail  string
 	Status  ToolStatus
-	Theme components.Theme
+	Theme   components.Theme
 	Spinner *Spinner
 }
 
