@@ -13,6 +13,7 @@ const (
 	ItemThinking
 	ItemAssistant
 	ItemTool
+	ItemCompaction
 )
 
 // Item is one list row projected from Snapshot.
@@ -49,6 +50,12 @@ func Project(s Snapshot) []Item {
 			}
 		case RoleAssistant:
 			items = append(items, projectAssistant(m, s.Tools)...)
+		case RoleCompaction:
+			items = append(items, Item{
+				ID:   m.ID,
+				Kind: ItemCompaction,
+				Text: "Compacted",
+			})
 		}
 	}
 	return items

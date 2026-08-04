@@ -103,6 +103,9 @@ func (m *Mapper) patchItem(w components.Widget, it session.Item) bool {
 			t.Expanded = exp
 		}
 		return true
+	case session.ItemCompaction:
+		_, ok := w.(*block.CompactionBlock)
+		return ok
 	case session.ItemTool:
 		return m.patchTool(w, it)
 	}
@@ -173,6 +176,8 @@ func (m *Mapper) widgetFor(it session.Item) components.Widget {
 				}
 			},
 		}
+	case session.ItemCompaction:
+		return &block.CompactionBlock{Theme: m.theme}
 	case session.ItemTool:
 		return m.toolWidget(it, exp)
 	default:

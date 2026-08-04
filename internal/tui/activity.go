@@ -19,6 +19,7 @@ const (
 	ActivityTools
 	ActivityRetrying
 	ActivityCancelled
+	ActivityCompacting
 )
 
 // ActivityHandler owns footer/stream activity state.
@@ -50,6 +51,12 @@ func (h *ActivityHandler) SyncFromSnap(snap session.Snapshot) {
 	if h == nil {
 		return
 	}
+	if snap.Compacting {
+		if h.Current != ActivityCompacting {
+			h.Apply(ActivityCompacting)
+		}
+		return
+	}
 	if session.HasRunningTools(snap) {
 		if h.Current != ActivityTools {
 			h.Apply(ActivityTools)
@@ -58,13 +65,13 @@ func (h *ActivityHandler) SyncFromSnap(snap session.Snapshot) {
 	}
 	if session.IsStreaming(snap) {
 		if h.Current != ActivityStreaming && h.Current != ActivityWaiting &&
-			h.Current != ActivitySubmitting {
+			h.Current != ActivitySubmitting && h.Current != ActivityCompacting {
 			h.Apply(ActivityStreaming)
 		}
 		return
 	}
 	switch h.Current {
-	case ActivityStreaming, ActivityWaiting, ActivitySubmitting, ActivityTools:
+	case ActivityStreaming, ActivityWaiting, ActivitySubmitting, ActivityTools, ActivityCompacting:
 		h.Current = ActivityIdle
 	}
 }
@@ -99,6 +106,8 @@ func activityMessage(a Activity) string {
 		return "Generating…"
 	case ActivityTools:
 		return "Calling tools…"
+	case ActivityCompacting:
+		return "Auto-compacting…"
 	case ActivityRetrying:
 		return "Retrying after disconnect…"
 	case ActivityCancelled:
@@ -110,7 +119,7 @@ func activityMessage(a Activity) string {
 
 func (a Activity) showSpinner() bool {
 	switch a {
-	case ActivitySubmitting, ActivityWaiting, ActivityStreaming, ActivityTools, ActivityRetrying:
+	case ActivitySubmitting, ActivityWaiting, ActivityStreaming, ActivityTools, ActivityRetrying, ActivityCompacting:
 		return true
 	default:
 		return false

@@ -6,6 +6,7 @@ type Role int
 const (
 	RoleUser Role = iota
 	RoleAssistant
+	RoleCompaction // transcript marker after context compaction ("Compacted")
 )
 
 // State is the assistant message lifecycle.
@@ -192,8 +193,23 @@ type CancelStreaming struct{}
 
 func (CancelStreaming) isSessionEvent() {}
 
+// CompactionStarted signals the UI that context compaction is in progress.
+type CompactionStarted struct{}
+
+func (CompactionStarted) isSessionEvent() {}
+
+// CompactionComplete clears the compacting activity and, when Failed is false,
+// appends a "Compacted" transcript marker.
+type CompactionComplete struct {
+	ID     string
+	Failed bool
+}
+
+func (CompactionComplete) isSessionEvent() {}
+
 // Snapshot is the full session state the TUI projects from.
 type Snapshot struct {
-	Messages []Message
-	Tools    map[string]ToolRun
+	Messages   []Message
+	Tools      map[string]ToolRun
+	Compacting bool
 }

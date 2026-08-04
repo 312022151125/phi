@@ -107,3 +107,38 @@ func TestProjectOrder(t *testing.T) {
 		t.Fatalf("tool item: %+v", items[3])
 	}
 }
+
+func TestCompactionEvents(t *testing.T) {
+	var s Snapshot
+	s = Apply(s, UserAppend{Text: "hi"})
+	s = Apply(s, CompactionStarted{})
+	if !s.Compacting || !IsStreaming(s) {
+		t.Fatalf("compacting: %+v", s)
+	}
+	s = Apply(s, CompactionComplete{ID: "c1"})
+	if s.Compacting {
+		t.Fatal("should clear compacting")
+	}
+	if len(s.Messages) != 2 || s.Messages[1].Role != RoleCompaction {
+		t.Fatalf("marker: %+v", s.Messages)
+	}
+	items := Project(s)
+	if len(items) < 2 || items[len(items)-1].Kind != ItemCompaction {
+		t.Fatalf("project: %+v", items)
+	}
+
+	s = Apply(s, CompactionStarted{})
+	s = Apply(s, CompactionComplete{ID: "c2", Failed: true})
+	if s.Compacting {
+		t.Fatal("failed should clear")
+	}
+	nMarkers := 0
+	for _, m := range s.Messages {
+		if m.Role == RoleCompaction {
+			nMarkers++
+		}
+	}
+	if nMarkers != 1 {
+		t.Fatalf("markers=%d", nMarkers)
+	}
+}

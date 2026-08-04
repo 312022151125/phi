@@ -12,16 +12,19 @@ import (
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/llm/skills"
 	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/pulseaiclub/phi/internal/session/compaction"
 	"github.com/pulseaiclub/phi/internal/tools"
 )
 
 // Engine drives the agent loop: stream → tools → stream…
-// and yields session.Event for the TUI reducer.
+// and yields session.Event for the TUI reducer. Context compaction is owned
+// here so Session stays a thin message store.
 type Engine struct {
-	client    *llm.Client
-	executor  *Executor
-	maxRounds int
-	skillPath string
+	client        *llm.Client
+	executor      *Executor
+	maxRounds     int
+	skillPath     string
+	contextWindow int
 
 	session *Session
 }
@@ -31,11 +34,12 @@ func NewEngine(cfg llm.ModelConfig) *Engine {
 	toolList := tools.DefaultTools()
 	client := llm.NewClient(cfg, tools.Definitions(toolList), Prompt(cfg.SkillPath))
 	return &Engine{
-		client:    client,
-		executor:  NewExecutor(tools.NewRegistry(toolList)),
-		maxRounds: defaultMaxToolRounds,
-		skillPath: cfg.SkillPath,
-		session:   NewSession(client, cfg.ContextWindow),
+		client:        client,
+		executor:      NewExecutor(tools.NewRegistry(toolList)),
+		maxRounds:     defaultMaxToolRounds,
+		skillPath:     cfg.SkillPath,
+		contextWindow: cfg.ContextWindow,
+		session:       NewSession(),
 	}
 }
 
@@ -48,6 +52,9 @@ type LoopOpts struct {
 
 // Loop appends the user prompt and runs inference + tool rounds until the
 // model stops calling tools or the context is cancelled.
+//
+// Compaction follows pi-main: persist the turn first, then check usage after
+// the agent turn ends (final assistant with no tool_calls) — never mid-tool-loop.
 func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) iter.Seq2[session.Event, error] {
 	return func(yield func(session.Event, error) bool) {
 		content := prompt
@@ -58,7 +65,7 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 				content = instr + "\n\n" + content
 			}
 		}
-		if err := engine.session.Append(ctx, llm.Message{
+		if err := engine.session.Append(llm.Message{
 			Role:    llm.RoleUser,
 			Content: content,
 		}); err != nil {
@@ -82,24 +89,23 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 				return
 			}
 
-			if len(msg.ToolCalls) == 0 {
-				if err := engine.session.Append(ctx, msg); err != nil {
-					yield(nil, err)
-					return
-				}
+			if err := engine.session.Append(msg); err != nil {
+				yield(nil, err)
 				return
 			}
 
-			if err := engine.session.Append(ctx, msg); err != nil {
-				yield(nil, err)
+			if len(msg.ToolCalls) == 0 {
+				// Turn finished — compact using this assistant's usage (pi agent_end).
+				if err := engine.maybeCompact(ctx, yield, msg.Usage.TotalTokens); err != nil {
+					yield(nil, err)
+				}
 				return
 			}
 
 			toolMsgs := engine.executor.Run(ctx, msg.ToolCalls, func(td session.ToolData) bool {
 				return yield(td, nil)
 			})
-
-			if err := engine.session.Append(ctx, toolMsgs...); err != nil {
+			if err := engine.session.Append(toolMsgs...); err != nil {
 				yield(nil, err)
 				return
 			}
@@ -109,6 +115,48 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 			}
 		}
 	}
+}
+
+func (engine *Engine) maybeCompact(
+	ctx context.Context,
+	yield func(session.Event, error) bool,
+	usage int,
+) error {
+	settings := compaction.DefaultSettings()
+	if engine.client == nil || !compaction.ShouldCompact(usage, engine.contextWindow, settings) {
+		return nil
+	}
+	prep, err := compaction.PrepareCompact(engine.session.PathEntries(), settings)
+	if err != nil {
+		return err
+	}
+	if prep.FirstKeptEntryId == "" {
+		return nil
+	}
+
+	id := fmt.Sprintf("compaction-%d", time.Now().UnixNano())
+	if !yield(session.CompactionStarted{}, nil) {
+		return context.Canceled
+	}
+
+	result, err := compaction.Compact(ctx, *prep, engine.client)
+	if err != nil {
+		_ = yield(session.CompactionComplete{ID: id, Failed: true}, nil)
+		return err
+	}
+	if err := engine.session.AppendCompaction(session.Compaction{
+		Summary:          result.Summary,
+		FirstKeptEntryID: result.FirstKeptEntryID,
+		TokensBefore:     result.TokensBefore,
+		Details:          result.Details,
+	}); err != nil {
+		_ = yield(session.CompactionComplete{ID: id, Failed: true}, nil)
+		return err
+	}
+	if !yield(session.CompactionComplete{ID: id}, nil) {
+		return context.Canceled
+	}
+	return nil
 }
 
 func (engine *Engine) streamTurn(

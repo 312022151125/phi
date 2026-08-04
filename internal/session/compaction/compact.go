@@ -114,13 +114,13 @@ func PrepareCompact(
 }
 
 type CompactionResult struct {
-	summary          string
-	firstKeptEntryId string
-	tokensBefore     int
-	/** HookDefinition-specific data (e.g., ArtifactIndex, version markers for structured compaction) */
-	details any
-	/** HookDefinition-provided data to persist alongside compaction entry. */
-	preserveData map[string]any
+	Summary          string
+	FirstKeptEntryID string
+	TokensBefore     int
+	// HookDefinition-specific data (e.g., ArtifactIndex, version markers for structured compaction)
+	Details any
+	// HookDefinition-provided data to persist alongside compaction entry.
+	PreserveData map[string]any
 }
 
 func Compact(
@@ -200,10 +200,10 @@ func Compact(
 	}
 
 	return CompactionResult{
-		summary:          summary,
-		firstKeptEntryId: preparation.FirstKeptEntryId,
-		tokensBefore:     preparation.TokensBefore,
-		details:          CompactionDetails{ReadFiles: readFiles, ModifiedFiles: modifiedFiles},
+		Summary:          summary,
+		FirstKeptEntryID: preparation.FirstKeptEntryId,
+		TokensBefore:     preparation.TokensBefore,
+		Details:          CompactionDetails{ReadFiles: readFiles, ModifiedFiles: modifiedFiles},
 	}, nil
 }
 
@@ -228,10 +228,10 @@ func Run(
 		return err
 	}
 	_, err = manager.AppendCompaction(session.Compaction{
-		Summary:          result.summary,
-		FirstKeptEntryID: result.firstKeptEntryId,
-		TokensBefore:     result.tokensBefore,
-		Details:          result.details,
+		Summary:          result.Summary,
+		FirstKeptEntryID: result.FirstKeptEntryID,
+		TokensBefore:     result.TokensBefore,
+		Details:          result.Details,
 	})
 	return err
 }

@@ -1,12 +1,16 @@
 package session
 
-import "fmt"
+import (
+	"fmt"
+	"maps"
+)
 
 // Apply returns a new snapshot with ev applied (immutable reducer).
 func Apply(s Snapshot, ev Event) Snapshot {
 	out := Snapshot{
-		Messages: append([]Message(nil), s.Messages...),
-		Tools:    cloneTools(s.Tools),
+		Messages:   append([]Message(nil), s.Messages...),
+		Tools:      maps.Clone(s.Tools),
+		Compacting: s.Compacting,
 	}
 	switch e := ev.(type) {
 	case UserAppend:
@@ -81,6 +85,22 @@ func Apply(s Snapshot, ev Event) Snapshot {
 				out.Tools[id] = run
 			}
 		}
+		out.Compacting = false
+	case CompactionStarted:
+		out.Compacting = true
+	case CompactionComplete:
+		out.Compacting = false
+		if !e.Failed {
+			id := e.ID
+			if id == "" {
+				id = fmt.Sprintf("compaction-%d", len(out.Messages)+1)
+			}
+			out.Messages = append(out.Messages, Message{
+				ID:   id,
+				Role: RoleCompaction,
+				Text: "Compacted",
+			})
+		}
 	}
 	return out
 }
@@ -104,17 +124,6 @@ func assistantReplaceIndex(msgs []Message, update Message) (int, bool) {
 	return -1, false
 }
 
-func cloneTools(in map[string]ToolRun) map[string]ToolRun {
-	if in == nil {
-		return nil
-	}
-	out := make(map[string]ToolRun, len(in))
-	for k, v := range in {
-		out[k] = v
-	}
-	return out
-}
-
 func lastAssistantIndex(msgs []Message) int {
 	for i := len(msgs) - 1; i >= 0; i-- {
 		if msgs[i].Role == RoleAssistant {
@@ -124,8 +133,11 @@ func lastAssistantIndex(msgs []Message) int {
 	return -1
 }
 
-// IsStreaming reports whether inference or tools are still active.
+// IsStreaming reports whether inference, tools, or compaction are still active.
 func IsStreaming(s Snapshot) bool {
+	if s.Compacting {
+		return true
+	}
 	if i := lastAssistantIndex(s.Messages); i >= 0 && s.Messages[i].State == StateStreaming {
 		return true
 	}
