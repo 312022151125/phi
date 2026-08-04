@@ -21,13 +21,26 @@ func NewSession() *Session {
 // Append adds one or more messages to the session.
 func (s *Session) Append(msg ...llm.Message) {
 	for _, m := range msg {
-		s.manager.Append(m)
+		_, _ = s.manager.Append(m)
 	}
 }
 
 // BuildContext returns all messages for LLM inference.
+// Compaction entries are projected as user messages carrying the summary.
 func (s *Session) BuildContext() []llm.Message {
-	return s.manager.BuildContext()
+	entries := s.manager.BuildContext()
+	msgs := make([]llm.Message, 0, len(entries))
+	for _, entry := range entries {
+		switch entry.GetType() {
+		case session.EntryCompaction:
+			m := entry.(session.CompactionEntry)
+			msgs = append(msgs, llm.Message{Role: llm.RoleUser, Content: m.Compaction.Summary})
+		case session.EntryMessage:
+			m := entry.(session.SessionMessageEntry)
+			msgs = append(msgs, m.Message)
+		}
+	}
+	return msgs
 }
 
 // Len returns the number of stored messages.

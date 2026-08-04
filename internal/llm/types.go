@@ -31,6 +31,10 @@ type Message struct {
 	ReasoningContent string     `json:"reasoning_content,omitempty"`
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string     `json:"tool_call_id,omitempty"`
+
+	// Usage tracks token consumption for the turn. Excluded from the API
+	// request body; used by the session manager for compaction decisions.
+	Usage Usage `json:"-"`
 }
 
 // Usage summarizes token consumption.

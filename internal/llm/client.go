@@ -25,12 +25,12 @@ type apiTool struct {
 }
 
 type apiRequest struct {
-	Model         string     `json:"model"`
-	Messages      []Message  `json:"messages"`
-	Tools         []apiTool  `json:"tools,omitempty"`
-	Stream        bool       `json:"stream,omitempty"`
+	Model         string         `json:"model"`
+	Messages      []Message      `json:"messages"`
+	Tools         []apiTool      `json:"tools,omitempty"`
+	Stream        bool           `json:"stream,omitempty"`
 	StreamOptions *streamOptions `json:"stream_options,omitempty"`
-	ExtraBody     *ExtraBody `json:"extra_body,omitempty"`
+	ExtraBody     *ExtraBody     `json:"extra_body,omitempty"`
 }
 
 // ExtraBody holds provider-specific request fields (e.g. DeepSeek thinking).
@@ -52,6 +52,9 @@ type ModelConfig struct {
 	// SkillPath is the directory to scan for SKILL.md files.
 	// Defaults to ~/.phi/skills if empty.
 	SkillPath string
+	// ContextWindow is the model's context window in tokens.
+	// Zero disables session compaction (safe default).
+	ContextWindow int
 }
 
 // Client talks to an OpenAI-compatible /chat/completions endpoint.
@@ -82,6 +85,53 @@ func (c *Client) Stream(ctx context.Context, messages []Message) iter.Seq2[Strea
 			}
 		}
 	}
+}
+
+// Compact sends a single non-streaming chat request and returns the
+// assistant text. It satisfies llm.Compactor for session compaction.
+func (c *Client) Compact(ctx context.Context, prompt string) (string, error) {
+	body, err := json.Marshal(&apiRequest{
+		Model:    c.cfg.Name,
+		Messages: []Message{{Role: RoleUser, Content: prompt}},
+	})
+	if err != nil {
+		return "", err
+	}
+
+	url := c.cfg.BaseURL
+	if !strings.HasSuffix(url, chatCompletionsPath) {
+		url += chatCompletionsPath
+	}
+
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return "", err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+
+	httpResp, err := util.DoWithRetry(c.httpClient, httpReq)
+	if err != nil {
+		return "", err
+	}
+	defer httpResp.Body.Close()
+
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return "", err
+	}
+	if httpResp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("LLM API error: (%d) %s", httpResp.StatusCode, string(respBody))
+	}
+
+	var resp Response
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return "", err
+	}
+	if len(resp.Choices) == 0 {
+		return "", fmt.Errorf("LLM API error: empty choices")
+	}
+	return resp.Choices[0].Message.Content, nil
 }
 
 func (c *Client) buildRequest(messages []Message) *apiRequest {
@@ -197,8 +247,8 @@ func StreamChatCompletion(
 
 			if hasStreamDelta(delta, sc.Message) {
 				if !yield(StreamEvent{
-					Type:  StreamEventTypeDelta,
-					Delta: delta,
+					Type:    StreamEventTypeDelta,
+					Delta:   delta,
 					Partial: Response{Usage: out.Usage},
 				}, nil) {
 					return
