@@ -21,7 +21,7 @@ command results.
 
 Keep replies concise. When you are done, answer without further tool calls.`
 
-const defaultMaxToolRounds = 32
+const defaultMaxToolRounds = 64
 
 func GetCurrentDir() string {
 	path, err := os.Getwd()
