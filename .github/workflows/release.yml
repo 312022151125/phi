@@ -3,11 +3,11 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'          # 匹配 v1.0.0, v0.2.3 等
-      - 'v*-*'        # 匹配 v1.0.0-alpha, v2.0.0-rc1 等
+      - 'v*'          # matches v1.0.0, v0.2.3, etc.
+      - 'v*-*'        # matches v1.0.0-alpha, v2.0.0-rc1, etc.
 
 permissions:
-  contents: write      # 允许创建 Release
+  contents: write      # allow creating a Release
 
 jobs:
   goreleaser:
@@ -16,7 +16,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # 需要完整历史用于 changelog
+          fetch-depth: 0   # full history needed for changelog
 
       - name: Set up Go
         uses: actions/setup-go@v5

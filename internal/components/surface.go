@@ -159,8 +159,8 @@ func renderSurface(s Surface, win xui.Window, ox, oy int) *Point {
 	if s.Buffer != nil {
 		for y := 0; y < s.Size.Height; y++ {
 			// Step by cell width so wide glyphs are not followed by a paint of
-			// their continuation column (which would look like "中 文" gaps /
-			// fake block cursors after a background fill).
+			// their continuation column (which would create gaps between CJK glyphs /
+			// or fake block cursors after a background fill).
 			for x := 0; x < s.Size.Width; {
 				c := s.Buffer[y*s.Size.Width+x]
 				step := int(c.Width)
