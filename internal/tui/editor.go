@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"time"
 
@@ -8,11 +9,13 @@ import (
 	"github.com/pulseaiclub/phi/internal/components/app"
 	"github.com/pulseaiclub/phi/internal/components/chat"
 	"github.com/pulseaiclub/phi/internal/components/layout"
+	"github.com/pulseaiclub/phi/internal/components/mention"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/splash"
 	"github.com/pulseaiclub/phi/internal/components/status"
 	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/components/transcript"
+	"github.com/pulseaiclub/phi/internal/filesearch"
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/xui"
 )
@@ -26,10 +29,12 @@ type Editor struct {
 	App   *app.App
 	theme components.Theme
 	bus   *Bus
+	cwd   string
 
 	list      transcript.MessageList
 	Chat      chat.ChatInput
 	palette   palette.CommandPalette
+	mention   mention.Picker
 	toast     toast.Toast
 	spin      *status.Spinner
 	welcome   splash.Screen
@@ -47,6 +52,8 @@ type Editor struct {
 	mapper  *Mapper
 	ctrl    *Controller
 	listIDs []string // parallels list.Entries (item ids)
+
+	mentionGen int // bumped to invalidate in-flight @-file searches
 }
 
 func newChatInput(theme components.Theme, model string, cwd string) chat.ChatInput {
@@ -78,6 +85,7 @@ func NewEditor(vx *xui.XUI, theme components.Theme, cwd string, model string, sk
 	editor := &Editor{
 		vx:        vx,
 		theme:     theme,
+		cwd:       cwd,
 		Chat:      newChatInput(theme, model, cwd),
 		spin:      status.NewWaveSpinner(theme.ToolName),
 		startedAt: time.Now(),
@@ -87,6 +95,9 @@ func NewEditor(vx *xui.XUI, theme components.Theme, cwd string, model string, sk
 			Brand:  "Phi",
 		},
 		palette: palette.CommandPalette{
+			Theme: theme,
+		},
+		mention: mention.Picker{
 			Theme: theme,
 		},
 		toast: toast.Toast{Theme: theme},
@@ -114,6 +125,12 @@ func NewEditor(vx *xui.XUI, theme components.Theme, cwd string, model string, sk
 		if editor.vx != nil {
 			editor.vx.QueueRefresh()
 		}
+	}
+	editor.Chat.OnMentionChange = func(active bool, query string) {
+		editor.handleMentionChange(active, query)
+	}
+	editor.mention.OnAccept = func(item mention.Item) {
+		editor.acceptMention(item)
 	}
 	addSkill := func(name string) {
 		editor.Chat.AddPendingSkill(name)
@@ -163,6 +180,8 @@ func (editor *Editor) Update(m Msg) {
 		if editor.activity.Current == msg.If {
 			editor.activity.Apply(ActivityIdle)
 		}
+	case MentionResultsMsg:
+		editor.applyMentionResults(msg)
 	case RedrawMsg:
 		// no state change; drain already requested redraw
 	}
@@ -201,6 +220,10 @@ func (editor *Editor) handleSubmit(text string) {
 	if (text == "" && len(pending) == 0) || editor.isBusy() {
 		return
 	}
+
+	editor.mention.Hide()
+	editor.Chat.MentionOpen = false
+	editor.mentionGen++
 
 	editor.activity.Apply(ActivitySubmitting)
 	display := text
@@ -248,6 +271,13 @@ func (editor *Editor) Handle(ctx *components.EventContext, ev xui.Event) {
 			return
 		}
 		if e.Press && e.Code == xui.KeyEscape {
+			if editor.mention.Open {
+				editor.mention.Cancel()
+				editor.Chat.MentionOpen = false
+				editor.mentionGen++
+				ctx.ConsumeAndRedraw()
+				return
+			}
 			if editor.isBusy() {
 				editor.Publish(CancelStreamMsg{})
 				editor.drainBus()
@@ -266,6 +296,9 @@ func (editor *Editor) Handle(ctx *components.EventContext, ev xui.Event) {
 				editor.palette.Hide()
 				ctx.RequestFocus(&editor.Chat)
 			} else {
+				editor.mention.Hide()
+				editor.Chat.MentionOpen = false
+				editor.mentionGen++
 				editor.palette.Show()
 				ctx.RequestFocus(&editor.palette)
 			}
@@ -277,6 +310,10 @@ func (editor *Editor) Handle(ctx *components.EventContext, ev xui.Event) {
 			if !editor.palette.Open {
 				ctx.RequestFocus(&editor.Chat)
 			}
+			return
+		}
+		if editor.mention.Open && editor.mentionNavKey(e) {
+			editor.mention.Handle(ctx, e)
 			return
 		}
 		if e.Code == xui.KeyPageUp || e.Code == xui.KeyPageDown {
@@ -299,6 +336,84 @@ func (editor *Editor) Handle(ctx *components.EventContext, ev xui.Event) {
 		}
 		editor.Chat.Handle(ctx, e)
 	}
+}
+
+func (editor *Editor) mentionNavKey(e xui.KeyEvent) bool {
+	if !e.Press {
+		return false
+	}
+	switch e.Code {
+	case xui.KeyUp, xui.KeyDown, xui.KeyTab, xui.KeyEnter, xui.KeyEscape:
+		return true
+	case xui.KeyRune:
+		if e.Mods.Has(xui.ModCtrl) && (e.Rune == 'n' || e.Rune == 'N' || e.Rune == 'p' || e.Rune == 'P') {
+			return true
+		}
+	}
+	return false
+}
+
+func (editor *Editor) handleMentionChange(active bool, query string) {
+	if !active {
+		editor.mention.Hide()
+		editor.Chat.MentionOpen = false
+		editor.mentionGen++
+		return
+	}
+	editor.mention.Show()
+	editor.Chat.MentionOpen = true
+	if len(editor.mention.Items) == 0 {
+		editor.mention.Status = "Searching…"
+	}
+	editor.scheduleMentionSearch(query)
+}
+
+func (editor *Editor) scheduleMentionSearch(query string) {
+	editor.mentionGen++
+	gen := editor.mentionGen
+	cwd := editor.cwd
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+		defer cancel()
+		paths, err := filesearch.Search(ctx, cwd, query, 20)
+		msg := MentionResultsMsg{Gen: gen, Query: query, Paths: paths}
+		if err != nil {
+			msg.ErrText = err.Error()
+		}
+		editor.Publish(msg)
+	}()
+}
+
+func (editor *Editor) applyMentionResults(msg MentionResultsMsg) {
+	if msg.Gen != editor.mentionGen || !editor.mention.Open {
+		return
+	}
+	if msg.ErrText != "" {
+		editor.mention.SetResults(nil, msg.ErrText)
+		return
+	}
+	items := make([]mention.Item, 0, len(msg.Paths))
+	for _, p := range msg.Paths {
+		items = append(items, mention.Item{Path: p})
+	}
+	status := ""
+	if len(items) == 0 {
+		status = "No matching files"
+	}
+	editor.mention.SetResults(items, status)
+}
+
+func (editor *Editor) acceptMention(item mention.Item) {
+	_, start, end, ok := chat.ActiveMention(editor.Chat.Value, editor.Chat.Cursor)
+	if !ok {
+		start, end = editor.Chat.Cursor, editor.Chat.Cursor
+	}
+	editor.mentionGen++
+	editor.mention.Hide()
+	editor.Chat.MentionOpen = false
+	// Trailing space ends the mention token so the picker stays closed.
+	editor.Chat.ReplaceRange(start, end, "@"+item.Path+" ")
 }
 
 func (editor *Editor) Draw(ctx components.DrawContext) components.Surface {
@@ -363,6 +478,17 @@ func (editor *Editor) Draw(ctx components.DrawContext) components.Surface {
 		{Origin: components.Point{X: 0, Y: 0}, Surface: listSurf},
 		{Origin: components.Point{X: 0, Y: listH}, Surface: chatSurf, Z: 1},
 		{Origin: components.Point{X: 0, Y: maxSize.Height - footerH}, Surface: footer, Z: 2},
+	}
+	if editor.mention.Open {
+		editor.mention.AnchorBottomY = listH
+		editor.mention.AnchorX = 0
+		editor.mention.AnchorWidth = maxSize.Width
+		men := editor.mention.Draw(ctx)
+		root.Children = append(root.Children, components.SubSurface{
+			Origin:  components.Point{X: 0, Y: 0},
+			Surface: men,
+			Z:       15,
+		})
 	}
 	if editor.palette.Open {
 		pal := editor.palette.Draw(ctx)

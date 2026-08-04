@@ -38,3 +38,13 @@ func (RedrawMsg) isMsg() {}
 type ClearIfActivityMsg struct{ If Activity }
 
 func (ClearIfActivityMsg) isMsg() {}
+
+// MentionResultsMsg delivers async @-file search results to the UI goroutine.
+type MentionResultsMsg struct {
+	Gen     int
+	Query   string
+	Paths   []string
+	ErrText string
+}
+
+func (MentionResultsMsg) isMsg() {}

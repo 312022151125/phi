@@ -54,6 +54,14 @@ type ChatInput struct {
 	OnChange func(text string)
 	// OnPendingSkillsChange is called after PendingSkills mutates.
 	OnPendingSkillsChange func(skills []string)
+	// OnMentionChange is called after Value or Cursor changes that may
+	// activate/deactivate an @-file mention. active is false when none.
+	OnMentionChange func(active bool, query string)
+
+	// MentionOpen is set by the editor while the @-file picker is visible.
+	// When true, Up/Down/Tab/Enter are left unconsumed so the picker can
+	// handle navigation (focus stays on the composer for typing).
+	MentionOpen bool
 
 	// dumpNextDraw is set on paste/insert when PHI_DEBUG=1.
 	dumpNextDraw bool
@@ -167,6 +175,10 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 		c.clampCursor()
 		switch e.Code {
 		case xui.KeyEnter:
+			if c.MentionOpen {
+				// Let the @-file picker accept / consume Enter.
+				return
+			}
 			// Shift+Enter / Alt+Enter insert newline; bare Enter submits.
 			if e.Mods.Has(xui.ModShift) || e.Mods.Has(xui.ModAlt) || e.Mods.Has(xui.ModCtrl) {
 				c.insert("\n")
@@ -212,6 +224,7 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 				_, size := utf8.DecodeLastRuneInString(c.Value[:c.Cursor])
 				c.Cursor -= size
 			}
+			c.notifyMention()
 			ctx.ConsumeAndRedraw()
 			return
 		case xui.KeyRight:
@@ -219,23 +232,39 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 				_, size := utf8.DecodeRuneInString(c.Value[c.Cursor:])
 				c.Cursor += size
 			}
+			c.notifyMention()
 			ctx.ConsumeAndRedraw()
 			return
 		case xui.KeyHome:
 			c.Cursor = lineStart(c.Value, c.Cursor)
+			c.notifyMention()
 			ctx.ConsumeAndRedraw()
 			return
 		case xui.KeyEnd:
 			c.Cursor = lineEnd(c.Value, c.Cursor)
+			c.notifyMention()
 			ctx.ConsumeAndRedraw()
 			return
 		case xui.KeyUp:
+			if c.MentionOpen {
+				return
+			}
 			c.moveVert(-1)
+			c.notifyMention()
 			ctx.ConsumeAndRedraw()
 			return
 		case xui.KeyDown:
+			if c.MentionOpen {
+				return
+			}
 			c.moveVert(1)
+			c.notifyMention()
 			ctx.ConsumeAndRedraw()
+			return
+		case xui.KeyTab:
+			if c.MentionOpen {
+				return
+			}
 			return
 		case xui.KeyRune:
 			if e.Mods.Has(xui.ModCtrl) || e.Mods.Has(xui.ModAlt) || e.Mods.Has(xui.ModSuper) {
@@ -323,6 +352,32 @@ func (c *ChatInput) notifyChange() {
 	if c.OnChange != nil {
 		c.OnChange(c.Value)
 	}
+	c.notifyMention()
+}
+
+func (c *ChatInput) notifyMention() {
+	if c.OnMentionChange == nil {
+		return
+	}
+	q, _, _, ok := ActiveMention(c.Value, c.Cursor)
+	c.OnMentionChange(ok, q)
+}
+
+// ReplaceRange replaces value[start:end] with text and places the cursor after it.
+func (c *ChatInput) ReplaceRange(start, end int, text string) {
+	if start < 0 {
+		start = 0
+	}
+	if end > len(c.Value) {
+		end = len(c.Value)
+	}
+	if start > end {
+		start, end = end, start
+	}
+	text = sanitizeComposerText(text)
+	c.Value = c.Value[:start] + text + c.Value[end:]
+	c.Cursor = start + len(text)
+	c.notifyChange()
 }
 
 func (c *ChatInput) moveVert(delta int) {

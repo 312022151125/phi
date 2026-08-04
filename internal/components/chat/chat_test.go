@@ -65,6 +65,26 @@ func TestChatInputTyping(t *testing.T) {
 	}
 }
 
+func TestChatInputMentionOpenDefersNav(t *testing.T) {
+	c := &ChatInput{MinBodyRows: 3, Value: "@a\nb", Cursor: 2, MentionOpen: true}
+	ctx := &components.EventContext{}
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyDown, Press: true})
+	if ctx.Consume {
+		t.Fatal("Down should bubble when MentionOpen")
+	}
+	if c.Cursor != 2 {
+		t.Fatalf("cursor should stay put, got %d", c.Cursor)
+	}
+	submitted := false
+	c.OnSubmit = func(string) { submitted = true }
+	ctx = &components.EventContext{}
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyEnter, Press: true})
+	if ctx.Consume || submitted {
+		t.Fatal("Enter should bubble to picker when MentionOpen")
+	}
+}
+
+
 func TestChatInputNewlineModifiers(t *testing.T) {
 	for _, mods := range []xui.Modifiers{xui.ModShift, xui.ModAlt, xui.ModCtrl} {
 		c := &ChatInput{MinBodyRows: 3, MaxBodyRows: 8}
