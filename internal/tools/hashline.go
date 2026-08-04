@@ -20,7 +20,9 @@ import (
 
 var editDescription = `Edit a file using hash-verified LINE#HASH anchors from read or search.
 
-Always re-read the file immediately before editing. If you get a
+STRONG REQUIREMENT: you MUST read the target file immediately before calling
+this tool in the same turn — LINE#HASH anchors are only valid against the file's
+current content, so never edit a file you have not just read. If you get a
 "lines have changed" error, re-read the file and retry with updated anchors.
 
 Each element of edits is a range replace:

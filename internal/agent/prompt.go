@@ -19,6 +19,12 @@ command results.
 - your workspace: %s 
 - your current dir: %s
 
+## editing
+- Always refresh LINE#HASH anchors immediately before every edit call: read the
+target file in the same turn (read preferred; grep when locating lines). Never
+run parallel edits on the same file. On anchor failure, re-read and retry once
+with fresh anchors.
+
 Keep replies concise. When you are done, answer without further tool calls.`
 
 const defaultMaxToolRounds = 64
