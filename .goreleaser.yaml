@@ -1,5 +1,5 @@
-# GoReleaser 配置
-# 文档: https://goreleaser.com
+# GoReleaser configuration
+# Docs: https://goreleaser.com
 
 version: 2
 
@@ -59,7 +59,7 @@ release:
   draft: false
   prerelease: auto
 
-# 可选的 Homebrew tap 发布（需要额外配置）
+# Optional Homebrew tap release (requires additional config)
 # brews:
 #   - repository:
 #       owner: pulseaiclub

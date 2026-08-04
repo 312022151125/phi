@@ -39,7 +39,7 @@ func InTextSelection(x, y, ax, ay, ex, ey int) bool {
 
 // ExtractSurfaceText collects characters inside the selection rectangle (surface-local).
 // Wide glyphs (CJK) occupy multiple columns with space-padded continuation cells;
-// only the primary cell is emitted so clipboard text is not "中 文".
+// only the primary cell is emitted so clipboard text has no gaps between CJK glyphs.
 func ExtractSurfaceText(s Surface, ax, ay, ex, ey int) string {
 	w, h := s.Size.Width, s.Size.Height
 	if w < 1 || h < 1 {
