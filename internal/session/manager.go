@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/pulseaiclub/phi/internal/llm"
@@ -16,7 +17,10 @@ import (
 // Manager is the single source of truth for session messages.
 // Entries form a tree linked by parent IDs; context is built by walking
 // from the current leaf back to the session root, honoring compaction.
+//
+// It is safe for concurrent use: mutations and reads take the internal lock.
 type Manager struct {
+	mu              sync.Mutex
 	cwd             string
 	entries         []MessageEntry // session header and session entries
 	byIDs           map[string]MessageEntry
@@ -117,6 +121,9 @@ func NewManager() *Manager {
 // GetBranch returns the path of entries from fromID back to the session root,
 // newest first.
 func (sm *Manager) GetBranch(fromID string) []MessageEntry {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	var message []MessageEntry
 
 	current := sm.byIDs[fromID]
@@ -135,6 +142,9 @@ func (sm *Manager) GetBranch(fromID string) []MessageEntry {
 // root, oldest first, with compaction applied (compaction entry plus messages
 // kept after it).
 func (sm *Manager) BuildContext() []MessageEntry {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	if sm.leafID == nil {
 		return nil
 	}
@@ -143,6 +153,9 @@ func (sm *Manager) BuildContext() []MessageEntry {
 
 // Append adds a message as a new leaf and returns its entry ID.
 func (sm *Manager) Append(msg llm.Message) (string, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	entry := SessionMessageEntry{
 		SessionBaseEntry: SessionBaseEntry{
 			Type:      EntryMessage,
@@ -160,6 +173,9 @@ func (sm *Manager) Append(msg llm.Message) (string, error) {
 
 // AppendCompaction adds a compaction entry as a new leaf and returns its ID.
 func (sm *Manager) AppendCompaction(compaction Compaction) (string, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
 	entry := CompactionEntry{
 		SessionBaseEntry: SessionBaseEntry{
 			Type:      EntryCompaction,
@@ -249,6 +265,8 @@ func (sm *Manager) generateID() string {
 
 // Len returns the number of entries including the session header.
 func (sm *Manager) Len() int {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
 	return len(sm.entries)
 }
 
