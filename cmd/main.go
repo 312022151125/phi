@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -18,6 +19,10 @@ func main() {
 		return
 	}
 	cfg := proj.Config().Model()
+
+	if err := EnsureSearchTools(context.Background(), proj); err != nil {
+		fmt.Fprintln(os.Stderr, "warning: could not install search tools:", err)
+	}
 
 	vx, err := xui.New(xui.Options{Mouse: true, BracketedPaste: true})
 	if err != nil {
