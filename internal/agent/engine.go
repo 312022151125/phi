@@ -35,7 +35,7 @@ func NewEngine(cfg llm.ModelConfig) *Engine {
 		executor:  NewExecutor(tools.NewRegistry(toolList)),
 		maxRounds: defaultMaxToolRounds,
 		skillPath: cfg.SkillPath,
-		session:   NewSession(),
+		session:   NewSession(client, cfg.ContextWindow),
 	}
 }
 
@@ -58,10 +58,13 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 				content = instr + "\n\n" + content
 			}
 		}
-		engine.session.Append(llm.Message{
+		if err := engine.session.Append(ctx, llm.Message{
 			Role:    llm.RoleUser,
 			Content: content,
-		})
+		}); err != nil {
+			yield(nil, err)
+			return
+		}
 
 		for round := 0; ; round++ {
 			if round > engine.maxRounds {
@@ -80,17 +83,26 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 			}
 
 			if len(msg.ToolCalls) == 0 {
-				engine.session.Append(msg)
+				if err := engine.session.Append(ctx, msg); err != nil {
+					yield(nil, err)
+					return
+				}
 				return
 			}
 
-			engine.session.Append(msg)
+			if err := engine.session.Append(ctx, msg); err != nil {
+				yield(nil, err)
+				return
+			}
 
 			toolMsgs := engine.executor.Run(ctx, msg.ToolCalls, func(td session.ToolData) bool {
 				return yield(td, nil)
 			})
 
-			engine.session.Append(toolMsgs...)
+			if err := engine.session.Append(ctx, toolMsgs...); err != nil {
+				yield(nil, err)
+				return
+			}
 
 			if ctx.Err() != nil {
 				return
@@ -144,6 +156,7 @@ func (engine *Engine) streamTurn(
 				return llm.Message{}, false
 			}
 			final = event.Partial.Choices[0].Message
+			final.Usage = event.Partial.Usage
 			gotDone = true
 			// Prefer fully accumulated message for the complete event.
 			if final.ReasoningContent != "" {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/pulseaiclub/phi/internal/llm"
@@ -39,10 +40,11 @@ func Load() (llm.ModelConfig, error) {
 }
 
 type fileModel struct {
-	Name      string
-	APIKey    string
-	BaseURL   string
-	SkillPath string
+	Name          string
+	APIKey        string
+	BaseURL       string
+	SkillPath     string
+	ContextWindow int
 }
 
 func loadFile() llm.ModelConfig {
@@ -55,10 +57,11 @@ func loadFile() llm.ModelConfig {
 			continue
 		}
 		return llm.ModelConfig{
-			Name:      m.Name,
-			APIKey:    m.APIKey,
-			BaseURL:   m.BaseURL,
-			SkillPath: m.SkillPath,
+			Name:          m.Name,
+			APIKey:        m.APIKey,
+			BaseURL:       m.BaseURL,
+			SkillPath:     m.SkillPath,
+			ContextWindow: m.ContextWindow,
 		}
 	}
 	return llm.ModelConfig{}
@@ -110,6 +113,10 @@ func parsePrimaryModelYAML(path string) (fileModel, bool) {
 			m.APIKey = val
 		case "base_url":
 			m.BaseURL = val
+		case "context_window":
+			if n, err := strconv.Atoi(val); err == nil && n > 0 {
+				m.ContextWindow = n
+			}
 		}
 	}
 	return m, m.Name != "" || m.APIKey != ""
