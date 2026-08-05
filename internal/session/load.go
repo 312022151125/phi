@@ -24,6 +24,8 @@ type SessionMeta struct {
 }
 
 // ListSessions returns session files under dir, newest mtime first.
+// Callers should pass a per-cwd directory (e.g. project.SessionDir()), not the
+// global session base, so listings stay scoped to the current project.
 func ListSessions(dir string) ([]SessionMeta, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
