@@ -23,6 +23,17 @@ func (editor *Editor) drawFooter(ctx components.DrawContext, width int) componen
 		x += xui.StringWidth(msg, ctx.Method)
 	}
 
+	if editor.ctrl != nil {
+		if sid := shortSessionID(editor.ctrl.SessionID()); sid != "" {
+			label := sid
+			if msg != "" {
+				label = " · " + sid
+			}
+			footer.Print(x, 0, label, dim, ctx.Method)
+			x += xui.StringWidth(label, ctx.Method)
+		}
+	}
+
 	// Panda-style token breakdown on the right: ↑prompt ↓completion Σtotal
 	stats := editor.usageStats
 	if stats != "" {
