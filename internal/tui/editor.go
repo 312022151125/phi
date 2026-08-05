@@ -369,9 +369,9 @@ func (editor *Editor) showSessions() {
 	const maxN = 12
 	var b strings.Builder
 	if len(list) == 0 {
-		b.WriteString("No sessions in " + dir)
+		b.WriteString("No sessions for this directory")
 	} else {
-		fmt.Fprintf(&b, "Recent sessions (%d):\n", len(list))
+		fmt.Fprintf(&b, "Sessions in this directory (%d):\n", len(list))
 		n := len(list)
 		if n > maxN {
 			n = maxN

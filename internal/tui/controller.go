@@ -36,7 +36,7 @@ func NewController(bus *Bus) *Controller {
 	proj := project.GetDefaultProject()
 	cwd, _ := os.Getwd()
 	c.cwd = cwd
-	c.sessionDir = proj.Global().SessionBase()
+	c.sessionDir = proj.SessionDir()
 
 	if err := proj.LoadConfig(); err != nil {
 		c.engineErr = err

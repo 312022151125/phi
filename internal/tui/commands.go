@@ -22,12 +22,12 @@ func SlashCommands() []SlashCommand {
 	return []SlashCommand{
 		{
 			Name:        "sessions",
-			Description: "List recent persisted sessions",
+			Description: "List sessions for this directory",
 			Insert:      "/sessions",
 		},
 		{
 			Name:        "resume",
-			Description: "Resume a session by id — /resume <id>",
+			Description: "Resume a session in this directory — /resume <id>",
 			Insert:      "/resume ",
 		},
 	}
