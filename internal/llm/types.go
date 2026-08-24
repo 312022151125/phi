@@ -48,6 +48,14 @@ type Function struct {
 	Arguments string `json:"arguments"`
 }
 
+// Image is one base64-encoded image attached to a user message.
+// Mirrors the pi-ai ImageContent part: data is base64 bytes plus the MIME
+// type so each provider can build its own wire format (image_url / source).
+type Image struct {
+	Data     string `json:"data"`     // base64-encoded image bytes
+	MimeType string `json:"mimeType"` // e.g. "image/png", "image/jpeg"
+}
+
 // Message is one chat turn (OpenAI-compatible shape, normalized across
 // providers).
 type Message struct {
@@ -56,6 +64,9 @@ type Message struct {
 	ReasoningContent string     `json:"reasoning_content,omitempty"`
 	ToolCalls        []ToolCall `json:"tool_calls,omitempty"`
 	ToolCallID       string     `json:"tool_call_id,omitempty"`
+	// Images attaches base64 images to a user message. Providers that do not
+	// support images fall back to the text content only.
+	Images []Image `json:"images,omitempty"`
 
 	// Usage tracks token consumption for the turn. Excluded from the API
 	// request body; used by the session manager for compaction decisions.

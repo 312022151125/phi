@@ -26,9 +26,17 @@ type apiTool struct {
 	Function llm.ToolDefinition `json:"function"`
 }
 
+type apiMessage struct {
+	Role             llm.Role       `json:"role"`
+	Content          any            `json:"content"` // string, or []contentPart when images are attached
+	ReasoningContent string         `json:"reasoning_content,omitempty"`
+	ToolCalls        []llm.ToolCall `json:"tool_calls,omitempty"`
+	ToolCallID       string         `json:"tool_call_id,omitempty"`
+}
+
 type apiRequest struct {
 	Model         string         `json:"model"`
-	Messages      []llm.Message  `json:"messages"`
+	Messages      []apiMessage   `json:"messages"`
 	Tools         []apiTool      `json:"tools,omitempty"`
 	Stream        bool           `json:"stream,omitempty"`
 	StreamOptions *streamOptions `json:"stream_options,omitempty"`
@@ -57,15 +65,47 @@ type StreamChoice struct {
 	Message *llm.Message    `json:"message,omitempty"`
 }
 
+// toAPIMessage converts a normalized message. With attached images the
+// content becomes the OpenAI content-parts array (text + image_url data
+// URLs); otherwise it stays a plain string, keeping the wire shape stable.
+func toAPIMessage(m llm.Message) apiMessage {
+	out := apiMessage{
+		Role:             m.Role,
+		ReasoningContent: m.ReasoningContent,
+		ToolCalls:        m.ToolCalls,
+		ToolCallID:       m.ToolCallID,
+	}
+	if len(m.Images) == 0 {
+		out.Content = m.Content
+		return out
+	}
+	parts := make([]any, 0, len(m.Images)+1)
+	if m.Content != "" {
+		parts = append(parts, map[string]string{"type": "text", "text": m.Content})
+	}
+	for _, img := range m.Images {
+		parts = append(parts, map[string]any{
+			"type": "image_url",
+			"image_url": map[string]string{
+				"url": "data:" + img.MimeType + ";base64," + img.Data,
+			},
+		})
+	}
+	out.Content = parts
+	return out
+}
+
 // BuildRequest converts the normalized messages into an OpenAI-shaped request.
 // The system prompt is prepended as a system message, mirroring the previous
 // in-client behavior.
 func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, tools []llm.ToolDefinition) *apiRequest {
-	msgs := make([]llm.Message, 0, len(messages)+1)
+	msgs := make([]apiMessage, 0, len(messages)+1)
 	if strings.TrimSpace(system) != "" {
-		msgs = append(msgs, llm.Message{Role: llm.RoleSystem, Content: system})
+		msgs = append(msgs, apiMessage{Role: llm.RoleSystem, Content: system})
 	}
-	msgs = append(msgs, messages...)
+	for _, m := range messages {
+		msgs = append(msgs, toAPIMessage(m))
+	}
 
 	apiTools := make([]apiTool, len(tools))
 	for i, t := range tools {
@@ -96,7 +136,7 @@ func isThinkingModeModel(model string) bool {
 func Compact(ctx context.Context, httpClient *http.Client, cfg llm.ModelConfig, prompt string) (string, error) {
 	body, err := json.Marshal(&apiRequest{
 		Model:    cfg.Name,
-		Messages: []llm.Message{{Role: llm.RoleUser, Content: prompt}},
+		Messages: []apiMessage{{Role: llm.RoleUser, Content: prompt}},
 	})
 	if err != nil {
 		return "", err

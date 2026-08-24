@@ -18,6 +18,7 @@ Minimal Go terminal coding-agent harness. Layout: [doc/project-layout.md](doc/pr
 - **Stay lean.** Direct module deps are few on purpose. Don't add a dependency without a clear need.
 - **Format with `make fmt`** (gofumpt / goimports / golines, 120 cols, local prefix `github.com/pulseaiclub/phi`). Don't hand-fight import groups.
 - **`testing` / `testify` stay in `*_test.go`.** `depguard` will fail the lint otherwise.
+- **Tests use testify** (`assert` / `require`) for assertions — no raw `t.Fatalf` checks.
 - After dependency changes: `go mod tidy`. `go.mod` is not generated.
 
 ## Contributor Guidelines

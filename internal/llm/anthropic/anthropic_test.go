@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/pulseaiclub/phi/internal/llm"
 )
 
@@ -90,6 +93,54 @@ func TestBuildRequestMergesToolResults(t *testing.T) {
 	if strings.Count(string(body), `"role":"user"`) != 2 {
 		t.Fatalf("expected 2 user messages (prompt + tool results), got: %s", string(body))
 	}
+}
+
+func TestBuildRequestUserImages(t *testing.T) {
+	cfg := llm.ModelConfig{Name: "claude-sonnet-4-20250514", APIKey: "k", BaseURL: "https://api.anthropic.com"}
+	req := BuildRequest(cfg, "", []llm.Message{
+		{
+			Role:    llm.RoleUser,
+			Content: "what is this?",
+			Images: []llm.Image{
+				{Data: "QUJD", MimeType: "image/png"},
+				{Data: "REVG", MimeType: "image/jpeg"},
+			},
+		},
+	}, nil)
+
+	require.Len(t, req.Messages, 1)
+	blocks, ok := req.Messages[0].Content.([]anthropicContentBlock)
+	require.True(t, ok, "expected content blocks, got %T", req.Messages[0].Content)
+	require.Len(t, blocks, 3)
+
+	assert.Equal(t, "text", blocks[0].Type)
+	assert.Equal(t, "what is this?", blocks[0].Text)
+	for i, want := range []struct {
+		mediaType string
+		data      string
+	}{
+		{"image/png", "QUJD"},
+		{"image/jpeg", "REVG"},
+	} {
+		b := blocks[i+1]
+		assert.Equal(t, "image", b.Type)
+		require.NotNil(t, b.Source)
+		assert.Equal(t, "base64", b.Source.Type)
+		assert.Equal(t, want.mediaType, b.Source.MediaType)
+		assert.Equal(t, want.data, b.Source.Data)
+	}
+
+	// cache_control must land on the text block, never on an image block.
+	assert.NotNil(t, blocks[0].CacheControl, "cache_control must land on the text block")
+	for _, b := range blocks[1:] {
+		assert.Nil(t, b.CacheControl, "image block must not carry cache_control")
+	}
+
+	body, err := json.Marshal(req)
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"media_type"`)
+	assert.Contains(t, string(body), `"image/png"`)
+	assert.NotContains(t, string(body), `"images"`)
 }
 
 func TestBuildRequestToolsSchema(t *testing.T) {
