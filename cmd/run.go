@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/hooks"
 	"github.com/pulseaiclub/phi/internal/mcp"
 	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/pulseaiclub/phi/internal/tools"
 )
 
 // runOptions holds parsed `phi run` flags.
@@ -28,6 +30,7 @@ type runOptions struct {
 	session      string
 	continueLast bool
 	sessionDir   string
+	builtinTools []tools.Tool
 	help         bool
 }
 
@@ -95,6 +98,7 @@ func runCmd(args []string) int {
 		// does not fold Ask).
 		Ask:   nil,
 		Hooks: loadRunHooks(bs),
+		Tools: opts.builtinTools,
 	}
 	if pool, err := mcp.LoadPool(bs.Proj.MCPConfigFile()); err != nil {
 		fmt.Fprintln(os.Stderr, "warning: mcp:", err)
@@ -294,11 +298,75 @@ func parseRunArgs(args []string) (runOptions, error) {
 			o.sessionDir = v
 		case strings.HasPrefix(arg, "--session-dir="):
 			o.sessionDir = strings.TrimPrefix(arg, "--session-dir=")
+		case arg == "--tools":
+			v, err := next(arg)
+			if err != nil {
+				return o, err
+			}
+			o.builtinTools, err = selectBuiltinTools(v)
+			if err != nil {
+				return o, err
+			}
+		case strings.HasPrefix(arg, "--tools="):
+			var err error
+			o.builtinTools, err = selectBuiltinTools(strings.TrimPrefix(arg, "--tools="))
+			if err != nil {
+				return o, err
+			}
 		default:
 			return o, fmt.Errorf("unknown flag %q", arg)
 		}
 	}
 	return o, nil
+}
+
+func selectBuiltinTools(raw string) ([]tools.Tool, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, errors.New("--tools requires at least one built-in tool name")
+	}
+
+	requested := make(map[string]struct{})
+	for part := range strings.SplitSeq(raw, ",") {
+		name := strings.TrimSpace(part)
+		if name == "" {
+			return nil, errors.New("--tools contains an empty tool name")
+		}
+		requested[name] = struct{}{}
+	}
+
+	defaults := tools.DefaultTools()
+	available := make([]string, 0, len(defaults))
+	selected := make([]tools.Tool, 0, len(requested))
+	// Keep the default schema order stable regardless of flag order; the map
+	// also collapses duplicate names without exposing duplicate definitions.
+	for _, tool := range defaults {
+		name := tool.Definition.Name
+		available = append(available, name)
+		if _, ok := requested[name]; ok {
+			selected = append(selected, tool)
+			delete(requested, name)
+		}
+	}
+
+	if len(requested) > 0 {
+		unknown := make([]string, 0, len(requested))
+		for name := range requested {
+			unknown = append(unknown, strconv.Quote(name))
+		}
+		sort.Strings(unknown)
+		noun := "tool"
+		if len(unknown) > 1 {
+			noun = "tools"
+		}
+		return nil, fmt.Errorf(
+			"--tools contains unknown built-in %s %s (available: %s)",
+			noun,
+			strings.Join(unknown, ", "),
+			strings.Join(available, ", "),
+		)
+	}
+
+	return selected, nil
 }
 
 func printRunUsage(w *os.File) {
@@ -316,6 +384,7 @@ flags:
       --session ID      resume a persisted session by id or unique prefix
       --continue-last   resume the newest persisted session for this directory
       --session-dir DIR override the session storage directory
+      --tools LIST      enable only these built-in tools (comma-separated)
   -h, --help            show this help
 
 exit codes:
