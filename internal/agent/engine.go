@@ -161,7 +161,11 @@ func (engine *Engine) systemPrompt() string {
 	if engine.mcp != nil {
 		mcpServers = engine.mcp.ServerNames()
 	}
-	return prompt.Build(engine.skillPath, engine.jobs != nil, mcpServers)
+	maxConcurrent := 0
+	if engine.jobs != nil {
+		maxConcurrent = engine.jobs.MaxConcurrent()
+	}
+	return prompt.Build(engine.skillPath, engine.jobs != nil, maxConcurrent, mcpServers)
 }
 
 func (engine *Engine) bindExecutor(registry tools.Registry) {

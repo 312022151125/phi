@@ -6,8 +6,8 @@ import (
 )
 
 func TestBuildAgentsEnabledToggle(t *testing.T) {
-	with := Build("", true, nil)
-	without := Build("", false, nil)
+	with := Build("", true, 4, nil)
+	without := Build("", false, 0, nil)
 
 	if !strings.Contains(with, "agent_spawn") {
 		t.Fatal("expected agent_spawn guidance when agents enabled")
@@ -15,8 +15,14 @@ func TestBuildAgentsEnabledToggle(t *testing.T) {
 	if !strings.Contains(with, "Sub-agents:") {
 		t.Fatal("expected Sub-agents section when agents enabled")
 	}
+	if !strings.Contains(with, "At most 4 sub-agents run concurrently") {
+		t.Fatal("expected sub-agent concurrency cap when agents enabled")
+	}
 	if strings.Contains(without, "agent_spawn") {
 		t.Fatal("did not expect sub-agent tool names when agents disabled")
+	}
+	if strings.Contains(without, "sub-agents run concurrently") {
+		t.Fatal("did not expect sub-agent concurrency cap when agents disabled")
 	}
 	if !strings.Contains(without, "`find` / `grep` / `ls` yourself") {
 		t.Fatal("expected direct-search guidance when agents disabled")
@@ -24,7 +30,7 @@ func TestBuildAgentsEnabledToggle(t *testing.T) {
 }
 
 func TestBuildEditHashCopyIsUnambiguous(t *testing.T) {
-	got := Build("", false, nil)
+	got := Build("", false, 0, nil)
 	if strings.Contains(got, "copy `@file path#TAG` into") {
 		t.Fatal("prompt must not tell the model to paste the whole @file header into edit.hash")
 	}
@@ -46,15 +52,14 @@ func TestBuildEditHashCopyIsUnambiguous(t *testing.T) {
 }
 
 func TestBuildMCPCatalog(t *testing.T) {
-	none := Build("", false, nil)
+	none := Build("", false, 0, nil)
 	if strings.Contains(none, "# MCP") {
 		t.Fatal("expected no MCP section without servers")
 	}
 	if strings.Contains(none, "External docs/URLs") {
 		t.Fatal("Discovery must not mention MCP/URLs when no servers are configured")
 	}
-
-	got := Build("", false, []string{"browsermcp", "github"})
+	got := Build("", false, 0, []string{"browsermcp", "github"})
 	if !strings.Contains(got, "# MCP") {
 		t.Fatal("expected MCP section")
 	}

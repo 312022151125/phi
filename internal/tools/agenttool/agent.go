@@ -67,9 +67,11 @@ func agentSpawnTool(deps AgentDeps) tooldef.Tool {
 	return tooldef.Tool{
 		Definition: llm.ToolDefinition{
 			Name: "agent_spawn",
-			Description: agentLaunchGuidance + `
+			Description: fmt.Sprintf(agentLaunchGuidance+`
 
-Starts asynchronously and returns job_id immediately. Use agent_wait for the summary. Best for parallel jobs.`,
+Starts asynchronously and returns job_id immediately. Use agent_wait for the summary. Best for parallel jobs.
+
+Concurrency cap: at most %d sub-agents run concurrently; spawning more fails (jobs are not queued).`, deps.Manager.MaxConcurrent()),
 			Params: &llm.FunctionParameters{
 				Type: "object",
 				Properties: llm.Object{
