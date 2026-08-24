@@ -19,7 +19,7 @@ type toolsFlag struct {
 }
 
 // String keeps pli help from dumping the zero value as "{false []}".
-func (t toolsFlag) String() string { return "" }
+func (toolsFlag) String() string { return "" }
 
 var runCommand = cli.Command{
 	Name: "run",

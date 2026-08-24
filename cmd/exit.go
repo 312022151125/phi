@@ -15,8 +15,10 @@ type exitError struct {
 	code int
 }
 
-func (e *exitError) Error() string { return "" }
-func (e *exitError) silent() bool  { return true }
+func (*exitError) Error() string { return "" }
+
+//nolint:unused // pli checks it through interface{ silent() bool } (cli.go).
+func (*exitError) silent() bool { return true }
 
 func exitCode(code int) error {
 	if code == ExitOK {

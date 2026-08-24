@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -151,7 +152,7 @@ func mcpCall(args []string) error {
 		return err
 	}
 	if pool == nil {
-		return fmt.Errorf("MCP disabled (PHI_MCP=off)")
+		return errors.New("MCP disabled (PHI_MCP=off)")
 	}
 	defer func() { _ = pool.Close() }()
 
@@ -175,7 +176,7 @@ func mcpDoctor() error {
 		return err
 	}
 	if pool == nil {
-		return fmt.Errorf("no pool")
+		return errors.New("no pool")
 	}
 	defer func() { _ = pool.Close() }()
 
