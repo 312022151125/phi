@@ -2,8 +2,10 @@ package llm
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestMessageImageRoundTrip(t *testing.T) {
@@ -15,31 +17,17 @@ func TestMessageImageRoundTrip(t *testing.T) {
 		},
 	}
 	body, err := json.Marshal(orig)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	if !strings.Contains(string(body), `"images"`) || !strings.Contains(string(body), `"mimeType"`) {
-		t.Fatalf("expected images in persisted JSON: %s", body)
-	}
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"images"`)
+	assert.Contains(t, string(body), `"mimeType"`)
 
 	var got Message
-	if err := json.Unmarshal(body, &got); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if len(got.Images) != 1 || got.Images[0].Data != "QUJD" || got.Images[0].MimeType != "image/png" {
-		t.Fatalf("unexpected round-trip: %+v", got.Images)
-	}
-	if got.Content != orig.Content || got.Role != orig.Role {
-		t.Fatalf("text fields changed in round-trip: %+v", got)
-	}
+	require.NoError(t, json.Unmarshal(body, &got))
+	assert.Equal(t, orig, got)
 }
 
 func TestMessageWithoutImagesMarshalsPlain(t *testing.T) {
 	body, err := json.Marshal(Message{Role: RoleUser, Content: "hi"})
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	if strings.Contains(string(body), `"images"`) {
-		t.Fatalf("expected no images key: %s", body)
-	}
+	require.NoError(t, err)
+	assert.NotContains(t, string(body), `"images"`)
 }

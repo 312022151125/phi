@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
 	"github.com/pulseaiclub/phi/internal/llm"
 )
 
@@ -105,19 +108,13 @@ func TestBuildRequestUserImages(t *testing.T) {
 		},
 	}, nil)
 
-	if len(req.Messages) != 1 {
-		t.Fatalf("expected 1 user message, got %d", len(req.Messages))
-	}
+	require.Len(t, req.Messages, 1)
 	blocks, ok := req.Messages[0].Content.([]anthropicContentBlock)
-	if !ok {
-		t.Fatalf("expected content blocks, got %T", req.Messages[0].Content)
-	}
-	if len(blocks) != 3 {
-		t.Fatalf("expected 3 blocks (text + 2 images), got %d", len(blocks))
-	}
-	if blocks[0].Type != "text" || blocks[0].Text != "what is this?" {
-		t.Fatalf("unexpected text block: %+v", blocks[0])
-	}
+	require.True(t, ok, "expected content blocks, got %T", req.Messages[0].Content)
+	require.Len(t, blocks, 3)
+
+	assert.Equal(t, "text", blocks[0].Type)
+	assert.Equal(t, "what is this?", blocks[0].Text)
 	for i, want := range []struct {
 		mediaType string
 		data      string
@@ -126,34 +123,24 @@ func TestBuildRequestUserImages(t *testing.T) {
 		{"image/jpeg", "REVG"},
 	} {
 		b := blocks[i+1]
-		if b.Type != "image" || b.Source == nil {
-			t.Fatalf("block %d: expected image with source, got %+v", i, b)
-		}
-		if b.Source.Type != "base64" || b.Source.MediaType != want.mediaType || b.Source.Data != want.data {
-			t.Fatalf("block %d: unexpected source: %+v", i, b.Source)
-		}
+		assert.Equal(t, "image", b.Type)
+		require.NotNil(t, b.Source)
+		assert.Equal(t, "base64", b.Source.Type)
+		assert.Equal(t, want.mediaType, b.Source.MediaType)
+		assert.Equal(t, want.data, b.Source.Data)
 	}
 
 	// cache_control must land on the text block, never on an image block.
-	if blocks[0].CacheControl == nil {
-		t.Fatal("expected cache_control on the text block")
-	}
+	assert.NotNil(t, blocks[0].CacheControl, "cache_control must land on the text block")
 	for _, b := range blocks[1:] {
-		if b.CacheControl != nil {
-			t.Fatal("image block must not carry cache_control")
-		}
+		assert.Nil(t, b.CacheControl, "image block must not carry cache_control")
 	}
 
 	body, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	if !strings.Contains(string(body), `"media_type"`) || !strings.Contains(string(body), `"image/png"`) {
-		t.Fatalf("expected image source in wire body: %s", string(body))
-	}
-	if strings.Contains(string(body), `"images"`) {
-		t.Fatalf("images field must not leak into the wire body: %s", string(body))
-	}
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"media_type"`)
+	assert.Contains(t, string(body), `"image/png"`)
+	assert.NotContains(t, string(body), `"images"`)
 }
 
 func TestBuildRequestToolsSchema(t *testing.T) {

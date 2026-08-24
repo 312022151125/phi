@@ -2,8 +2,10 @@ package openai
 
 import (
 	"encoding/json"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/llm"
 )
@@ -20,39 +22,24 @@ func TestBuildRequestImages(t *testing.T) {
 		},
 	}, nil)
 
-	if len(req.Messages) != 2 {
-		t.Fatalf("expected system + user messages, got %d", len(req.Messages))
-	}
+	require.Len(t, req.Messages, 2) // system + user
 	parts, ok := req.Messages[1].Content.([]any)
-	if !ok {
-		t.Fatalf("expected content parts array with images, got %T", req.Messages[1].Content)
-	}
-	if len(parts) != 2 {
-		t.Fatalf("expected 2 parts (text + image), got %d", len(parts))
-	}
+	require.True(t, ok, "expected content parts array with images, got %T", req.Messages[1].Content)
+	require.Len(t, parts, 2)
+
 	text := parts[0].(map[string]string)
-	if text["type"] != "text" || text["text"] != "what is this?" {
-		t.Fatalf("unexpected text part: %+v", text)
-	}
+	assert.Equal(t, "text", text["type"])
+	assert.Equal(t, "what is this?", text["text"])
+
 	img := parts[1].(map[string]any)
-	if img["type"] != "image_url" {
-		t.Fatalf("expected image_url part, got %+v", img)
-	}
+	assert.Equal(t, "image_url", img["type"])
 	imageURL := img["image_url"].(map[string]string)
-	if want := "data:image/png;base64,QUJD"; imageURL["url"] != want {
-		t.Fatalf("expected url %q, got %q", want, imageURL["url"])
-	}
+	assert.Equal(t, "data:image/png;base64,QUJD", imageURL["url"])
 
 	body, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
-	if !strings.Contains(string(body), `"image_url"`) {
-		t.Fatalf("expected image_url in wire body: %s", string(body))
-	}
-	if strings.Contains(string(body), `"images"`) {
-		t.Fatalf("images field must not leak into the wire body: %s", string(body))
-	}
+	require.NoError(t, err)
+	assert.Contains(t, string(body), `"image_url"`)
+	assert.NotContains(t, string(body), `"images"`)
 }
 
 func TestBuildRequestNoImagesKeepsStringContent(t *testing.T) {
@@ -60,19 +47,14 @@ func TestBuildRequestNoImagesKeepsStringContent(t *testing.T) {
 	req := BuildRequest(cfg, "", []llm.Message{{Role: llm.RoleUser, Content: "hi"}}, nil)
 
 	body, err := json.Marshal(req)
-	if err != nil {
-		t.Fatalf("marshal: %v", err)
-	}
+	require.NoError(t, err)
 	// content must stay a JSON string, not an array, when there are no images.
 	var raw struct {
 		Messages []struct {
 			Content json.RawMessage `json:"content"`
 		} `json:"messages"`
 	}
-	if err := json.Unmarshal(body, &raw); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if len(raw.Messages) != 1 || string(raw.Messages[0].Content) != `"hi"` {
-		t.Fatalf("expected string content \"hi\", got %s", string(raw.Messages[0].Content))
-	}
+	require.NoError(t, json.Unmarshal(body, &raw))
+	require.Len(t, raw.Messages, 1)
+	assert.Equal(t, `"hi"`, string(raw.Messages[0].Content))
 }
