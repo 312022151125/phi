@@ -16,9 +16,12 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/agent"
+	"github.com/pulseaiclub/phi/internal/job"
 	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/pulseaiclub/phi/internal/mcp"
 	"github.com/pulseaiclub/phi/internal/permission"
 	"github.com/pulseaiclub/phi/internal/session"
+	"github.com/pulseaiclub/phi/internal/tools"
 )
 
 func TestParseRunArgs(t *testing.T) {
@@ -29,6 +32,7 @@ func TestParseRunArgs(t *testing.T) {
 		"--max-rounds", "10",
 		"--timeout", "10m",
 		"--session", "abc123",
+		"--tools", "grep, read,grep",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "do the thing", opts.prompt)
@@ -37,6 +41,7 @@ func TestParseRunArgs(t *testing.T) {
 	assert.Equal(t, 10, opts.maxRounds)
 	assert.Equal(t, 10*time.Minute, opts.timeout)
 	assert.Equal(t, "abc123", opts.session)
+	assert.Equal(t, []string{"read", "grep"}, toolNames(opts.builtinTools))
 	assert.False(t, opts.continueLast)
 }
 
@@ -47,6 +52,7 @@ func TestParseRunArgsEqualsForms(t *testing.T) {
 		"--timeout=1500ms",
 		"--session-dir=/tmp/sess",
 		"--continue-last",
+		"--tools=write,bash",
 	})
 	require.NoError(t, err)
 	assert.Equal(t, "hi", opts.prompt)
@@ -54,23 +60,81 @@ func TestParseRunArgsEqualsForms(t *testing.T) {
 	assert.Equal(t, 1500*time.Millisecond, opts.timeout)
 	assert.Equal(t, "/tmp/sess", opts.sessionDir)
 	assert.True(t, opts.continueLast)
+	assert.Equal(t, []string{"bash", "write"}, toolNames(opts.builtinTools))
 }
 
 func TestParseRunArgsErrors(t *testing.T) {
 	cases := [][]string{
-		{"--prompt"},            // missing value
-		{"--max-rounds", "abc"}, // non-integer
-		{"--max-rounds", "0"},   // non-positive
-		{"--timeout"},           // missing value
-		{"--timeout", "abc"},    // invalid duration
-		{"--timeout", "0"},      // non-positive
-		{"--timeout", "-1s"},    // non-positive
-		{"--bogus", "x"},        // unknown flag
+		{"--prompt"},             // missing value
+		{"--max-rounds", "abc"},  // non-integer
+		{"--max-rounds", "0"},    // non-positive
+		{"--timeout"},            // missing value
+		{"--timeout", "abc"},     // invalid duration
+		{"--timeout", "0"},       // non-positive
+		{"--timeout", "-1s"},     // non-positive
+		{"--tools"},              // missing value
+		{"--tools="},             // empty list
+		{"--tools", "read,,ls"},  // empty name
+		{"--tools", "read,nope"}, // unknown name
+		{"--bogus", "x"},         // unknown flag
 	}
 	for _, args := range cases {
 		_, err := parseRunArgs(args)
 		assert.Error(t, err, "args %v should error", args)
 	}
+}
+
+func TestParseRunArgsLeavesBuiltinToolsUnsetByDefault(t *testing.T) {
+	opts, err := parseRunArgs([]string{"-p", "hi"})
+	require.NoError(t, err)
+	assert.Nil(t, opts.builtinTools)
+}
+
+func toolNames(list []tools.Tool) []string {
+	names := make([]string, 0, len(list))
+	for _, tool := range list {
+		names = append(names, tool.Definition.Name)
+	}
+	return names
+}
+
+func TestSelectBuiltinToolsErrorListsAvailableNames(t *testing.T) {
+	_, err := selectBuiltinTools("read,nope,missing")
+	require.Error(t, err)
+	assert.ErrorContains(t, err, `unknown built-in tools "missing", "nope"`)
+	assert.ErrorContains(t, err, "available: bash, read, write, grep, ls, edit, find")
+}
+
+func TestSelectedBuiltinToolsStillAppendExternalTools(t *testing.T) {
+	selected, err := selectBuiltinTools("read")
+	require.NoError(t, err)
+	pool := mcp.NewPool(map[string]mcp.ServerConfig{
+		"echo": {Command: []string{"true"}},
+	})
+	t.Cleanup(func() { require.NoError(t, pool.Close()) })
+	jobs, err := job.New(job.Options{
+		Root: t.TempDir(),
+		Runner: job.RunnerFunc(func(_ context.Context, _ job.RunEnv) (string, error) {
+			return "ok", nil
+		}),
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, jobs.Close(t.Context())) })
+
+	engine, err := agent.NewEngine(agent.EngineOpts{
+		Model:       llm.ModelConfig{Name: "test", APIKey: "x", BaseURL: "http://127.0.0.1:9"},
+		SessionOpts: agent.SessionOpts{Cwd: t.TempDir()},
+		Tools:       selected,
+		MCP:         pool,
+		Jobs:        jobs,
+	})
+	require.NoError(t, err)
+	assert.True(t, engine.HasTool("read"))
+	assert.False(t, engine.HasTool("bash"))
+	for _, name := range []string{"mcp_list", "mcp_inspect", "mcp_call"} {
+		assert.True(t, engine.HasTool(name), "MCP tool %q should still be appended", name)
+	}
+	assert.True(t, engine.HasTool("agent_spawn"))
 }
 
 func TestRunLoopTimeoutCancelsLLMRequest(t *testing.T) {

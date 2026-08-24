@@ -276,6 +276,10 @@ phi run -p "fix the failing test in internal/tools"
 | `--session ID` | 按 id 或唯一前缀恢复已持久化的会话 |
 | `--continue-last` | 恢复当前目录最新的持久化会话 |
 | `--session-dir DIR` | 覆盖会话存储目录 |
+| `--tools LIST` | 仅启用逗号分隔的指定内置工具 |
+
+`--tools` 接受 `read,ls,grep` 之类的内置工具名称。已配置的 MCP 和 agent
+工具仍会照常追加；该参数只限制内置工具集。
 
 退出码：`0` 成功 · `1` 运行时/LLM 错误 · `2` 达到最大轮数 ·
 `3` 配置/用法错误。

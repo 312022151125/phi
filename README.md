@@ -272,6 +272,10 @@ Flags:
 | `--session ID`       | Resume a persisted session by id or unique prefix |
 | `--continue-last`    | Resume the newest persisted session for this directory |
 | `--session-dir DIR`  | Override the session storage directory         |
+| `--tools LIST`       | Enable only these comma-separated built-in tools |
+
+`--tools` accepts built-in names such as `read,ls,grep`. MCP and agent tools
+still append when configured; the flag only scopes the built-in toolset.
 
 Exit codes: `0` success · `1` runtime/LLM error · `2` max rounds reached ·
 `3` config/usage error.
