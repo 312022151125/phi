@@ -29,6 +29,7 @@ type systemData struct {
 	Cwd           string
 	Workspace     string
 	AgentsEnabled bool
+	MaxConcurrent int // sub-agent concurrency cap (0 when agents disabled)
 }
 
 type skillsData struct {
@@ -42,12 +43,13 @@ type mcpData struct {
 // Build assembles the system prompt.
 // agentsEnabled must match whether agent_* tools are registered.
 // mcpServers are configured server names only (no tool schemas).
-func Build(skillPath string, agentsEnabled bool, mcpServers []string) string {
+func Build(skillPath string, agentsEnabled bool, maxConcurrent int, mcpServers []string) string {
 	var buf strings.Builder
 	data := systemData{
 		Cwd:           currentDir(),
 		Workspace:     workspaceDir(),
 		AgentsEnabled: agentsEnabled,
+		MaxConcurrent: maxConcurrent,
 	}
 	if err := systemPrompt.Execute(&buf, data); err != nil {
 		panic(fmt.Sprintf("system prompt: %v", err))

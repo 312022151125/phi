@@ -17,6 +17,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- System prompt and `agent_spawn` guidance now state the sub-agent concurrency cap (default 4; spawn beyond it fails, no queue).
+
 ### Deprecated
 
 ### Removed
