@@ -10,6 +10,7 @@ import (
 	"iter"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/pulseaiclub/phi/internal/llm"
@@ -81,10 +82,27 @@ func BuildRequest(
 		m := msgs[i]
 		switch m.Role {
 		case llm.RoleUser:
-			req.Messages = append(req.Messages, anthropicMessage{
-				Role:    "user",
-				Content: m.Content,
-			})
+			msg := anthropicMessage{Role: "user"}
+			if len(m.Images) > 0 {
+				blocks := make([]anthropicContentBlock, 0, len(m.Images)+1)
+				if m.Content != "" {
+					blocks = append(blocks, anthropicContentBlock{Type: "text", Text: m.Content})
+				}
+				for _, img := range m.Images {
+					blocks = append(blocks, anthropicContentBlock{
+						Type: "image",
+						Source: &anthropicImageSource{
+							Type:      "base64",
+							MediaType: img.MimeType,
+							Data:      img.Data,
+						},
+					})
+				}
+				msg.Content = blocks
+			} else {
+				msg.Content = m.Content
+			}
+			req.Messages = append(req.Messages, msg)
 
 		case llm.RoleAssistant:
 			msg := anthropicMessage{Role: "assistant"}
@@ -127,12 +145,19 @@ func BuildRequest(
 	}
 
 	// Pin prompt caching to the tail of the last user message, mirroring
-	// panda / go-ai behavior.
+	// panda / go-ai behavior. Image blocks cannot carry cache_control, so
+	// the pin lands on the last non-image block (text or tool_result).
 	if len(req.Messages) > 0 {
 		last := &req.Messages[len(req.Messages)-1]
 		if last.Role == "user" {
 			if blocks, ok := last.Content.([]anthropicContentBlock); ok && len(blocks) > 0 {
-				blocks[len(blocks)-1].CacheControl = cc
+				for i, b := range slices.Backward(blocks) {
+					if b.Type == "image" {
+						continue
+					}
+					blocks[i].CacheControl = cc
+					break
+				}
 				last.Content = blocks
 			} else if text, ok := last.Content.(string); ok {
 				last.Content = []anthropicContentBlock{

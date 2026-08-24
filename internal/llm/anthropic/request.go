@@ -34,16 +34,24 @@ type sysBlock struct {
 	CacheControl *cacheControl `json:"cache_control,omitempty"`
 }
 
+// anthropicImageSource is the base64 source inside an image content block.
+type anthropicImageSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
+}
+
 // anthropicContentBlock represents a single content block inside an Anthropic message.
 type anthropicContentBlock struct {
-	Type         string          `json:"type"`
-	Text         string          `json:"text,omitempty"`
-	ID           string          `json:"id,omitempty"`
-	Name         string          `json:"name,omitempty"`
-	Input        json.RawMessage `json:"input,omitempty"`
-	ToolUseID    string          `json:"tool_use_id,omitempty"`
-	Content      string          `json:"content,omitempty"`
-	CacheControl *cacheControl   `json:"cache_control,omitempty"`
+	Type         string                `json:"type"`
+	Text         string                `json:"text,omitempty"`
+	ID           string                `json:"id,omitempty"`
+	Name         string                `json:"name,omitempty"`
+	Input        json.RawMessage       `json:"input,omitempty"`
+	ToolUseID    string                `json:"tool_use_id,omitempty"`
+	Content      string                `json:"content,omitempty"`
+	Source       *anthropicImageSource `json:"source,omitempty"`
+	CacheControl *cacheControl         `json:"cache_control,omitempty"`
 }
 
 func resolveCacheControl() *cacheControl {
