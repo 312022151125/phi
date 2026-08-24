@@ -4,68 +4,85 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
+
+	cli "github.com/pulseaiclub/pli"
 
 	"github.com/pulseaiclub/phi/internal/mcp"
 	"github.com/pulseaiclub/phi/internal/project"
 )
 
-func mcpCmd(args []string) int {
-	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
-		printMCPUsage(os.Stdout)
-		return ExitOK
+var (
+	mcpCommand = cli.Command{
+		Name: "mcp",
+		Desc: "manage MCP servers (list, add, remove, call, doctor)",
+		Long: `Set PHI_MCP=off to disable MCP meta-tools in the agent.
+See doc/mcp.md.`,
 	}
-	switch args[0] {
-	case "list":
-		return mcpList()
-	case "add":
-		return mcpAdd(args[1:])
-	case "remove", "rm":
-		return mcpRemove(args[1:])
-	case "call":
-		return mcpCall(args[1:])
-	case "doctor":
-		return mcpDoctor()
-	default:
-		fmt.Fprintf(os.Stderr, "phi mcp: unknown subcommand %q\n", args[0])
-		printMCPUsage(os.Stderr)
-		return ExitUsage
+
+	mcpListCommand = cli.Command{
+		Name: "list",
+		Desc: "list configured servers",
 	}
+
+	mcpAddCommand = cli.Command{
+		Name:    "add",
+		ArgsUse: "<name> -- <cmd> [args...]",
+		Desc:    "add a stdio server to ~/.phi/mcp.json",
+	}
+
+	mcpRemoveCommand = cli.Command{
+		Name:    "remove",
+		Aliases: []string{"rm"},
+		ArgsUse: "<name>",
+		Desc:    "remove a server from user config",
+	}
+
+	mcpCallCommand = cli.Command{
+		Name:    "call",
+		ArgsUse: "<server> <tool> [json]",
+		Desc:    "call a tool (optional JSON args object)",
+	}
+
+	mcpDoctorCommand = cli.Command{
+		Name: "doctor",
+		Desc: "check config + connectivity",
+	}
+)
+
+func init() {
+	mcpListCommand.Run = func(_ []string, _ cli.Flags) error { return mcpList() }
+	mcpAddCommand.Run = func(args []string, _ cli.Flags) error { return mcpAdd(args) }
+	mcpRemoveCommand.Run = func(args []string, _ cli.Flags) error { return mcpRemove(args) }
+	mcpCallCommand.Run = func(args []string, _ cli.Flags) error { return mcpCall(args) }
+	mcpDoctorCommand.Run = func(_ []string, _ cli.Flags) error { return mcpDoctor() }
+
+	mcpCommand.Add(
+		&mcpListCommand,
+		&mcpAddCommand,
+		&mcpRemoveCommand,
+		&mcpCallCommand,
+		&mcpDoctorCommand,
+	)
 }
 
-func printMCPUsage(w *os.File) {
-	fmt.Fprintf(w, `usage: phi mcp <command>
-
-  phi mcp list                         list configured servers
-  phi mcp add <name> -- <cmd> [args…]  add a stdio server to ~/.phi/mcp.json
-  phi mcp remove <name>                remove a server from user config
-  phi mcp call <server> <tool> [json]  call a tool (optional JSON args object)
-  phi mcp doctor                       check config + connectivity
-
-Set PHI_MCP=off to disable MCP meta-tools in the agent.
-See doc/mcp.md.
-`)
-}
-
-func mcpList() int {
+func mcpList() error {
 	servers, err := mcp.Load(project.GetDefaultProject().MCPConfigFile())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi mcp list:", err)
-		return ExitError
+		return err
 	}
 	if len(servers) == 0 {
 		fmt.Println("(no servers — try: phi mcp add fetch -- npx -y @modelcontextprotocol/server-fetch)")
-		return ExitOK
+		return nil
 	}
 	for _, name := range sortedKeys(servers) {
 		cfg := servers[name]
 		cmd, _ := cfg.CmdLine()
 		fmt.Printf("%s\t%s\n", name, strings.Join(cmd, " "))
 	}
-	return ExitOK
+	return nil
 }
 
 func sortedKeys(m map[string]mcp.ServerConfig) []string {
@@ -77,20 +94,18 @@ func sortedKeys(m map[string]mcp.ServerConfig) []string {
 	return keys
 }
 
-func mcpAdd(args []string) int {
+func mcpAdd(args []string) error {
 	if len(args) == 0 {
-		fmt.Fprintln(os.Stderr, "usage: phi mcp add <name> -- <command> [args…]")
-		return ExitUsage
+		return mcpAddCommand.Usagef("missing <name> -- <command> [args…]")
 	}
 	name := args[0]
 	rest := args[1:]
-	// allow optional "--"
+	// allow optional "--" (Parse already strips a lone "--")
 	if len(rest) > 0 && rest[0] == "--" {
 		rest = rest[1:]
 	}
 	if len(rest) == 0 {
-		fmt.Fprintln(os.Stderr, "phi mcp add: missing command after --")
-		return ExitUsage
+		return mcpAddCommand.Usagef("missing command after --")
 	}
 	cfg := mcp.ServerConfig{
 		Transport: "stdio",
@@ -98,53 +113,45 @@ func mcpAdd(args []string) int {
 		Args:      rest[1:],
 	}
 	if err := mcp.AddServer(name, cfg); err != nil {
-		fmt.Fprintln(os.Stderr, "phi mcp add:", err)
-		return ExitError
+		return err
 	}
 	fmt.Printf("added %s\n", name)
-	return ExitOK
+	return nil
 }
 
-func mcpRemove(args []string) int {
+func mcpRemove(args []string) error {
 	if len(args) != 1 {
-		fmt.Fprintln(os.Stderr, "usage: phi mcp remove <name>")
-		return ExitUsage
+		return mcpRemoveCommand.Usagef("expected <name>")
 	}
 	ok, err := mcp.RemoveServer(args[0])
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi mcp remove:", err)
-		return ExitError
+		return err
 	}
 	if !ok {
-		fmt.Fprintf(os.Stderr, "phi mcp remove: %q not in user config\n", args[0])
-		return ExitError
+		return fmt.Errorf("%q not in user config", args[0])
 	}
 	fmt.Printf("removed %s\n", args[0])
-	return ExitOK
+	return nil
 }
 
-func mcpCall(args []string) int {
+func mcpCall(args []string) error {
 	if len(args) < 2 {
-		fmt.Fprintln(os.Stderr, "usage: phi mcp call <server> <tool> [json-args]")
-		return ExitUsage
+		return mcpCallCommand.Usagef("expected <server> <tool> [json-args]")
 	}
 	server, tool := args[0], args[1]
 	argMap := map[string]any{}
 	if len(args) >= 3 {
 		raw := strings.Join(args[2:], " ")
 		if err := json.Unmarshal([]byte(raw), &argMap); err != nil {
-			fmt.Fprintln(os.Stderr, "phi mcp call: args must be a JSON object:", err)
-			return ExitUsage
+			return mcpCallCommand.Usagef("args must be a JSON object: %v", err)
 		}
 	}
 	pool, err := mcp.LoadPool(project.GetDefaultProject().MCPConfigFile())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi mcp call:", err)
-		return ExitError
+		return err
 	}
 	if pool == nil {
-		fmt.Fprintln(os.Stderr, "phi mcp call: MCP disabled (PHI_MCP=off)")
-		return ExitError
+		return fmt.Errorf("MCP disabled (PHI_MCP=off)")
 	}
 	defer func() { _ = pool.Close() }()
 
@@ -152,26 +159,23 @@ func mcpCall(args []string) int {
 	defer cancel()
 	out, err := pool.Call(ctx, server, tool, argMap)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi mcp call:", err)
-		return ExitError
+		return err
 	}
 	fmt.Println(out)
-	return ExitOK
+	return nil
 }
 
-func mcpDoctor() int {
+func mcpDoctor() error {
 	if mcp.Disabled() {
 		fmt.Println("PHI_MCP=off — MCP disabled")
-		return ExitOK
+		return nil
 	}
 	pool, err := mcp.LoadPool(project.GetDefaultProject().MCPConfigFile())
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "phi mcp doctor:", err)
-		return ExitError
+		return err
 	}
 	if pool == nil {
-		fmt.Println("no pool")
-		return ExitError
+		return fmt.Errorf("no pool")
 	}
 	defer func() { _ = pool.Close() }()
 
@@ -188,7 +192,7 @@ func mcpDoctor() int {
 		fmt.Printf("%s\t%s\t%s\n", status, r.Name, r.Detail)
 	}
 	if fail > 0 {
-		return ExitError
+		return exitCode(ExitError)
 	}
-	return ExitOK
+	return nil
 }

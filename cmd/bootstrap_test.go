@@ -133,7 +133,15 @@ func TestHeadlessGateDangerouslyAllowAll(t *testing.T) {
 }
 
 func TestLoadRunBootstrapYolo(t *testing.T) {
-	p, _ := testProject(t)
+	p, pathDir := testProject(t)
+	// Stub search tools on PATH so EnsureSearchTools does not hit the network.
+	for _, name := range []string{"fd", "rg"} {
+		binName := name
+		if runtime.GOOS == "windows" {
+			binName += ".exe"
+		}
+		require.NoError(t, os.WriteFile(filepath.Join(pathDir, binName), []byte("x"), 0o755))
+	}
 	cfgPath := p.Global().ConfigFile()
 	require.NoError(t, os.MkdirAll(filepath.Dir(cfgPath), 0o755))
 	require.NoError(t, os.WriteFile(cfgPath, []byte(`models:

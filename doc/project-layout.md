@@ -2,7 +2,7 @@
 
 | Path                     | Purpose                                        |
 | ------------------------ | ---------------------------------------------- |
-| `cmd/`                   | Entry points (`main.go`, `phi run`, `phi update`, `phi sessions`) |
+| `cmd/`                   | Entry points (`main.go` via pli: `phi run`, `phi update`, `phi sessions`, …) |
 | `internal/util/update/`  | Self-update check + GitHub Releases install    |
 | `internal/agent/`        | Agent engine, executor, jobs                     |
 | `internal/agent/prompt/` | System prompt templates + Skills/MCP catalogs    |

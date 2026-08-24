@@ -15,6 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	cli "github.com/pulseaiclub/pli"
+
 	"github.com/pulseaiclub/phi/internal/agent"
 	"github.com/pulseaiclub/phi/internal/job"
 	"github.com/pulseaiclub/phi/internal/llm"
@@ -24,8 +26,8 @@ import (
 	"github.com/pulseaiclub/phi/internal/tools"
 )
 
-func TestParseRunArgs(t *testing.T) {
-	opts, err := parseRunArgs([]string{
+func TestRunOptionsFromFlags(t *testing.T) {
+	f, _, err := runCommand.Parse([]string{
 		"-p", "do the thing",
 		"--jsonl",
 		"--yolo",
@@ -34,6 +36,8 @@ func TestParseRunArgs(t *testing.T) {
 		"--session", "abc123",
 		"--tools", "grep, read,grep",
 	})
+	require.NoError(t, err)
+	opts, err := runOptionsFromFlags(f)
 	require.NoError(t, err)
 	assert.Equal(t, "do the thing", opts.prompt)
 	assert.True(t, opts.jsonl)
@@ -45,8 +49,8 @@ func TestParseRunArgs(t *testing.T) {
 	assert.False(t, opts.continueLast)
 }
 
-func TestParseRunArgsEqualsForms(t *testing.T) {
-	opts, err := parseRunArgs([]string{
+func TestRunOptionsFromFlagsEqualsForms(t *testing.T) {
+	f, _, err := runCommand.Parse([]string{
 		"--prompt=hi",
 		"--max-rounds=5",
 		"--timeout=1500ms",
@@ -54,6 +58,8 @@ func TestParseRunArgsEqualsForms(t *testing.T) {
 		"--continue-last",
 		"--tools=write,bash",
 	})
+	require.NoError(t, err)
+	opts, err := runOptionsFromFlags(f)
 	require.NoError(t, err)
 	assert.Equal(t, "hi", opts.prompt)
 	assert.Equal(t, 5, opts.maxRounds)
@@ -63,7 +69,7 @@ func TestParseRunArgsEqualsForms(t *testing.T) {
 	assert.Equal(t, []string{"bash", "write"}, toolNames(opts.builtinTools))
 }
 
-func TestParseRunArgsErrors(t *testing.T) {
+func TestRunCommandParseErrors(t *testing.T) {
 	cases := [][]string{
 		{"--prompt"},             // missing value
 		{"--max-rounds", "abc"},  // non-integer
@@ -79,13 +85,33 @@ func TestParseRunArgsErrors(t *testing.T) {
 		{"--bogus", "x"},         // unknown flag
 	}
 	for _, args := range cases {
-		_, err := parseRunArgs(args)
+		_, _, err := runCommand.Parse(args)
 		assert.Error(t, err, "args %v should error", args)
 	}
 }
 
-func TestParseRunArgsLeavesBuiltinToolsUnsetByDefault(t *testing.T) {
-	opts, err := parseRunArgs([]string{"-p", "hi"})
+func TestRunOptionsRequiresPrompt(t *testing.T) {
+	f, _, err := runCommand.Parse([]string{"--jsonl"})
+	require.NoError(t, err)
+	_, err = runOptionsFromFlags(f)
+	var ue *cli.UsageError
+	require.ErrorAs(t, err, &ue)
+	assert.Contains(t, err.Error(), "prompt is required")
+}
+
+func TestRunOptionsMutualExclusion(t *testing.T) {
+	f, _, err := runCommand.Parse([]string{"-p", "hi", "--continue-last", "--session", "x"})
+	require.NoError(t, err)
+	_, err = runOptionsFromFlags(f)
+	var ue *cli.UsageError
+	require.ErrorAs(t, err, &ue)
+	assert.Contains(t, err.Error(), "mutually exclusive")
+}
+
+func TestRunOptionsLeavesBuiltinToolsUnsetByDefault(t *testing.T) {
+	f, _, err := runCommand.Parse([]string{"-p", "hi"})
+	require.NoError(t, err)
+	opts, err := runOptionsFromFlags(f)
 	require.NoError(t, err)
 	assert.Nil(t, opts.builtinTools)
 }
@@ -240,4 +266,28 @@ func TestJSONLEncoderNoSecretLeak(t *testing.T) {
 		ToolUseID: "c1", Name: "read", Status: session.ToolDone, Output: "file contents",
 	}})
 	assert.NotContains(t, buf.String(), "sk-")
+}
+
+func TestRootDispatchHelpAndUnknown(t *testing.T) {
+	err := root().Dispatch([]string{"--help"})
+	var he *cli.HelpError
+	require.ErrorAs(t, err, &he)
+	assert.Contains(t, he.Help, "usage: phi")
+	assert.Contains(t, he.Help, "run")
+	assert.Contains(t, he.Help, "sessions")
+
+	err = root().Dispatch([]string{"bogus"})
+	var ue *cli.UsageError
+	require.ErrorAs(t, err, &ue)
+	assert.Contains(t, err.Error(), `unknown command "bogus"`)
+}
+
+func TestRunCommandHelp(t *testing.T) {
+	err := root().Dispatch([]string{"run", "--help"})
+	var he *cli.HelpError
+	require.ErrorAs(t, err, &he)
+	assert.Contains(t, he.Help, "usage: phi run")
+	assert.Contains(t, he.Help, "--prompt")
+	assert.Contains(t, he.Help, "--yolo")
+	assert.Contains(t, he.Help, "--tools")
 }

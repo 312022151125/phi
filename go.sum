@@ -8,6 +8,8 @@ github.com/dlclark/regexp2/v2 v2.2.1 h1:mf4KkFUj0gJuarK8P+LgiS+Lit7m9N1yAwEfPbee
 github.com/dlclark/regexp2/v2 v2.2.1/go.mod h1:avUrQvPaLz2DrFNHJF0taWAFFX2C1GMSSoeiqFjcBmU=
 github.com/hexops/gotextdiff v1.0.3 h1:gitA9+qJrrTCsiCl7+kh75nPqQt1cx4ZkudSTLoUqJM=
 github.com/hexops/gotextdiff v1.0.3/go.mod h1:pSWU5MAI3yDq+fZBTazCSJysOMbxWL1BSow5/V2vxeg=
+github.com/pulseaiclub/pli v0.1.0 h1:a9EYNXKwrz2UeULIYCJ/ctvb0GpqzS20IvqqHshBj9g=
+github.com/pulseaiclub/pli v0.1.0/go.mod h1:F8cwlTfsPJpohVahihWo5hog3J2pExjMWvh+2AOMSKw=
 github.com/pulseaiclub/xui v0.1.3 h1:42MxhZWuQl01Sl2d2a/iK4P1M9NdB0Xy9/eNQ7wBntk=
 github.com/pulseaiclub/xui v0.1.3/go.mod h1:/5J54Q/LjLKKEWE6C7tx9dMH4vEd0pPZ+I02FL4nlOo=
 github.com/stretchr/testify v1.12.1 h1:EuwCh5fleGS7H32xRwO3wRGT7DxrDhLAT6FF8MpWDWE=
