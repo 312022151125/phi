@@ -54,6 +54,7 @@ type ComposerPane struct {
 	requestFocus          func(components.Widget)
 	ctrlClose             func()
 	toastFn               func(msg string, kind toast.ToastKind, d time.Duration)
+	imageEnabled          func() bool
 }
 
 // NewComposerPane builds composer widgets; call Wire before use.
@@ -84,6 +85,7 @@ func (c *ComposerPane) Wire(
 	publish func(controller.Msg),
 	drainBus func(),
 	onRedraw func(),
+	imageEnabled func() bool,
 	overlayBlocksComposer func() bool,
 	handlePermissionKey WireKeyHandler,
 	handleContinueKey WireKeyHandler,
@@ -102,6 +104,7 @@ func (c *ComposerPane) Wire(
 	c.publish = publish
 	c.drainBus = drainBus
 	c.onRedraw = onRedraw
+	c.imageEnabled = imageEnabled
 	c.overlayBlocksComposer = overlayBlocksComposer
 	c.handlePermissionKey = handlePermissionKey
 	c.handleContinueKey = handleContinueKey
@@ -624,6 +627,12 @@ func (c *ComposerPane) acceptMention(item mention.Item) {
 	// @mention path: try to load it as an image file first.
 	abs := resolveMentionPath(c.cwd, item.Path)
 	if res, err := imgutil.Load(abs); err == nil {
+		if !c.imagesSupported() {
+			c.warnImagesDisabled()
+			// Keep a text path reference when the model cannot take images.
+			c.Chat.ReplaceRange(start, end, "@"+item.Path+" ")
+			return
+		}
 		// Image loaded successfully — add to the pending queue for submission.
 		c.Chat.AddPendingImage(imgutil.AttachmentFromResult(imgutil.AttachmentLabel(abs), res))
 		c.Chat.ReplaceRange(start, end, "")
@@ -636,7 +645,29 @@ func (c *ComposerPane) acceptMention(item mention.Item) {
 	c.Chat.ReplaceRange(start, end, "@"+item.Path+" ")
 }
 
+// imagesSupported is true when the active model opts into image attachments,
+// or when no model callback is wired (tests / partial setup).
+func (c *ComposerPane) imagesSupported() bool {
+	return c == nil || c.imageEnabled == nil || c.imageEnabled()
+}
+
+func (c *ComposerPane) warnImagesDisabled() {
+	if c == nil || c.toastFn == nil {
+		return
+	}
+	c.toastFn(
+		"Current model does not support images (set image_enabled: true in config)",
+		toast.ToastWarning,
+		3*time.Second,
+	)
+}
+
 func (c *ComposerPane) tryAttachClipboardImage(ctx *components.EventContext) bool {
+	if !c.imagesSupported() {
+		c.warnImagesDisabled()
+		ctx.ConsumeAndRedraw()
+		return true
+	}
 	res, err := clipboard.ReadImageResult()
 	if errors.Is(err, clipboard.ErrUnavailable) {
 		return false

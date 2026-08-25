@@ -179,8 +179,9 @@ type modelEntry struct {
 	APIKey        string `yaml:"api_key"`
 	BaseURL       string `yaml:"base_url"`
 	ContextWindow *int   `yaml:"context_window"`
-	ImageEnabled  bool   `yaml:"image_enabled"`
-	Default       bool   `yaml:"default"`
+	// ImageEnabled is opt-in; YAML absence decodes as false.
+	ImageEnabled bool `yaml:"image_enabled"`
+	Default      bool `yaml:"default"`
 }
 
 type permConfig struct {

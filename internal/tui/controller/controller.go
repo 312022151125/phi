@@ -386,6 +386,11 @@ func (c *Controller) SetModel(name string) error {
 	return nil
 }
 
+// ImageEnabled reports whether the active model accepts attached images.
+func (c *Controller) ImageEnabled() bool {
+	return c != nil && c.modelCfg.ImageEnabled
+}
+
 // SessionID returns the short-form-friendly session id.
 func (c *Controller) SessionID() string {
 	if c.engine == nil {
