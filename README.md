@@ -216,6 +216,9 @@ The editor supports:
 | `Ctrl+C`       | Quit phi                        |
 | `Esc`          | Cancel the running agent / close pickers |
 | `Ctrl+K`       | Toggle the command palette      |
+| `Ctrl+A`       | Jump to the start of the line   |
+| `Ctrl+E`       | Jump to the end of the line     |
+| `Ctrl+U`       | Clear the composer input, images, and skills |
 | `Ctrl+Shift+C` | Copy the selected transcript text |
 
 Themes: `Dark`, `Darcula`, `Pink`, and `Terminal` (default), switchable from

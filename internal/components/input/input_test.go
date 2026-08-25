@@ -3,9 +3,35 @@ package input
 import (
 	"testing"
 
+	"github.com/pulseaiclub/xui"
+
+	"github.com/stretchr/testify/require"
+
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 )
+
+func TestTextFieldCtrlUClears(t *testing.T) {
+	f := &TextField{Value: "ab", Cursor: 1}
+	ctx := &components.EventContext{}
+	changed := 0
+	f.OnChange = func(string) { changed++ }
+	f.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'u', Mods: xui.ModCtrl, Press: true})
+	require.Empty(t, f.Value)
+	require.Zero(t, f.Cursor)
+	require.Equal(t, 1, changed)
+	require.True(t, ctx.Consume)
+}
+
+func TestTextFieldCtrlUEmptyDoesNotNotify(t *testing.T) {
+	f := &TextField{}
+	ctx := &components.EventContext{}
+	changed := 0
+	f.OnChange = func(string) { changed++ }
+	f.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'u', Mods: xui.ModCtrl, Press: true})
+	require.Zero(t, changed)
+	require.True(t, ctx.Consume)
+}
 
 func TestDiffBlock(t *testing.T) {
 	d := &DiffBlock{Diff: "+added\n-removed\n context", Theme: components.DefaultTheme()}
