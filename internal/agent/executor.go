@@ -160,7 +160,6 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 		}
 		errText = err.Error()
 		content = errText
-		output = errText
 	} else {
 		content = result.Content
 		output = result.Output
@@ -250,7 +249,7 @@ func (e *Executor) rejectResult(
 	detail, reason string,
 	emit func(session.ToolData) bool,
 ) llm.Message {
-	_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolRejected, detail, reason, reason)})
+	_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolRejected, detail, reason, "")})
 	return e.toolMessage(call.ID, reason)
 }
 
