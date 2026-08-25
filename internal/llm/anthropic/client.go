@@ -38,9 +38,9 @@ func normalizeBaseURL(baseURL string) string {
 }
 
 // BuildRequest converts the normalized messages into the Anthropic Messages
-// API shape. System text and tool results are merged the same way panda does
-// (consecutive tool messages become one user message with tool_result blocks;
-// prompt caching is pinned to the tail of the request).
+// API shape. System text and tool results are merged so consecutive tool
+// messages become one user message with tool_result blocks; prompt caching
+// is pinned to the tail of the request.
 func BuildRequest(
 	cfg llm.ModelConfig,
 	system string,
@@ -144,8 +144,8 @@ func BuildRequest(
 		}
 	}
 
-	// Pin prompt caching to the tail of the last user message, mirroring
-	// panda / go-ai behavior. Image blocks cannot carry cache_control, so
+	// Pin prompt caching to the tail of the last user message. Image blocks
+	// cannot carry cache_control, so
 	// the pin lands on the last non-image block (text or tool_result).
 	if len(req.Messages) > 0 {
 		last := &req.Messages[len(req.Messages)-1]

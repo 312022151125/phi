@@ -179,7 +179,7 @@ fi
 
 info "phi install: installed ${TAG} -> ${DEST}"
 
-# ---- PATH configuration (mirrors jcode installer: multi-rc, idempotent) ----
+# ---- PATH configuration (multi-rc, idempotent) ----
 # A child script cannot mutate the parent shell's PATH. We persist to rc files
 # so future terminals find phi; print a one-liner for THIS terminal.
 case ":${PATH}:" in

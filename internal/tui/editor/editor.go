@@ -200,6 +200,7 @@ func NewEditor(
 				e.vx.QueueRefresh()
 			}
 		},
+		func() bool { return e.ctrl != nil && e.ctrl.ImageEnabled() },
 		e.overlays.BlocksComposer,
 		e.overlays.HandlePermissionKey,
 		e.overlays.HandleContinueKey,
