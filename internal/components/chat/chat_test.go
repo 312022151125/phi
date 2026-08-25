@@ -6,6 +6,8 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/components/text"
@@ -71,6 +73,71 @@ func TestChatInputTyping(t *testing.T) {
 	if submitted != "hi" {
 		t.Fatalf("submit = %q", submitted)
 	}
+}
+
+func TestChatInputCtrlUClearsAll(t *testing.T) {
+	c := &ChatInput{MinBodyRows: 3, Value: "hello\nworld", Cursor: 5}
+	ctx := &components.EventContext{}
+	changed := 0
+	c.OnChange = func(string) { changed++ }
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'u', Mods: xui.ModCtrl, Press: true})
+	require.Empty(t, c.Value)
+	require.Zero(t, c.Cursor)
+	require.Equal(t, 1, changed)
+	require.True(t, ctx.Consume)
+	// A plain 'u' still types.
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'u', Press: true})
+	require.Equal(t, "u", c.Value)
+}
+
+func TestChatInputCtrlUEmptyDoesNotNotify(t *testing.T) {
+	c := &ChatInput{MinBodyRows: 3}
+	ctx := &components.EventContext{}
+	changed := 0
+	c.OnChange = func(string) { changed++ }
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'u', Mods: xui.ModCtrl, Press: true})
+	require.Zero(t, changed)
+	require.True(t, ctx.Consume)
+}
+
+func TestChatInputCtrlUClearsPendingAttachments(t *testing.T) {
+	c := &ChatInput{
+		MinBodyRows:   3,
+		Value:         "hello",
+		Cursor:        5,
+		PendingSkills: []string{"building-plugins"},
+		PendingImages: []imgutil.Attachment{
+			{Label: "a.png", Result: imgutil.Result{Data: []byte("x"), MimeType: "image/png"}},
+		},
+	}
+	ctx := &components.EventContext{}
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'u', Mods: xui.ModCtrl, Press: true})
+	require.Empty(t, c.Value)
+	require.Zero(t, c.Cursor)
+	require.Empty(t, c.PendingSkills)
+	require.Empty(t, c.PendingImages)
+	require.True(t, ctx.Consume)
+}
+
+func TestChatInputCtrlAEJumpLineBounds(t *testing.T) {
+	c := &ChatInput{MinBodyRows: 3, Value: "hello world", Cursor: 5}
+	ctx := &components.EventContext{}
+	// Ctrl+A jumps to the start of the current line.
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'a', Mods: xui.ModCtrl, Press: true})
+	require.Equal(t, 0, c.Cursor)
+	// Ctrl+E jumps to the end of the current line.
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'e', Mods: xui.ModCtrl, Press: true})
+	require.Equal(t, len("hello world"), c.Cursor)
+	require.True(t, ctx.Consume)
+}
+
+func TestChatInputCtrlAEStayOnCurrentLine(t *testing.T) {
+	c := &ChatInput{MinBodyRows: 3, Value: "alpha\nbeta gamma", Cursor: len("alpha\nbe")}
+	ctx := &components.EventContext{}
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'a', Mods: xui.ModCtrl, Press: true})
+	require.Equal(t, len("alpha\n"), c.Cursor)
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'e', Mods: xui.ModCtrl, Press: true})
+	require.Equal(t, len("alpha\nbeta gamma"), c.Cursor)
 }
 
 func TestChatInputMentionOpenDefersNav(t *testing.T) {

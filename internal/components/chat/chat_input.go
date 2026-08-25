@@ -323,7 +323,26 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 			}
 			return
 		case xui.KeyRune:
-			if e.Mods.Has(xui.ModCtrl) || e.Mods.Has(xui.ModAlt) || e.Mods.Has(xui.ModSuper) {
+			if e.Mods.Has(xui.ModCtrl) {
+				switch e.Rune {
+				case 'a', 'A':
+					// Ctrl+A jumps to the start of the current line.
+					c.Cursor = lineStart(c.Value, c.Cursor)
+					c.notifyCompleters()
+				case 'e', 'E':
+					// Ctrl+E jumps to the end of the current line.
+					c.Cursor = lineEnd(c.Value, c.Cursor)
+					c.notifyCompleters()
+				case 'u', 'U':
+					// Ctrl+U clears the composer, pending images, and pending skills.
+					c.clear()
+				default:
+					return
+				}
+				ctx.ConsumeAndRedraw()
+				return
+			}
+			if e.Mods.Has(xui.ModAlt) || e.Mods.Has(xui.ModSuper) {
 				return
 			}
 			if e.Rune >= 0x20 || e.Rune == '\t' {
@@ -409,6 +428,17 @@ func (c *ChatInput) notifyChange() {
 		c.OnChange(c.Value)
 	}
 	c.notifyCompleters()
+}
+
+// clear removes all composer text, pending images, and pending skills.
+func (c *ChatInput) clear() {
+	if c.Value != "" {
+		c.Value = ""
+		c.Cursor = 0
+		c.notifyChange()
+	}
+	c.ClearPendingImages()
+	c.ClearPendingSkills()
 }
 
 func (c *ChatInput) notifyCompleters() {
