@@ -441,3 +441,37 @@ func (g *recordingGate) Check(_ context.Context, req permission.Request) (permis
 	g.last = req
 	return permission.Allow, ""
 }
+
+func TestExecutorToolErrorKeepsOutputEmptyForUI(t *testing.T) {
+	const errMsg = "2 lines have changed since last read"
+	reg := tools.Registry{
+		"edit": {
+			Definition: llm.ToolDefinition{Name: "edit"},
+			Run: func(context.Context, json.RawMessage) (tools.Result, error) {
+				return tools.Result{}, &staticError{msg: errMsg}
+			},
+		},
+	}
+
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, nil)
+	var last session.ToolRun
+	msgs := ex.Run(t.Context(), []llm.ToolCall{{
+		ID:       "c1",
+		Function: llm.Function{Name: "edit", Arguments: `{}`},
+	}}, func(td session.ToolData) bool {
+		if td.Run.Status == session.ToolError {
+			last = td.Run
+		}
+		return true
+	})
+
+	require.Len(t, msgs, 1)
+	assert.Equal(t, errMsg, msgs[0].Content)
+	assert.Equal(t, session.ToolError, last.Status)
+	assert.Equal(t, errMsg, last.Error)
+	assert.Empty(t, last.Output, "UI Error and Output must not duplicate the same text")
+}
+
+type staticError struct{ msg string }
+
+func (e *staticError) Error() string { return e.msg }
