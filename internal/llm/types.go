@@ -49,8 +49,7 @@ type Function struct {
 }
 
 // Image is one base64-encoded image attached to a user message.
-// Mirrors the pi-ai ImageContent part: data is base64 bytes plus the MIME
-// type so each provider can build its own wire format (image_url / source).
+// Data is base64 bytes plus the MIME type so each provider can build its own wire format (image_url / source).
 type Image struct {
 	Data     string `json:"data"`     // base64-encoded image bytes
 	MimeType string `json:"mimeType"` // e.g. "image/png", "image/jpeg"

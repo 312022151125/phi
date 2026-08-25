@@ -125,8 +125,7 @@ func ensureSearchTools(ctx context.Context, proj *project.Project, download sear
 }
 
 // shouldBootstrap is true when the tool binary is missing from the phi bin
-// dir and from PATH, i.e. it needs a download. This mirrors panda's
-// fileutil.ShouldBootstrapSearchTool.
+// dir and from PATH, i.e. it needs a download.
 func shouldBootstrap(proj *project.Project, name string) bool {
 	binName := name
 	if runtime.GOOS == "windows" {

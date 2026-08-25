@@ -575,7 +575,7 @@ func emitMessage(
 }
 
 // pendingSkillsInstruction tells the model to read SKILL.md files for the
-// selected skills (panda-style: reuse the read tool, no dedicated skill tool).
+// selected skills (reuse the read tool, no dedicated skill tool).
 func pendingSkillsInstruction(skillPath string, names []string) string {
 	if len(names) == 0 {
 		return ""

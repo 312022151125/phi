@@ -21,7 +21,7 @@ const (
 	contextFillDanger
 )
 
-// formatTokens formats counts like panda: 999, 1.2k, 15k, 1.5M.
+// formatTokens formats counts as 999, 1.2k, 15k, 1.5M.
 func formatTokens(count int) string {
 	if count < 0 {
 		count = 0
@@ -87,7 +87,7 @@ func formatContextLabel(usage session.TokenUsage, window int) string {
 	return fmt.Sprintf("%d%%", pct)
 }
 
-// formatUsageStats builds panda-style "↑1.2k ↓800 C900 Σ2.0k" (empty when unknown).
+// formatUsageStats builds "↑1.2k ↓800 C900 Σ2.0k" (empty when unknown).
 func formatUsageStats(usage session.TokenUsage) string {
 	if !usage.Reported() {
 		return ""
