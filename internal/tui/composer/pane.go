@@ -515,6 +515,7 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			return
 		}
 		if ev.Press && ev.Mods.Has(xui.ModCtrl) && ev.Code == xui.KeyRune && (ev.Rune == 'v' || ev.Rune == 'V') {
+			// Ctrl+V: attempt to attach an image from the system clipboard.
 			if c.tryAttachClipboardImage(ctx) {
 				return
 			}
@@ -620,8 +621,10 @@ func (c *ComposerPane) acceptMention(item mention.Item) {
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
 
+	// @mention path: try to load it as an image file first.
 	abs := resolveMentionPath(c.cwd, item.Path)
 	if res, err := imgutil.Load(abs); err == nil {
+		// Image loaded successfully — add to the pending queue for submission.
 		c.Chat.AddPendingImage(imgutil.AttachmentFromResult(imgutil.AttachmentLabel(abs), res))
 		c.Chat.ReplaceRange(start, end, "")
 		if c.onRedraw != nil {
@@ -645,7 +648,9 @@ func (c *ComposerPane) tryAttachClipboardImage(ctx *components.EventContext) boo
 		ctx.ConsumeAndRedraw()
 		return true
 	}
+	// Build a sequential label (clipboard #1, #2, …) for the pending queue.
 	label := fmt.Sprintf("clipboard #%d", len(c.Chat.PendingImages)+1)
+	// Add the clipboard image to the pending queue for submission.
 	c.Chat.AddPendingImage(imgutil.AttachmentFromResult(label, res))
 	if c.onRedraw != nil {
 		c.onRedraw()
