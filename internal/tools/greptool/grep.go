@@ -422,7 +422,7 @@ func formatGrepBlock(
 		if cur >= 1 && cur <= len(fileLines) {
 			lineText = fileLines[cur-1]
 		}
-		lineText = strings.ReplaceAll(lineText, "\r", "")
+		lineText = util.ReplaceAll(lineText, "\r", "")
 		h := util.ComputeLineHash(lineText)
 		ref := fmt.Sprintf("%d#%s", cur, h)
 		truncLine, wasTrunc := truncateLine(lineText, grepMaxLineRunes)

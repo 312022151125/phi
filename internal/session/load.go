@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/pulseaiclub/phi/internal/util"
 )
 
 // SessionMeta is a lightweight listing row for persisted sessions.
@@ -111,7 +112,7 @@ func readSessionMeta(path string, e os.DirEntry) (SessionMeta, error) {
 }
 
 func truncatePreview(s string, n int) string {
-	s = strings.ReplaceAll(s, "\n", " ")
+	s = util.ReplaceAll(s, "\n", " ")
 	s = strings.TrimSpace(s)
 	if len(s) <= n {
 		return s

@@ -6,6 +6,8 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
+	"github.com/pulseaiclub/phi/internal/util"
+
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/components/text"
@@ -172,7 +174,7 @@ func (d *DiffBlock) Draw(ctx components.DrawContext) components.Surface {
 	if w <= 0 {
 		w = 40
 	}
-	raw := strings.ReplaceAll(d.Diff, "\r", "")
+	raw := util.ReplaceAll(d.Diff, "\r", "")
 	lines := strings.Split(raw, "\n")
 	h := len(lines)
 	h = max(h, 1)
@@ -225,7 +227,7 @@ func (m *Markdown) Draw(ctx components.DrawContext) components.Surface {
 
 func markdownSpans(src string, th components.Theme) []components.Span {
 	var out []components.Span
-	lines := strings.Split(strings.ReplaceAll(src, "\r", ""), "\n")
+	lines := strings.Split(util.ReplaceAll(src, "\r", ""), "\n")
 	for i, line := range lines {
 		if i > 0 {
 			out = append(out, components.Span{Text: "\n", Style: th.Foreground})

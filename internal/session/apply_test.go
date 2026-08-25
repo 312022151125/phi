@@ -1,6 +1,10 @@
 package session
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/pulseaiclub/phi/internal/llm"
+)
 
 func TestApplyStreamingUpdates(t *testing.T) {
 	var s Snapshot
@@ -187,5 +191,19 @@ func TestLocalBash(t *testing.T) {
 	s = Apply(s, CancelStreaming{})
 	if s.Tools["b2"].Status != ToolInProgress {
 		t.Fatalf("cancel must skip local: %+v", s.Tools["b2"])
+	}
+}
+
+func TestApplyUserAppendImages(t *testing.T) {
+	var s Snapshot
+	s = Apply(s, UserAppend{
+		Text:   "Images: a.png",
+		Images: []llm.Image{{Data: "QUJD", MimeType: "image/png"}},
+	})
+	if len(s.Messages) != 1 {
+		t.Fatalf("messages=%d", len(s.Messages))
+	}
+	if len(s.Messages[0].Images) != 1 || s.Messages[0].Images[0].MimeType != "image/png" {
+		t.Fatalf("images: %+v", s.Messages[0].Images)
 	}
 }
