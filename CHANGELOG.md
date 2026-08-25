@@ -10,6 +10,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+<!-- Released section -->
+<!-- Don't change this section unless doing release -->
+
+## [0.17.0] - 2026-08-25
+
+### Added
+
 - `phi run --yolo`: skip all permission checks for one headless run (benchmarks / CI).
 - `phi run --tools`: limit a headless run to selected built-in tools.
 - Hooks: session lifecycle events now include `usage` — token counts of the latest completed assistant turn.
@@ -31,9 +48,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Tool errors no longer duplicate the error text in the TUI (Error and Output shown the same message twice).
 
 ### Security
-
-<!-- Released section -->
-<!-- Don't change this section unless doing release -->
 
 ## [0.16.0] - 2026-08-22
 
@@ -140,7 +154,8 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.17.0
 [0.16.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.16.0
 [0.15.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.15.0
 [0.14.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.14.0
