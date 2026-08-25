@@ -2,6 +2,9 @@ package composer
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,12 +15,15 @@ import (
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/components/mention"
 	"github.com/pulseaiclub/phi/internal/components/palette"
+	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/tui/commands"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
 	"github.com/pulseaiclub/phi/internal/tui/footer"
 	"github.com/pulseaiclub/phi/internal/tui/pathutil"
 	"github.com/pulseaiclub/phi/internal/tui/transcript"
+	"github.com/pulseaiclub/phi/internal/util/clipboard"
 	"github.com/pulseaiclub/phi/internal/util/filesearch"
+	imgutil "github.com/pulseaiclub/phi/internal/util/image"
 )
 
 // ComposerPane owns the chat input, slash/@ pickers, and palette.
@@ -47,6 +53,7 @@ type ComposerPane struct {
 	requestFocusEditor    func()
 	requestFocus          func(components.Widget)
 	ctrlClose             func()
+	toastFn               func(msg string, kind toast.ToastKind, d time.Duration)
 }
 
 // NewComposerPane builds composer widgets; call Wire before use.
@@ -162,6 +169,22 @@ func (c *ComposerPane) PendingSkills() []string {
 	return out
 }
 
+func (c *ComposerPane) PendingImages() []imgutil.Attachment {
+	if c == nil {
+		return nil
+	}
+	out := make([]imgutil.Attachment, len(c.Chat.PendingImages))
+	copy(out, c.Chat.PendingImages)
+	return out
+}
+
+// ClearPendingImages removes attached images from the composer.
+func (c *ComposerPane) ClearPendingImages() {
+	if c != nil {
+		c.Chat.ClearPendingImages()
+	}
+}
+
 // ClearPendingSkills removes attached skills from the composer.
 func (c *ComposerPane) ClearPendingSkills() {
 	if c != nil {
@@ -211,6 +234,23 @@ func (c *ComposerPane) FocusChat() {
 func (c *ComposerPane) AddPendingSkill(name string) {
 	if c != nil {
 		c.Chat.AddPendingSkill(name)
+	}
+}
+
+// AddPendingImage attaches an image to the composer.
+func (c *ComposerPane) AddPendingImage(att imgutil.Attachment) {
+	if c != nil {
+		c.Chat.AddPendingImage(att)
+		if c.onRedraw != nil {
+			c.onRedraw()
+		}
+	}
+}
+
+// SetToast wires user feedback for clipboard attach failures.
+func (c *ComposerPane) SetToast(fn func(msg string, kind toast.ToastKind, d time.Duration)) {
+	if c != nil {
+		c.toastFn = fn
 	}
 }
 
@@ -474,6 +514,11 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			}
 			return
 		}
+		if ev.Press && ev.Mods.Has(xui.ModCtrl) && ev.Code == xui.KeyRune && (ev.Rune == 'v' || ev.Rune == 'V') {
+			if c.tryAttachClipboardImage(ctx) {
+				return
+			}
+		}
 		c.Chat.Handle(ctx, ev)
 	case xui.MouseEvent:
 		if c.palette.Open {
@@ -574,7 +619,47 @@ func (c *ComposerPane) acceptMention(item mention.Item) {
 	c.mentionGen++
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
+
+	abs := resolveMentionPath(c.cwd, item.Path)
+	if res, err := imgutil.Load(abs); err == nil {
+		c.Chat.AddPendingImage(imgutil.AttachmentFromResult(imgutil.AttachmentLabel(abs), res))
+		c.Chat.ReplaceRange(start, end, "")
+		if c.onRedraw != nil {
+			c.onRedraw()
+		}
+		return
+	}
+
 	c.Chat.ReplaceRange(start, end, "@"+item.Path+" ")
+}
+
+func (c *ComposerPane) tryAttachClipboardImage(ctx *components.EventContext) bool {
+	res, err := clipboard.ReadImageResult()
+	if errors.Is(err, clipboard.ErrUnavailable) {
+		return false
+	}
+	if err != nil {
+		if c.toastFn != nil {
+			c.toastFn(err.Error(), toast.ToastError, 3*time.Second)
+		}
+		ctx.ConsumeAndRedraw()
+		return true
+	}
+	label := fmt.Sprintf("clipboard #%d", len(c.Chat.PendingImages)+1)
+	c.Chat.AddPendingImage(imgutil.AttachmentFromResult(label, res))
+	if c.onRedraw != nil {
+		c.onRedraw()
+	}
+	ctx.ConsumeAndRedraw()
+	return true
+}
+
+func resolveMentionPath(cwd, rel string) string {
+	rel = strings.TrimSpace(rel)
+	if filepath.IsAbs(rel) {
+		return filepath.Clean(rel)
+	}
+	return filepath.Join(cwd, rel)
 }
 
 func (c *ComposerPane) acceptSlash(item mention.Item) {

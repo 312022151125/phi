@@ -4,11 +4,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tui/commands"
 	"github.com/pulseaiclub/phi/internal/tui/composer"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
 	"github.com/pulseaiclub/phi/internal/tui/transcript"
+	imgutil "github.com/pulseaiclub/phi/internal/util/image"
 )
 
 // Submitter owns submit / cancel / slash dispatch and coordinates bash runs.
@@ -91,6 +93,7 @@ func (s *Submitter) Submit(text string) {
 		if s.dispatchSlash(text) {
 			s.composer.HideCompleters()
 			s.composer.ClearInput()
+			s.composer.ClearPendingImages()
 			s.composer.SyncBashBorder("")
 			return
 		}
@@ -98,20 +101,42 @@ func (s *Submitter) Submit(text string) {
 	s.handleUserInput(text)
 }
 
+func buildUserDisplay(text string, skills []string, images []imgutil.Attachment) string {
+	var parts []string
+	if len(skills) > 0 {
+		parts = append(parts, "Skills: "+strings.Join(skills, ", "))
+	}
+	if len(images) > 0 {
+		labels := make([]string, len(images))
+		for i, att := range images {
+			labels[i] = att.Label
+		}
+		parts = append(parts, "Images: "+strings.Join(labels, " "))
+	}
+	text = strings.TrimSpace(text)
+	if text != "" {
+		parts = append(parts, text)
+	}
+	return strings.Join(parts, "\n")
+}
+
 func (s *Submitter) handleUserInput(text string) {
 	pendingSkills := s.composer.PendingSkills()
-	if (text == "" && len(pendingSkills) == 0) || s.IsBusy() {
+	pendingImages := s.composer.PendingImages()
+	if (text == "" && len(pendingSkills) == 0 && len(pendingImages) == 0) || s.IsBusy() {
 		return
 	}
 
 	s.composer.CloseMentionSlash()
 
-	s.activity.Apply(controller.ActivitySubmitting)
-	display := text
-	if display == "" && len(pendingSkills) > 0 {
-		display = "Skills: " + strings.Join(pendingSkills, ", ")
+	llmImages := make([]llm.Image, 0, len(pendingImages))
+	for _, att := range pendingImages {
+		llmImages = append(llmImages, imgutil.ToLLM(att.Result))
 	}
-	s.transcript.ApplySession(session.UserAppend{Text: display})
+
+	s.activity.Apply(controller.ActivitySubmitting)
+	display := buildUserDisplay(text, pendingSkills, pendingImages)
+	s.transcript.ApplySession(session.UserAppend{Text: display, Images: llmImages})
 	s.transcript.Sync()
 	s.transcript.StickToBottom()
 
@@ -119,9 +144,10 @@ func (s *Submitter) handleUserInput(text string) {
 
 	s.composer.ClearInput()
 	s.composer.ClearPendingSkills()
+	s.composer.ClearPendingImages()
 
 	if s.ctrl != nil {
-		s.ctrl.StartPrompt(text, pendingSkills)
+		s.ctrl.StartPrompt(text, pendingSkills, llmImages)
 	}
 }
 

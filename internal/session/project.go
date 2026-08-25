@@ -42,7 +42,7 @@ func Project(s Snapshot) []Item {
 	for _, m := range s.Messages {
 		switch m.Role {
 		case RoleUser:
-			if strings.TrimSpace(m.Text) != "" {
+			if strings.TrimSpace(m.Text) != "" || len(m.Images) > 0 {
 				items = append(items, Item{
 					ID:   m.ID,
 					Kind: ItemUser,

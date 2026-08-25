@@ -6,6 +6,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/components/palette"
+	imgutil "github.com/pulseaiclub/phi/internal/util/image"
 )
 
 // Input is the composer surface Submitter and BashRunner use.
@@ -13,7 +14,9 @@ type Input interface {
 	HideCompleters()
 	ClearInput()
 	PendingSkills() []string
+	PendingImages() []imgutil.Attachment
 	ClearPendingSkills()
+	ClearPendingImages()
 	SyncBashBorder(text string)
 	CloseMentionSlash()
 	SetBashBorderActive(active bool)

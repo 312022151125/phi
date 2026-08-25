@@ -553,7 +553,12 @@ func (c *Controller) ReplaySnapshot() session.Snapshot {
 			msg := entry.(session.SessionMessageEntry).Message
 			switch msg.Role {
 			case llm.RoleUser:
-				snap = session.Apply(snap, session.UserAppend{ID: entry.GetID(), Text: msg.Content})
+				images := make([]llm.Image, 0, len(msg.Images))
+				snap = session.Apply(snap, session.UserAppend{
+					ID:     entry.GetID(),
+					Text:   msg.Content,
+					Images: append(images, msg.Images...),
+				})
 			case llm.RoleAssistant:
 				text := msg.Content
 				var blocks []session.ContentBlock
@@ -579,7 +584,7 @@ func (c *Controller) ReplaySnapshot() session.Snapshot {
 }
 
 // StartPrompt cancels any in-flight stream and starts a new agent loop.
-func (c *Controller) StartPrompt(text string, pendingSkills []string) {
+func (c *Controller) StartPrompt(text string, pendingSkills []string, images []llm.Image) {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.streamMu.Lock()
 	if c.streamCancel != nil {
@@ -590,7 +595,7 @@ func (c *Controller) StartPrompt(text string, pendingSkills []string) {
 	gen := c.streamGen
 	c.streamMu.Unlock()
 
-	go c.runLoop(ctx, gen, text, pendingSkills)
+	go c.runLoop(ctx, gen, text, pendingSkills, images)
 }
 
 // Cancel aborts the current stream context (if any).
@@ -740,7 +745,7 @@ func (c *Controller) publish(m Msg) {
 	}
 }
 
-func (c *Controller) runLoop(ctx context.Context, gen int, prompt string, pendingSkills []string) {
+func (c *Controller) runLoop(ctx context.Context, gen int, prompt string, pendingSkills []string, images []llm.Image) {
 	if !c.waitOrDone(ctx, gen, 120*time.Millisecond) {
 		return
 	}
@@ -762,7 +767,10 @@ func (c *Controller) runLoop(ctx context.Context, gen int, prompt string, pendin
 		return
 	}
 
-	for ev, err := range c.engine.Loop(ctx, prompt, agent.LoopOpts{PendingSkills: pendingSkills}) {
+	for ev, err := range c.engine.Loop(ctx, prompt, agent.LoopOpts{
+		PendingSkills: pendingSkills,
+		Images:        images,
+	}) {
 		if !c.Alive(gen) {
 			return
 		}

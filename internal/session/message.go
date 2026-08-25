@@ -1,6 +1,10 @@
 package session
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/pulseaiclub/phi/internal/llm"
+)
 
 // Role is the speaker of a transcript message.
 type Role int
@@ -125,6 +129,7 @@ type Message struct {
 	State      State      // assistant
 	StopReason StopReason // assistant when complete
 	Text       string     // user visible text
+	Images     []llm.Image
 	Content    []ContentBlock
 	// Usage is token consumption for the latest assistant turn (UI + diagnostics).
 	// Zero means unknown / not yet reported by the provider.
@@ -178,8 +183,9 @@ type Event interface {
 
 // UserAppend appends a user message.
 type UserAppend struct {
-	ID   string
-	Text string
+	ID     string
+	Text   string
+	Images []llm.Image
 }
 
 func (UserAppend) isSessionEvent() {}

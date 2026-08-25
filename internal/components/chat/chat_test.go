@@ -9,6 +9,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/components/text"
+	imgutil "github.com/pulseaiclub/phi/internal/util/image"
 )
 
 func TestChatInputBorderLabels(t *testing.T) {
@@ -332,5 +333,28 @@ func TestCursorAfterCJKPasteAtTextEnd(t *testing.T) {
 	cell := s.Buffer[cy*w+s.Cursor.X]
 	if xui.StringWidth(cell.Char, xui.WidthUnicode) == 2 {
 		t.Fatalf("cursor on wide glyph %q", cell.Char)
+	}
+}
+
+func TestChatInputPendingImagesHeight(t *testing.T) {
+	c := &ChatInput{MinBodyRows: 3, MaxBodyRows: 8}
+	base := c.PreferredHeight(40, xui.WidthUnicode)
+	c.PendingImages = []imgutil.Attachment{
+		{Label: "a.png", Result: imgutil.Result{Data: []byte("x"), MimeType: "image/png"}},
+	}
+	if got := c.PreferredHeight(40, xui.WidthUnicode); got != base+1 {
+		t.Fatalf("height=%d want %d", got, base+1)
+	}
+}
+
+func TestChatInputBackspacePopsPendingImage(t *testing.T) {
+	c := &ChatInput{MinBodyRows: 3}
+	c.PendingImages = []imgutil.Attachment{
+		{Label: "a.png", Result: imgutil.Result{Data: []byte("x"), MimeType: "image/png"}},
+	}
+	ctx := &components.EventContext{}
+	c.Handle(ctx, xui.KeyEvent{Press: true, Code: xui.KeyBackspace})
+	if len(c.PendingImages) != 0 {
+		t.Fatalf("pending images=%d want 0", len(c.PendingImages))
 	}
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/components/text"
 	"github.com/pulseaiclub/phi/internal/debuglog"
+	imgutil "github.com/pulseaiclub/phi/internal/util/image"
 )
 
 // ChatInput is a composer: rounded border, edge labels, multiline editor.
@@ -50,6 +51,10 @@ type ChatInput struct {
 	// first content row: "Skills: name1 name2".
 	PendingSkills []string
 
+	// PendingImages are attached images shown inside the bordered editor:
+	// "Images: name1 name2".
+	PendingImages []imgutil.Attachment
+
 	PaddingX int // horizontal inner padding; default 1
 
 	// OnSubmit is called when Enter is pressed (without modifiers).
@@ -58,6 +63,9 @@ type ChatInput struct {
 	OnChange func(text string)
 	// OnPendingSkillsChange is called after PendingSkills mutates.
 	OnPendingSkillsChange func(skills []string)
+	// OnPendingImagesChange is called after PendingImages mutates.
+	OnPendingImagesChange func(images []imgutil.Attachment)
+
 	// OnMentionChange is called after Value or Cursor changes that may
 	// activate/deactivate an @-file mention. active is false when none.
 	OnMentionChange func(active bool, query string)
@@ -105,14 +113,18 @@ func (c *ChatInput) bodyRows(width int, method xui.WidthMethod) int {
 // PreferredHeight returns total height (optional skills row + body + borders),
 // growing with content up to MaxBodyRows so the composer cannot expand forever.
 func (c *ChatInput) PreferredHeight(width int, method xui.WidthMethod) int {
-	return c.pendingSkillsHeight() + c.bodyRows(width, method) + 2
+	return c.pendingRowsHeight() + c.bodyRows(width, method) + 2
 }
 
-func (c *ChatInput) pendingSkillsHeight() int {
-	if len(c.PendingSkills) == 0 {
-		return 0
+func (c *ChatInput) pendingRowsHeight() int {
+	n := 0
+	if len(c.PendingSkills) > 0 {
+		n++
 	}
-	return 1
+	if len(c.PendingImages) > 0 {
+		n++
+	}
+	return n
 }
 
 // AddPendingSkill appends name if not already pending.
@@ -128,6 +140,28 @@ func (c *ChatInput) AddPendingSkill(name string) {
 	c.notifyPendingSkills()
 }
 
+// AddPendingImage appends att to the pending image list.
+func (c *ChatInput) AddPendingImage(att imgutil.Attachment) {
+	if att.Label == "" {
+		att.Label = "image"
+	}
+	if len(att.Result.Data) == 0 {
+		return
+	}
+	c.PendingImages = append(c.PendingImages, att)
+	c.notifyPendingImages()
+}
+
+// PopPendingImage removes the last pending image. Returns false if none.
+func (c *ChatInput) PopPendingImage() bool {
+	if len(c.PendingImages) == 0 {
+		return false
+	}
+	c.PendingImages = c.PendingImages[:len(c.PendingImages)-1]
+	c.notifyPendingImages()
+	return true
+}
+
 // PopPendingSkill removes the last pending skill. Returns false if none.
 func (c *ChatInput) PopPendingSkill() bool {
 	if len(c.PendingSkills) == 0 {
@@ -136,6 +170,15 @@ func (c *ChatInput) PopPendingSkill() bool {
 	c.PendingSkills = c.PendingSkills[:len(c.PendingSkills)-1]
 	c.notifyPendingSkills()
 	return true
+}
+
+// ClearPendingImages removes all pending images.
+func (c *ChatInput) ClearPendingImages() {
+	if len(c.PendingImages) == 0 {
+		return
+	}
+	c.PendingImages = nil
+	c.notifyPendingImages()
 }
 
 // ClearPendingSkills removes all pending skills.
@@ -150,6 +193,12 @@ func (c *ChatInput) ClearPendingSkills() {
 func (c *ChatInput) notifyPendingSkills() {
 	if c.OnPendingSkillsChange != nil {
 		c.OnPendingSkillsChange(c.PendingSkills)
+	}
+}
+
+func (c *ChatInput) notifyPendingImages() {
+	if c.OnPendingImagesChange != nil {
+		c.OnPendingImagesChange(c.PendingImages)
 	}
 }
 
@@ -206,6 +255,8 @@ func (c *ChatInput) Handle(ctx *components.EventContext, ev xui.Event) {
 				if debuglog.Enabled() {
 					c.dumpNextDraw = true
 				}
+			} else if c.PopPendingImage() {
+				debuglog.Logf("chat backspace popped pending image remaining=%d", len(c.PendingImages))
 			} else if c.PopPendingSkill() {
 				debuglog.Logf("chat backspace popped pending skill remaining=%d", len(c.PendingSkills))
 			}
@@ -428,7 +479,7 @@ func (c *ChatInput) Draw(ctx components.DrawContext) components.Surface {
 	if w <= 0 {
 		w = 40
 	}
-	pendingH := c.pendingSkillsHeight()
+	pendingH := c.pendingRowsHeight()
 	editorRows := c.bodyRows(w, ctx.Method)
 	body := pendingH + editorRows // inner rows inside the border
 	h := body + 2                 // + borders
@@ -487,8 +538,14 @@ func (c *ChatInput) Draw(ctx components.DrawContext) components.Surface {
 		}
 	}
 
-	if pendingH > 0 {
-		c.paintPendingSkills(&s, 1+pad, 1, innerW, ctx.Method)
+	contentY := 1
+	if len(c.PendingSkills) > 0 {
+		c.paintPendingSkills(&s, 1+pad, contentY, innerW, ctx.Method)
+		contentY++
+	}
+	if len(c.PendingImages) > 0 {
+		c.paintPendingImages(&s, 1+pad, contentY, innerW, ctx.Method)
+		contentY++
 	}
 
 	lines := text.WrapEditorLines(c.Value, innerW, ctx.Method)
@@ -498,7 +555,7 @@ func (c *ChatInput) Draw(ctx components.DrawContext) components.Surface {
 	if curLine >= editorRows {
 		scroll = curLine - editorRows + 1
 	}
-	editorTop := 1 + pendingH
+	editorTop := contentY
 	for i := 0; i < editorRows; i++ {
 		li := i + scroll
 		if li < 0 || li >= len(lines) {
@@ -600,6 +657,31 @@ func (c *ChatInput) paintPendingSkills(s *components.Surface, x, y, width int, m
 			spans = append(spans, components.Span{Text: " ", Style: labelSt})
 		}
 		spans = append(spans, components.Span{Text: name, Style: nameSt})
+	}
+	lines := components.WrapSpans(spans, width, method)
+	if len(lines) == 0 {
+		return
+	}
+	components.PaintSpans(s, x, y, lines[0], method)
+}
+
+func (c *ChatInput) paintPendingImages(s *components.Surface, x, y, width int, method xui.WidthMethod) {
+	th := c.Theme
+	if th.Success.Fg.Kind == 0 && th.Foreground.Fg.Kind == 0 {
+		th = components.DefaultTheme()
+	}
+	labelSt := th.Muted
+	labelSt.Dim = true
+	nameSt := th.Warning
+	nameSt.Bold = false
+	nameSt.Underline = true
+
+	spans := []components.Span{{Text: "Images: ", Style: labelSt}}
+	for i, att := range c.PendingImages {
+		if i > 0 {
+			spans = append(spans, components.Span{Text: " ", Style: labelSt})
+		}
+		spans = append(spans, components.Span{Text: att.Label, Style: nameSt})
 	}
 	lines := components.WrapSpans(spans, width, method)
 	if len(lines) == 0 {

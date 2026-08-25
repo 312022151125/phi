@@ -288,6 +288,8 @@ type LoopOpts struct {
 	// PendingSkills are skill names the user selected in the composer.
 	// When set, the model is instructed to read those SKILL.md files first.
 	PendingSkills []string
+	// Images are base64 attachments from the composer pending queue.
+	Images []llm.Image
 }
 
 // Loop appends the user prompt and runs inference + tool rounds until the
@@ -308,6 +310,7 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 		if err := engine.session.Append(llm.Message{
 			Role:    llm.RoleUser,
 			Content: content,
+			Images:  append([]llm.Image(nil), opts.Images...),
 		}); err != nil {
 			yield(nil, err)
 			return

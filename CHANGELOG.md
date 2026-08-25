@@ -15,6 +15,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Hooks: session lifecycle events now include `usage` — token counts of the latest completed assistant turn.
 - Hooks: `post_turn` event fires after each completed assistant stream with per-round `usage` (for audit metrics such as cache hit ratio).
 - `util/clipboard` reads and writes the system clipboard (text; images via wl-paste/xclip, osascript/pngpaste, or PowerShell).
+- Composer image attachments: Ctrl+V clipboard, `@` image files, pending queue, and LLM `Images` on submit.
 - `util/image.Load` reads an image file (raw bytes + content-sniffed MIME type; png/jpeg/gif/webp, up to 10 MiB).
 
 ### Changed
