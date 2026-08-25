@@ -21,7 +21,7 @@ const png1x1Base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42m
 func TestTryAttachClipboardImageBlockedWithoutModelSupport(t *testing.T) {
 	c := NewComposerPane(components.DefaultTheme(), "m", "/tmp")
 	var got string
-	c.SetToast(func(msg string, kind toast.ToastKind, d time.Duration) { got = msg })
+	c.SetToast(func(msg string, _ toast.ToastKind, _ time.Duration) { got = msg })
 	c.imageEnabled = func() bool { return false }
 
 	ctx := &components.EventContext{}
@@ -56,7 +56,7 @@ func TestAcceptMentionImageBlockedWithoutModelSupport(t *testing.T) {
 
 	c := NewComposerPane(components.DefaultTheme(), "m", dir)
 	var got string
-	c.SetToast(func(msg string, kind toast.ToastKind, d time.Duration) { got = msg })
+	c.SetToast(func(msg string, _ toast.ToastKind, _ time.Duration) { got = msg })
 	c.imageEnabled = func() bool { return false }
 	c.Chat.Value = "@pixel.png"
 	c.Chat.Cursor = len(c.Chat.Value)
