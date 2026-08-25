@@ -307,7 +307,7 @@ func contentLines(content *string) []string {
 	if content == nil {
 		return nil
 	}
-	s := strings.ReplaceAll(*content, "\r", "")
+	s := util.ReplaceAll(*content, "\r", "")
 	s = strings.TrimSuffix(s, "\n")
 	if s == "" {
 		return []string{}

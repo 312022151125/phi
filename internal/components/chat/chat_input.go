@@ -7,6 +7,8 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
+	"github.com/pulseaiclub/phi/internal/util"
+
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/components/text"
@@ -316,8 +318,8 @@ func sanitizeComposerText(s string) string {
 	if s == "" {
 		return ""
 	}
-	s = strings.ReplaceAll(s, "\r\n", "\n")
-	s = strings.ReplaceAll(s, "\r", "\n")
+	s = util.ReplaceAll(s, "\r\n", "\n")
+	s = util.ReplaceAll(s, "\r", "\n")
 	if !strings.ContainsFunc(s, func(r rune) bool {
 		return r == '\t' || (r < 0x20 && r != '\n') || r == 0x7f || isComposerChrome(r)
 	}) {
