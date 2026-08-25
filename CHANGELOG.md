@@ -28,6 +28,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Tool errors no longer duplicate the error text in the TUI (Error and Output shown the same message twice).
+
 ### Security
 
 <!-- Released section -->
