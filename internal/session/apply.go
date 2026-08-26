@@ -207,12 +207,3 @@ func RunningToolCount(s Snapshot) int {
 	}
 	return n
 }
-
-// LastAssistant returns the last assistant message, if any.
-func LastAssistant(s Snapshot) (Message, bool) {
-	i := lastAssistantIndex(s.Messages)
-	if i < 0 {
-		return Message{}, false
-	}
-	return s.Messages[i], true
-}

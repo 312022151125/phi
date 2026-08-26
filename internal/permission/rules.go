@@ -45,12 +45,8 @@ func WorkspaceRoot() string {
 	return start
 }
 
-// AbsClean resolves path to an absolute cleaned path (no symlink resolve).
-func AbsClean(path string) (string, error) {
-	return AbsCleanAt(path, "")
-}
-
-// AbsCleanAt is AbsClean against an explicit cwd. Empty cwd uses the process wd.
+// AbsCleanAt resolves path to an absolute cleaned path against cwd (no symlink resolve).
+// Empty cwd uses the process working directory.
 func AbsCleanAt(path, cwd string) (string, error) {
 	if path == "" {
 		path = "."

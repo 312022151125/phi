@@ -59,9 +59,11 @@ make test        # go test ./...
 make fmt         # apply gofumpt / goimports / golines
 make fmt-check   # fail if formatting would change files (same as CI)
 make lint        # golangci-lint run ./...
+make deadcode    # unreachable functions vs baseline (deadcode -test)
+make check       # fmt-check + lint + deadcode (same as CI)
 ```
 
-Install `golangci-lint` (required for `fmt` / `fmt-check` / `lint`):
+Install `golangci-lint` (required for `fmt` / `fmt-check` / `lint` / `check`):
 
 ```sh
 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest

@@ -159,12 +159,6 @@ func modelSettingsCommand(onModel func(name string), modelNames []string) palett
 	}
 }
 
-// PaletteCommands returns model-switch commands for the command palette
-// (legacy helper; prefer registry BuildPalette).
-func PaletteCommands(onModel func(name string), modelNames []string) []palette.PaletteCommand {
-	return []palette.PaletteCommand{modelSettingsCommand(onModel, modelNames)}
-}
-
 // ThemeCommand returns a settings → theme submenu listing builtin palettes.
 func ThemeCommand(apply func(name string)) palette.PaletteCommand {
 	names := components.ThemeNames()

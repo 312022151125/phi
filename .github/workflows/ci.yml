@@ -55,8 +55,8 @@ jobs:
           version: v2.13.0
           install-only: true
 
-      - name: Lint
-        run: make lint
+      - name: Install deadcode
+        run: go install golang.org/x/tools/cmd/deadcode@v0.49.0
 
-      - name: Check formatting
-        run: make fmt-check
+      - name: Check
+        run: make check

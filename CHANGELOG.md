@@ -14,12 +14,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `Ctrl+A` / `Ctrl+E` move the composer cursor to the start/end of the current line.
 - `Ctrl+U` clears the composer input, pending images, and pending skills.
 - Per-model `image_enabled` config key; the composer blocks clipboard and `@` image attach and shows a warning when the active model does not support images.
+- `make check` runs `deadcode -test` against a baseline so new unreachable functions fail CI without blocking on known legacy dead code.
 
 ### Changed
 
 ### Deprecated
 
 ### Removed
+
+- Dead code: unused layout widgets, `StatusBlock`, `input` package, orphan exported helpers, and unused clipboard read-text path.
 
 ### Fixed
 

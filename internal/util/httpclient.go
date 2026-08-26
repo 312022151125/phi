@@ -22,7 +22,6 @@ const (
 
 var (
 	sharedHTTPClient   *http.Client
-	sharedTransport    *http.Transport
 	initSharedHTTPOnce sync.Once
 )
 
@@ -44,7 +43,6 @@ func initSharedHTTP() {
 	tr.ResponseHeaderTimeout = httpResponseHeaderTimeout
 	tr.ExpectContinueTimeout = httpExpectContinueTimeout
 
-	sharedTransport = tr
 	sharedHTTPClient = &http.Client{Transport: tr, Timeout: 0}
 }
 
@@ -52,11 +50,4 @@ func initSharedHTTP() {
 func DefaultHTTPClient() *http.Client {
 	initSharedHTTPOnce.Do(initSharedHTTP)
 	return sharedHTTPClient
-}
-
-// SharedHTTPTransport returns the shared Transport, for building custom clients
-// (e.g. ones with their own redirect policy) that still reuse the connection pool.
-func SharedHTTPTransport() *http.Transport {
-	initSharedHTTPOnce.Do(initSharedHTTP)
-	return sharedTransport
 }

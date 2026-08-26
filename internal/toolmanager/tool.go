@@ -127,12 +127,6 @@ var (
 	arch     = normalizeArch(runtime.GOARCH)
 )
 
-// GetAssetNames returns release asset candidates in preference order for the
-// current platform and architecture.
-func (a AssetName) GetAssetNames(version string) []string {
-	return a.getAssetNames(version, platform, arch)
-}
-
 func (a AssetName) getAssetNames(version, targetPlatform, targetArch string) []string {
 	if targetPlatform == "" || targetArch == "" {
 		return nil

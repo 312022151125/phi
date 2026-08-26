@@ -22,12 +22,6 @@ type Constraints struct {
 	Min, Max Size
 }
 
-// Tight returns fixed-size constraints.
-func Tight(w, h int) Constraints {
-	s := Size{Width: w, Height: h}
-	return Constraints{Min: s, Max: s}
-}
-
 // EventContext carries event-handling side effects.
 type EventContext struct {
 	Redraw  bool

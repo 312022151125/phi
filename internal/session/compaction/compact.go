@@ -217,35 +217,6 @@ func Compact(
 	}, nil
 }
 
-// Run prepares compaction, generates summary via llm, and appends the compaction entry to manager.
-// It is intended to be called from handler/session to avoid exposing CompactionResult outside this package.
-func Run(
-	ctx context.Context,
-	pathEntries []session.MessageEntry,
-	manager *session.Manager,
-	llm llm.Compactor,
-	settings Settings,
-) error {
-	prep, err := PrepareCompact(pathEntries, settings)
-	if err != nil {
-		return err
-	}
-	if prep.FirstKeptEntryId == "" {
-		return nil
-	}
-	result, err := Compact(ctx, *prep, llm)
-	if err != nil {
-		return err
-	}
-	_, err = manager.AppendCompaction(session.Compaction{
-		Summary:          result.Summary,
-		FirstKeptEntryID: result.FirstKeptEntryID,
-		TokensBefore:     result.TokensBefore,
-		Details:          result.Details,
-	})
-	return err
-}
-
 // CompactionDetails lists the files read and modified in the summarized
 // history; it is persisted with the compaction entry.
 type CompactionDetails struct {

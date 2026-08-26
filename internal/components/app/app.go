@@ -7,7 +7,6 @@ import (
 
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/chat"
-	"github.com/pulseaiclub/phi/internal/components/input"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 )
 
@@ -238,7 +237,7 @@ func (a *App) RequestFocus(w components.Widget) {
 // must stay on the composer / palette / text fields.
 func acceptsKeyboardFocus(w components.Widget) bool {
 	switch w.(type) {
-	case *chat.ChatInput, *palette.CommandPalette, *input.TextField:
+	case *chat.ChatInput, *palette.CommandPalette:
 		return true
 	default:
 		return false
