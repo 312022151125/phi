@@ -803,7 +803,7 @@ func newChatInput(theme components.Theme, model, cwd string) chat.ChatInput {
 	return chat.ChatInput{
 		MinBodyRows:    3,
 		MaxBodyRows:    8,
-		UseBlockCursor: false,
+		UseBlockCursor: true,
 		PaddingX:       1,
 		Theme:          theme,
 		BorderStyle:    theme.Border,
