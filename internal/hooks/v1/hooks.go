@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -31,7 +31,7 @@ var knownEvents = map[HookEvent]struct{}{
 // (or a plugin subdirectory).
 const PluginFileName = "plugin.json"
 
-type settingsFile struct {
+type pluginFile struct {
 	Hooks map[HookEvent][]hookMatcherRaw `json:"hooks"`
 }
 
@@ -94,7 +94,7 @@ func ParsePlugin(path string) ([]Hook, error) {
 }
 
 func parsePluginBytes(abs string, data []byte) ([]Hook, error) {
-	var raw settingsFile
+	var raw pluginFile
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil, fmt.Errorf("hooks: parse %s: %w", abs, err)
 	}
@@ -107,7 +107,7 @@ func parsePluginBytes(abs string, data []byte) ([]Hook, error) {
 	for event := range raw.Hooks {
 		events = append(events, event)
 	}
-	sort.Slice(events, func(i, j int) bool { return events[i] < events[j] })
+	slices.Sort(events)
 
 	hooks := make([]Hook, 0, len(events))
 	for _, event := range events {

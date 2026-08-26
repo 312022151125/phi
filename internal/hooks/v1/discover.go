@@ -14,7 +14,7 @@ const (
 	SourceProject = "project"
 )
 
-// EnvHooks is the environment variable that disables or filters hooks.
+// EnvHooks is the environment variable that disables hooks.
 // Value "off" (case-insensitive) skips discovery entirely.
 const EnvHooks = "PHI_HOOKS"
 
@@ -85,12 +85,7 @@ func Discover(userDir, projectDir string) ([]Discovered, []Warning, error) {
 	for _, d := range byPlugin {
 		out = append(out, d)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Plugin != out[j].Plugin {
-			return out[i].Plugin < out[j].Plugin
-		}
-		return out[i].Source < out[j].Source
-	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Plugin < out[j].Plugin })
 	return out, warnings, nil
 }
 
