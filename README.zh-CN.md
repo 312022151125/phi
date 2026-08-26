@@ -212,6 +212,7 @@ Anthropic Messages API；其余走 OpenAI 兼容的 `/chat/completions` 路径�
 
 - `@` —— 模糊文件选择器（输入 `@` 后开始输入路径）
 - `/` —— 斜杠命令选择器（`/sessions`、`/resume`、`/clear`）
+- `?` —— 快捷键帮助选择器（列出 `/`、`!`、`@` 和按键绑定；`Esc` 关闭）
 - `!command` —— 在本地运行 shell 命令，并把输出流式写入对话记录
   （见 [命令](#命令)）
 - `Ctrl+K` —— 命令面板：设置 → 模型 / 主题 / 权限 / 代理、技能、hooks
