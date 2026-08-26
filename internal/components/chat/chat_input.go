@@ -72,6 +72,9 @@ type ChatInput struct {
 	// OnSlashChange is called after Value or Cursor changes that may
 	// activate/deactivate a leading /command. active is false when none.
 	OnSlashChange func(active bool, query string)
+	// OnQuestionChange is called after Value or Cursor changes that may
+	// activate/deactivate a leading ? shortcut-help token.
+	OnQuestionChange func(active bool, query string)
 
 	// MentionOpen is set by the editor while the @-file picker is visible.
 	// When true, Up/Down/Tab/Enter are left unconsumed so the picker can
@@ -79,13 +82,15 @@ type ChatInput struct {
 	MentionOpen bool
 	// SlashOpen is set while the /command picker is visible (same nav deferral).
 	SlashOpen bool
+	// QuestionOpen is set while the ? shortcut picker is visible.
+	QuestionOpen bool
 
 	// dumpNextDraw is set on paste/insert when PHI_DEBUG=1.
 	dumpNextDraw bool
 }
 
 func (c *ChatInput) completerOpen() bool {
-	return c.MentionOpen || c.SlashOpen
+	return c.MentionOpen || c.SlashOpen || c.QuestionOpen
 }
 
 func (c *ChatInput) bodyRows(width int, method xui.WidthMethod) int {
@@ -444,6 +449,7 @@ func (c *ChatInput) clear() {
 func (c *ChatInput) notifyCompleters() {
 	c.notifyMention()
 	c.notifySlash()
+	c.notifyQuestion()
 }
 
 func (c *ChatInput) notifyMention() {
@@ -460,6 +466,14 @@ func (c *ChatInput) notifySlash() {
 	}
 	q, _, _, ok := ActiveSlash(c.Value, c.Cursor)
 	c.OnSlashChange(ok, q)
+}
+
+func (c *ChatInput) notifyQuestion() {
+	if c.OnQuestionChange == nil {
+		return
+	}
+	q, _, _, ok := ActiveQuestion(c.Value, c.Cursor)
+	c.OnQuestionChange(ok, q)
 }
 
 // ReplaceRange replaces value[start:end] with text and places the cursor after it.

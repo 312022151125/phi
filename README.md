@@ -205,6 +205,7 @@ The editor supports:
 
 - `@` — fuzzy file mention picker (type `@` and start typing a path)
 - `/` — slash command picker (`/sessions`, `/resume`, `/clear`)
+- `?` — shortcut help picker (lists `/`, `!`, `@`, and key bindings; `Esc` closes)
 - `!command` — run a shell command locally and stream its output into the
   transcript (see [Commands](#commands))
 - `Ctrl+K` — command palette: settings → model / theme / permissions / agents, skills, hooks

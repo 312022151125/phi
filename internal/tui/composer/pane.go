@@ -31,10 +31,11 @@ type ComposerPane struct {
 	theme components.Theme
 	cwd   string
 
-	Chat    chat.ChatInput
-	mention mention.Picker
-	slash   mention.Picker
-	palette palette.CommandPalette
+	Chat     chat.ChatInput
+	mention  mention.Picker
+	slash    mention.Picker
+	question mention.Picker
+	palette  palette.CommandPalette
 
 	mentionGen int
 	commands   *commands.CommandRegistry
@@ -69,6 +70,10 @@ func NewComposerPane(theme components.Theme, model, cwd string) *ComposerPane {
 		slash: mention.Picker{
 			Theme:  theme,
 			Prefix: "/",
+		},
+		question: mention.Picker{
+			Theme:    theme,
+			NoPrefix: true,
 		},
 		palette: palette.CommandPalette{
 			Theme: theme,
@@ -130,11 +135,13 @@ func (c *ComposerPane) Wire(
 	}
 	c.Chat.OnMentionChange = c.onMentionChange
 	c.Chat.OnSlashChange = c.onSlashChange
+	c.Chat.OnQuestionChange = c.onQuestionChange
 	c.mention.OnAccept = c.acceptMention
 	c.slash.OnAccept = c.acceptSlash
+	c.question.OnAccept = c.acceptQuestion
 }
 
-// HideCompleters closes mention and slash pickers.
+// HideCompleters closes mention, slash, question, and @ pickers.
 func (c *ComposerPane) HideCompleters() {
 	if c == nil {
 		return
@@ -144,6 +151,8 @@ func (c *ComposerPane) HideCompleters() {
 	c.mentionGen++
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
+	c.question.Hide()
+	c.Chat.QuestionOpen = false
 }
 
 // HidePalette closes the command palette if open.
@@ -212,6 +221,8 @@ func (c *ComposerPane) CloseMentionSlash() {
 	c.mentionGen++
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
+	c.question.Hide()
+	c.Chat.QuestionOpen = false
 }
 
 // SetBashBorderActive toggles bash-mode border styling.
@@ -320,6 +331,7 @@ func (c *ComposerPane) SetTheme(th components.Theme) {
 	c.palette.Theme = th
 	c.mention.Theme = th
 	c.slash.Theme = th
+	c.question.Theme = th
 	c.SyncBashBorder(c.Chat.Value)
 }
 
@@ -385,6 +397,16 @@ func (c *ComposerPane) PickerOverlays(ctx components.DrawContext, listH, width i
 			Z:       15,
 		})
 	}
+	if c.question.Open {
+		c.question.AnchorBottomY = listH
+		c.question.AnchorX = 0
+		c.question.AnchorWidth = width
+		out = append(out, components.SubSurface{
+			Origin:  components.Point{X: 0, Y: 0},
+			Surface: c.question.Draw(ctx),
+			Z:       15,
+		})
+	}
 	if c.mention.Open {
 		c.mention.AnchorBottomY = listH
 		c.mention.AnchorX = 0
@@ -446,6 +468,12 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			return
 		}
 		if ev.Press && ev.Code == xui.KeyEscape {
+			if c.question.Open {
+				c.question.Cancel()
+				c.Chat.QuestionOpen = false
+				ctx.ConsumeAndRedraw()
+				return
+			}
 			if c.slash.Open {
 				c.slash.Cancel()
 				c.Chat.SlashOpen = false
@@ -494,6 +522,13 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			c.palette.Handle(ctx, ev)
 			if !c.palette.Open {
 				c.FocusChat()
+			}
+			return
+		}
+		if c.question.Open && mentionNavKey(ev) {
+			c.question.Handle(ctx, ev)
+			if !c.question.Open {
+				c.Chat.QuestionOpen = false
 			}
 			return
 		}
@@ -551,7 +586,7 @@ func (c *ComposerPane) onMentionChange(active bool, query string) {
 		c.mentionGen++
 		return
 	}
-	if c.slash.Open || c.Chat.SlashOpen {
+	if c.slash.Open || c.Chat.SlashOpen || c.question.Open || c.Chat.QuestionOpen {
 		return
 	}
 	c.slash.Hide()
@@ -573,6 +608,8 @@ func (c *ComposerPane) onSlashChange(active bool, query string) {
 		c.Chat.SlashOpen = false
 		return
 	}
+	c.question.Hide()
+	c.Chat.QuestionOpen = false
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
 	c.mentionGen++
@@ -587,6 +624,30 @@ func (c *ComposerPane) onSlashChange(active bool, query string) {
 	c.slash.SetResults(items, status)
 	c.slash.Show()
 	c.Chat.SlashOpen = true
+}
+
+func (c *ComposerPane) onQuestionChange(active bool, query string) {
+	if c == nil {
+		return
+	}
+	if !active {
+		c.question.Hide()
+		c.Chat.QuestionOpen = false
+		return
+	}
+	c.mention.Hide()
+	c.Chat.MentionOpen = false
+	c.mentionGen++
+	c.slash.Hide()
+	c.Chat.SlashOpen = false
+	items := filterQuestionItems(query, questionShortcutItems())
+	status := ""
+	if len(items) == 0 {
+		status = "No matching shortcuts"
+	}
+	c.question.SetResults(items, status)
+	c.question.Show()
+	c.Chat.QuestionOpen = true
 }
 
 func (c *ComposerPane) scheduleMentionSearch(query string) {
@@ -696,6 +757,18 @@ func resolveMentionPath(cwd, rel string) string {
 		return filepath.Clean(rel)
 	}
 	return filepath.Join(cwd, rel)
+}
+
+func (c *ComposerPane) acceptQuestion(_ mention.Item) {
+	if c == nil {
+		return
+	}
+	_, start, end, ok := chat.ActiveQuestion(c.Chat.Value, c.Chat.Cursor)
+	if ok {
+		c.Chat.ReplaceRange(start, end, "")
+	}
+	c.question.Hide()
+	c.Chat.QuestionOpen = false
 }
 
 func (c *ComposerPane) acceptSlash(item mention.Item) {

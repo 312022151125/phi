@@ -10,6 +10,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Composer shortcut help: type `?` at the start of the input (like `/` commands); Esc closes the picker.
 - `Ctrl+A` / `Ctrl+E` move the composer cursor to the start/end of the current line.
 - `Ctrl+U` clears the composer input, pending images, and pending skills.
 - Per-model `image_enabled` config key; the composer blocks clipboard and `@` image attach and shows a warning when the active model does not support images.

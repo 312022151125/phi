@@ -6,6 +6,7 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/components"
@@ -32,31 +33,20 @@ func TestChatInputBorderLabels(t *testing.T) {
 		UseBlockCursor: true,
 	}
 	s := c.Draw(components.DrawContext{Max: components.Size{Width: 60, Height: 10}})
-	if s.Size.Width != 60 || s.Size.Height != 5 {
-		t.Fatalf("size = %+v", s.Size)
-	}
+	assert.Equal(t, 60, s.Size.Width)
+	assert.Equal(t, 5, s.Size.Height)
 	// Corners
-	if s.Buffer[0].Char != "╭" || s.Buffer[59].Char != "╮" {
-		t.Fatalf("top corners %q %q", s.Buffer[0].Char, s.Buffer[59].Char)
-	}
+	assert.Equal(t, "╭", s.Buffer[0].Char)
+	assert.Equal(t, "╮", s.Buffer[59].Char)
 	bottom := 4 * 60
-	if s.Buffer[bottom].Char != "╰" || s.Buffer[bottom+59].Char != "╯" {
-		t.Fatalf("bottom corners")
-	}
+	assert.Equal(t, "╰", s.Buffer[bottom].Char)
+	assert.Equal(t, "╯", s.Buffer[bottom+59].Char)
 	top := rowString(s, 0)
-	if !strings.Contains(top, "nostromo") {
-		t.Fatalf("top row missing model: %q", top)
-	}
+	assert.Contains(t, top, "nostromo")
 	bot := rowString(s, 4)
-	if !strings.Contains(bot, "5% of 128k") {
-		t.Fatalf("bottom row missing context/token: %q", bot)
-	}
-	if !strings.Contains(bot, "examples") {
-		t.Fatalf("bottom row missing path: %q", bot)
-	}
-	if s.Cursor == nil {
-		t.Fatal("expected cursor")
-	}
+	assert.Contains(t, bot, "5% of 128k")
+	assert.Contains(t, bot, "examples")
+	require.NotNil(t, s.Cursor, "expected cursor")
 }
 
 func TestChatInputTyping(t *testing.T) {
@@ -64,15 +54,12 @@ func TestChatInputTyping(t *testing.T) {
 	ctx := &components.EventContext{}
 	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'h', Press: true})
 	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: 'i', Press: true})
-	if c.Value != "hi" || c.Cursor != 2 {
-		t.Fatalf("value=%q cursor=%d", c.Value, c.Cursor)
-	}
+	assert.Equal(t, "hi", c.Value)
+	assert.Equal(t, 2, c.Cursor)
 	submitted := ""
 	c.OnSubmit = func(s string) { submitted = s }
 	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyEnter, Press: true})
-	if submitted != "hi" {
-		t.Fatalf("submit = %q", submitted)
-	}
+	assert.Equal(t, "hi", submitted)
 }
 
 func TestChatInputCtrlUClearsAll(t *testing.T) {
@@ -144,19 +131,28 @@ func TestChatInputMentionOpenDefersNav(t *testing.T) {
 	c := &ChatInput{MinBodyRows: 3, Value: "@a\nb", Cursor: 2, MentionOpen: true}
 	ctx := &components.EventContext{}
 	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyDown, Press: true})
-	if ctx.Consume {
-		t.Fatal("Down should bubble when MentionOpen")
-	}
-	if c.Cursor != 2 {
-		t.Fatalf("cursor should stay put, got %d", c.Cursor)
-	}
+	require.False(t, ctx.Consume, "Down should bubble when MentionOpen")
+	require.Equal(t, 2, c.Cursor, "cursor should stay put")
 	submitted := false
 	c.OnSubmit = func(string) { submitted = true }
 	ctx = &components.EventContext{}
 	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyEnter, Press: true})
-	if ctx.Consume || submitted {
-		t.Fatal("Enter should bubble to picker when MentionOpen")
-	}
+	require.False(t, ctx.Consume, "Enter should bubble to picker when MentionOpen")
+	require.False(t, submitted, "Enter should bubble to picker when MentionOpen")
+}
+
+func TestChatInputQuestionPicker(t *testing.T) {
+	active := false
+	c := &ChatInput{MinBodyRows: 3, MaxBodyRows: 8}
+	c.OnQuestionChange = func(ok bool, _ string) { active = ok }
+	ctx := &components.EventContext{}
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: '?', Press: true})
+	require.True(t, active, "expected question picker active after typing ?")
+	require.Equal(t, "?", c.Value)
+	ctx = &components.EventContext{}
+	c.QuestionOpen = true
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyEnter, Press: true})
+	require.False(t, ctx.Consume, "Enter should bubble to picker when QuestionOpen")
 }
 
 func TestChatInputNewlineModifiers(t *testing.T) {
@@ -167,12 +163,8 @@ func TestChatInputNewlineModifiers(t *testing.T) {
 		submitted := false
 		c.OnSubmit = func(string) { submitted = true }
 		c.Handle(ctx, xui.KeyEvent{Code: xui.KeyEnter, Mods: mods, Press: true})
-		if submitted {
-			t.Fatalf("mods=%v should insert newline, not submit", mods)
-		}
-		if c.Value != "a\n" {
-			t.Fatalf("mods=%v value=%q", mods, c.Value)
-		}
+		require.False(t, submitted, "mods=%v should insert newline, not submit", mods)
+		require.Equal(t, "a\n", c.Value, "mods=%v", mods)
 	}
 }
 
@@ -180,21 +172,13 @@ func TestChatInputGrowsUntilMax(t *testing.T) {
 	c := &ChatInput{MinBodyRows: 3, MaxBodyRows: 5, PaddingX: 1}
 	method := xui.WidthUnicode
 	w := 40
-	if h := c.PreferredHeight(w, method); h != 5 {
-		t.Fatalf("empty preferred height = %d, want 5", h)
-	}
+	require.Equal(t, 5, c.PreferredHeight(w, method), "empty preferred height")
 	c.Value = "one\ntwo\nthree\nfour"
-	if h := c.PreferredHeight(w, method); h != 6 {
-		t.Fatalf("4 lines preferred height = %d, want 6", h)
-	}
+	require.Equal(t, 6, c.PreferredHeight(w, method), "4 lines preferred height")
 	c.Value = "one\ntwo\nthree\nfour\nfive\nsix\nseven"
-	if h := c.PreferredHeight(w, method); h != 7 {
-		t.Fatalf("over max preferred height = %d, want 7 (max body 5 + borders)", h)
-	}
+	require.Equal(t, 7, c.PreferredHeight(w, method), "over max preferred height (max body 5 + borders)")
 	s := c.Draw(components.DrawContext{Max: components.Size{Width: w, Height: 20}, Method: method})
-	if s.Size.Height != 7 {
-		t.Fatalf("draw height = %d, want 7", s.Size.Height)
-	}
+	require.Equal(t, 7, s.Size.Height, "draw height")
 }
 
 func TestChatInputPasteMultilineDoesNotSubmit(t *testing.T) {
@@ -203,15 +187,9 @@ func TestChatInputPasteMultilineDoesNotSubmit(t *testing.T) {
 	c.OnSubmit = func(string) { submitted = true }
 	ctx := &components.EventContext{}
 	c.Handle(ctx, xui.PasteEvent{Text: "a\nb\nc"})
-	if submitted {
-		t.Fatal("paste must not submit")
-	}
-	if c.Value != "a\nb\nc" {
-		t.Fatalf("value=%q", c.Value)
-	}
-	if h := c.PreferredHeight(40, xui.WidthUnicode); h < 5 {
-		t.Fatalf("expected grow after paste, height=%d", h)
-	}
+	require.False(t, submitted, "paste must not submit")
+	require.Equal(t, "a\nb\nc", c.Value)
+	require.GreaterOrEqual(t, c.PreferredHeight(40, xui.WidthUnicode), 5, "expected grow after paste")
 }
 
 func TestChatInputCJKPasteNoContinuationReverse(t *testing.T) {
@@ -225,9 +203,7 @@ func TestChatInputCJKPasteNoContinuationReverse(t *testing.T) {
 	ctx := &components.EventContext{}
 	c.Handle(ctx, xui.PasteEvent{Text: "已修复中文粘贴"})
 	s := c.Draw(components.DrawContext{Max: components.Size{Width: 40, Height: 10}, Method: xui.WidthUnicode})
-	if s.Cursor == nil {
-		t.Fatal("expected cursor")
-	}
+	require.NotNil(t, s.Cursor, "expected cursor")
 	cy := s.Cursor.Y
 	revPrimaries := 0
 	for x := 0; x < s.Size.Width; {
@@ -235,49 +211,38 @@ func TestChatInputCJKPasteNoContinuationReverse(t *testing.T) {
 		step := int(cell.Width)
 		step = max(step, 1)
 		if xui.StringWidth(cell.Char, xui.WidthUnicode) == 2 && cell.Width != 2 {
-			t.Fatalf("CJK %q stored with width %d at col %d", cell.Char, cell.Width, x)
+			require.FailNowf(t, "CJK width mismatch", "CJK %q stored with width %d at col %d", cell.Char, cell.Width, x)
 		}
 		if cell.Style.Reverse {
 			revPrimaries++
 		}
 		x += step
 	}
-	if revPrimaries != 1 {
-		t.Fatalf("expected 1 reverse primary (block cursor), got %d", revPrimaries)
-	}
+	require.Equal(t, 1, revPrimaries, "expected 1 reverse primary (block cursor)")
 }
 
 func TestCursorLineColFullWidthWrap(t *testing.T) {
 	// 5 CJK chars → width 10; cursor at end of exactly-full line must wrap.
 	sample := "一二三四五"
 	line, col := text.CursorLineCol(sample, len(sample), 10, xui.WidthUnicode)
-	if line != 1 || col != 0 {
-		t.Fatalf("got line=%d col=%d, want line=1 col=0", line, col)
-	}
+	require.Equal(t, 1, line)
+	require.Zero(t, col)
 }
 
 func TestSnapSurfaceColToGlyphStart(t *testing.T) {
 	s := components.NewSurface(6, 1, nil)
 	s.SetCell(0, 0, xui.Cell{Char: "中", Width: 2})
 	s.SetCell(2, 0, xui.Cell{Char: "文", Width: 2})
-	if got := text.SnapSurfaceColToGlyphStart(s.Buffer, 6, 1, 0); got != 0 {
-		t.Fatalf("snap 1 -> %d, want 0", got)
-	}
-	if got := text.SnapSurfaceColToGlyphStart(s.Buffer, 6, 3, 0); got != 2 {
-		t.Fatalf("snap 3 -> %d, want 2", got)
-	}
+	require.Equal(t, 0, text.SnapSurfaceColToGlyphStart(s.Buffer, 6, 1, 0), "snap col 1")
+	require.Equal(t, 2, text.SnapSurfaceColToGlyphStart(s.Buffer, 6, 3, 0), "snap col 3")
 }
 
 func TestSanitizeComposerTextDropsControls(t *testing.T) {
 	in := "a\tb\r\nc\x00e\rd\n"
 	got := sanitizeComposerText(in)
 	want := "a    b\nce\nd\n"
-	if got != want {
-		t.Fatalf("got %q want %q", got, want)
-	}
-	if got := sanitizeComposerText("▎hello"); got != "hello" {
-		t.Fatalf("chrome strip: got %q", got)
-	}
+	require.Equal(t, want, got)
+	require.Equal(t, "hello", sanitizeComposerText("▎hello"), "chrome strip")
 }
 
 func TestChatInputPendingSkills(t *testing.T) {
@@ -287,20 +252,13 @@ func TestChatInputPendingSkills(t *testing.T) {
 		Theme:         components.DefaultTheme(),
 	}
 	method := xui.WidthUnicode
-	if h := c.PreferredHeight(60, method); h != 6 {
-		t.Fatalf("preferred height with pending skill = %d, want 6", h)
-	}
+	require.Equal(t, 6, c.PreferredHeight(60, method), "preferred height with pending skill")
 	s := c.Draw(components.DrawContext{Max: components.Size{Width: 60, Height: 10}, Method: method})
-	if s.Size.Height != 6 {
-		t.Fatalf("draw height = %d, want 6", s.Size.Height)
-	}
-	if s.Buffer[0].Char != "╭" {
-		t.Fatalf("top-left = %q, want ╭ (skills must be inside the border)", s.Buffer[0].Char)
-	}
+	require.Equal(t, 6, s.Size.Height, "draw height")
+	require.Equal(t, "╭", s.Buffer[0].Char, "skills must be inside the border")
 	inner := rowString(s, 1)
-	if !strings.Contains(inner, "Skills:") || !strings.Contains(inner, "building-plugins") {
-		t.Fatalf("pending skills row missing inside border: %q", inner)
-	}
+	require.Contains(t, inner, "Skills:")
+	require.Contains(t, inner, "building-plugins")
 	underlined := false
 	row := 1 * s.Size.Width
 	for x := 0; x < s.Size.Width; x++ {
@@ -309,23 +267,16 @@ func TestChatInputPendingSkills(t *testing.T) {
 			break
 		}
 	}
-	if !underlined {
-		t.Fatal("expected underlined skill name")
-	}
+	require.True(t, underlined, "expected underlined skill name")
 	// Cursor sits on the editor line below the skills chip.
-	if s.Cursor == nil || s.Cursor.Y != 2 {
-		t.Fatalf("cursor = %+v, want y=2 (below skills)", s.Cursor)
-	}
+	require.NotNil(t, s.Cursor, "expected cursor below skills")
+	require.Equal(t, 2, s.Cursor.Y, "cursor below skills")
 
 	// Backspace on empty input pops the pending skill.
 	ctx := &components.EventContext{}
 	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyBackspace, Press: true})
-	if len(c.PendingSkills) != 0 {
-		t.Fatalf("expected pending skills cleared, got %v", c.PendingSkills)
-	}
-	if h := c.PreferredHeight(60, method); h != 5 {
-		t.Fatalf("preferred height after clear = %d, want 5", h)
-	}
+	require.Empty(t, c.PendingSkills, "expected pending skills cleared")
+	require.Equal(t, 5, c.PreferredHeight(60, method), "preferred height after clear")
 }
 
 func TestChatInputAddPendingSkillDedup(t *testing.T) {
@@ -333,12 +284,9 @@ func TestChatInputAddPendingSkillDedup(t *testing.T) {
 	c.AddPendingSkill("building-plugins")
 	c.AddPendingSkill("building-plugins")
 	c.AddPendingSkill("example-skill")
-	if len(c.PendingSkills) != 2 {
-		t.Fatalf("got %v", c.PendingSkills)
-	}
-	if !c.PopPendingSkill() || c.PendingSkills[0] != "building-plugins" {
-		t.Fatalf("pop left %v", c.PendingSkills)
-	}
+	require.Len(t, c.PendingSkills, 2)
+	require.True(t, c.PopPendingSkill())
+	require.Equal(t, "building-plugins", c.PendingSkills[0])
 }
 
 func rowString(s components.Surface, y int) string {
@@ -363,14 +311,11 @@ func TestChatInputCJKBlockCursorKeepsWidth(t *testing.T) {
 		CursorStyle:    xui.Style{Reverse: true},
 	}
 	s := c.Draw(components.DrawContext{Max: components.Size{Width: 40, Height: 10}, Method: xui.WidthUnicode})
-	if s.Cursor == nil {
-		t.Fatal("expected cursor")
-	}
+	require.NotNil(t, s.Cursor, "expected cursor")
 	cx, cy := s.Cursor.X, s.Cursor.Y
 	cell := s.Buffer[cy*s.Size.Width+cx]
-	if cell.Char != "中" || cell.Width != 2 {
-		t.Fatalf("block cursor cell = %+v, want 中 width 2", cell)
-	}
+	require.Equal(t, "中", cell.Char)
+	require.EqualValues(t, 2, cell.Width)
 }
 
 func TestCursorAfterCJKPasteAtTextEnd(t *testing.T) {
@@ -379,9 +324,7 @@ func TestCursorAfterCJKPasteAtTextEnd(t *testing.T) {
 	c.Handle(&components.EventContext{}, xui.PasteEvent{Text: sample})
 	w := 80
 	s := c.Draw(components.DrawContext{Max: components.Size{Width: w, Height: 10}, Method: xui.WidthUnicode})
-	if s.Cursor == nil {
-		t.Fatal("nil cursor")
-	}
+	require.NotNil(t, s.Cursor, "nil cursor")
 	cy := s.Cursor.Y
 	var lastContentEnd int
 	for x := 0; x < w; {
@@ -393,14 +336,10 @@ func TestCursorAfterCJKPasteAtTextEnd(t *testing.T) {
 		}
 		x += step
 	}
-	if s.Cursor.X != lastContentEnd {
-		t.Fatalf("cursorX=%d want text end %d", s.Cursor.X, lastContentEnd)
-	}
+	require.Equal(t, lastContentEnd, s.Cursor.X, "cursorX")
 	// Insertion caret must not sit on the last CJK primary (IME would overlay it).
 	cell := s.Buffer[cy*w+s.Cursor.X]
-	if xui.StringWidth(cell.Char, xui.WidthUnicode) == 2 {
-		t.Fatalf("cursor on wide glyph %q", cell.Char)
-	}
+	require.NotEqual(t, 2, xui.StringWidth(cell.Char, xui.WidthUnicode), "cursor on wide glyph %q", cell.Char)
 }
 
 func TestChatInputPendingImagesHeight(t *testing.T) {
@@ -409,9 +348,7 @@ func TestChatInputPendingImagesHeight(t *testing.T) {
 	c.PendingImages = []imgutil.Attachment{
 		{Label: "a.png", Result: imgutil.Result{Data: []byte("x"), MimeType: "image/png"}},
 	}
-	if got := c.PreferredHeight(40, xui.WidthUnicode); got != base+1 {
-		t.Fatalf("height=%d want %d", got, base+1)
-	}
+	require.Equal(t, base+1, c.PreferredHeight(40, xui.WidthUnicode))
 }
 
 func TestChatInputBackspacePopsPendingImage(t *testing.T) {
@@ -421,7 +358,5 @@ func TestChatInputBackspacePopsPendingImage(t *testing.T) {
 	}
 	ctx := &components.EventContext{}
 	c.Handle(ctx, xui.KeyEvent{Press: true, Code: xui.KeyBackspace})
-	if len(c.PendingImages) != 0 {
-		t.Fatalf("pending images=%d want 0", len(c.PendingImages))
-	}
+	require.Empty(t, c.PendingImages)
 }
