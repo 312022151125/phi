@@ -24,7 +24,9 @@ type Picker struct {
 	MaxItems int // visible rows; default 12
 	Width    int // panel width; 0 = fill anchor
 	// Prefix is drawn before Path (default "@"). Use "/" for slash commands.
-	Prefix   string
+	Prefix string
+	// NoPrefix suppresses the default "@" when Prefix is empty (shortcut help list).
+	NoPrefix bool
 	OnAccept func(Item)
 	OnCancel func()
 
@@ -266,7 +268,7 @@ func (p *Picker) Draw(ctx components.DrawContext) components.Surface {
 	padL := 1
 	listY := 1
 	prefix := p.Prefix
-	if prefix == "" {
+	if prefix == "" && !p.NoPrefix {
 		prefix = "@"
 	}
 	if nItems == 0 {

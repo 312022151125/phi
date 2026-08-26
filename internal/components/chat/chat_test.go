@@ -159,6 +159,26 @@ func TestChatInputMentionOpenDefersNav(t *testing.T) {
 	}
 }
 
+func TestChatInputQuestionPicker(t *testing.T) {
+	active := false
+	c := &ChatInput{MinBodyRows: 3, MaxBodyRows: 8}
+	c.OnQuestionChange = func(ok bool, _ string) { active = ok }
+	ctx := &components.EventContext{}
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: '?', Press: true})
+	if !active {
+		t.Fatal("expected question picker active after typing ?")
+	}
+	if c.Value != "?" {
+		t.Fatalf("value=%q want ?", c.Value)
+	}
+	ctx = &components.EventContext{}
+	c.QuestionOpen = true
+	c.Handle(ctx, xui.KeyEvent{Code: xui.KeyEnter, Press: true})
+	if ctx.Consume {
+		t.Fatal("Enter should bubble to picker when QuestionOpen")
+	}
+}
+
 func TestChatInputNewlineModifiers(t *testing.T) {
 	for _, mods := range []xui.Modifiers{xui.ModShift, xui.ModAlt, xui.ModCtrl} {
 		c := &ChatInput{MinBodyRows: 3, MaxBodyRows: 8}
