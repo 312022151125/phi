@@ -38,7 +38,9 @@ type ComposerPane struct {
 	palette  palette.CommandPalette
 
 	mentionGen int
-	commands   *commands.CommandRegistry
+	// mentionCancel stops the search in flight; nil before the first search.
+	mentionCancel context.CancelFunc
+	commands      *commands.CommandRegistry
 
 	transcript *transcript.TranscriptPane
 	submitter  BusyChecker
@@ -148,7 +150,7 @@ func (c *ComposerPane) HideCompleters() {
 	}
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
-	c.mentionGen++
+	c.abandonMentionSearch()
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
 	c.question.Hide()
@@ -218,7 +220,7 @@ func (c *ComposerPane) CloseMentionSlash() {
 	}
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
-	c.mentionGen++
+	c.abandonMentionSearch()
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
 	c.question.Hide()
@@ -349,8 +351,13 @@ func (c *ComposerPane) ApplyMentionResults(msg controller.MentionResultsMsg) {
 		items = append(items, mention.Item{Path: p})
 	}
 	status := ""
-	if len(items) == 0 {
+	switch {
+	case len(items) == 0:
 		status = "No matching files"
+	case msg.Truncated:
+		// Say the list is partial, so a missing file reads as "narrow the
+		// query" rather than "the file is not there".
+		status = fmt.Sprintf("First %d matches — type more to narrow", len(items))
 	}
 	c.mention.SetResults(items, status)
 }
@@ -483,7 +490,7 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			if c.mention.Open {
 				c.mention.Cancel()
 				c.Chat.MentionOpen = false
-				c.mentionGen++
+				c.abandonMentionSearch()
 				ctx.ConsumeAndRedraw()
 				return
 			}
@@ -543,6 +550,7 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			c.mention.Handle(ctx, ev)
 			if !c.mention.Open {
 				c.Chat.MentionOpen = false
+				c.abandonMentionSearch()
 			}
 			return
 		}
@@ -583,7 +591,7 @@ func (c *ComposerPane) onMentionChange(active bool, query string) {
 	if !active {
 		c.mention.Hide()
 		c.Chat.MentionOpen = false
-		c.mentionGen++
+		c.abandonMentionSearch()
 		return
 	}
 	if c.slash.Open || c.Chat.SlashOpen || c.question.Open || c.Chat.QuestionOpen {
@@ -612,7 +620,7 @@ func (c *ComposerPane) onSlashChange(active bool, query string) {
 	c.Chat.QuestionOpen = false
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
-	c.mentionGen++
+	c.abandonMentionSearch()
 	items := []mention.Item{}
 	if c.commands != nil {
 		items = c.commands.FilterSlash(query)
@@ -637,7 +645,7 @@ func (c *ComposerPane) onQuestionChange(active bool, query string) {
 	}
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
-	c.mentionGen++
+	c.abandonMentionSearch()
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
 	items := filterQuestionItems(query, questionShortcutItems())
@@ -650,22 +658,61 @@ func (c *ComposerPane) onQuestionChange(active bool, query string) {
 	c.Chat.QuestionOpen = true
 }
 
+// mentionSearchLimit is how many file rows the picker shows.
+const mentionSearchLimit = 20
+
+// abandonMentionSearch drops any result still in flight and stops the work
+// behind it. Bumping the generation alone only makes the UI ignore the answer;
+// the fd process keeps walking the tree. Every path that closes the picker or
+// starts a new query goes through here, so the two always happen together.
+func (c *ComposerPane) abandonMentionSearch() {
+	c.mentionGen++
+	if c.mentionCancel != nil {
+		c.mentionCancel()
+		c.mentionCancel = nil
+	}
+}
+
+// scheduleMentionSearch debounces, then searches. Each call cancels the search
+// in flight: without that, every keystroke leaves an fd process walking the
+// tree, and on a large one they pile up faster than they finish.
 func (c *ComposerPane) scheduleMentionSearch(query string) {
 	if c == nil {
 		return
 	}
-	c.mentionGen++
+	c.abandonMentionSearch()
 	gen := c.mentionGen
 	cwd := c.cwd
 	publish := c.publish
+
+	ctx, cancel := context.WithCancel(context.Background())
+	c.mentionCancel = cancel
+
 	go func() {
-		time.Sleep(100 * time.Millisecond)
-		ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 		defer cancel()
-		paths, err := filesearch.Search(ctx, cwd, query, 20)
-		msg := controller.MentionResultsMsg{Gen: gen, Query: query, Paths: paths}
+		// Debounce. A newer keystroke cancels this before any work starts.
+		select {
+		case <-time.After(100 * time.Millisecond):
+		case <-ctx.Done():
+			return
+		}
+
+		searchCtx, searchCancel := context.WithTimeout(ctx, 3*time.Second)
+		defer searchCancel()
+		paths, truncated, err := filesearch.Search(searchCtx, cwd, query, mentionSearchLimit)
+
+		// A superseded search has nothing useful to report.
+		if ctx.Err() != nil {
+			return
+		}
+
+		msg := controller.MentionResultsMsg{Gen: gen, Query: query, Paths: paths, Truncated: truncated}
 		if err != nil {
-			msg.ErrText = err.Error()
+			if errors.Is(err, filesearch.ErrTimeout) {
+				msg.ErrText = "Search timed out — type more of the path"
+			} else {
+				msg.ErrText = err.Error()
+			}
 		}
 		if publish != nil {
 			publish(msg)
@@ -681,7 +728,7 @@ func (c *ComposerPane) acceptMention(item mention.Item) {
 	if !ok {
 		start, end = c.Chat.Cursor, c.Chat.Cursor
 	}
-	c.mentionGen++
+	c.abandonMentionSearch()
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
 
