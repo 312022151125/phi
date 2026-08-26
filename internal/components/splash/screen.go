@@ -107,7 +107,7 @@ func (w *Screen) Draw(ctx components.DrawContext) components.Surface {
 	textW = max(textW, 20)
 	textW = min(textW, 50)
 
-	// Brand near-white; only Ctrl+K / ! carry the accent punch.
+	// Brand near-white; only Ctrl+K / ? carry the accent punch.
 	brand := xui.Style{Fg: xui.RGBColor(0xe8, 0xec, 0xf2), Bold: true}
 	if th.Foreground.Fg.Kind == xui.ColorRGB {
 		brand = xui.Style{Fg: th.Foreground.Fg, Bold: true}
@@ -133,8 +133,8 @@ func (w *Screen) Draw(ctx components.DrawContext) components.Surface {
 			{Text: "Ctrl+K", Style: helpKey},
 			{Text: " command palette", Style: body},
 			{Text: ", ", Style: body},
-			{Text: "!", Style: helpKey},
-			{Text: " run a shell command", Style: body},
+			{Text: "?", Style: helpKey},
+			{Text: " shortcuts", Style: body},
 		}},
 	}
 	for _, h := range w.hintLines() {

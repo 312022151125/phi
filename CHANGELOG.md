@@ -18,6 +18,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Splash hint now shows `?` for shortcut help instead of the removed `!` shell-command shortcut.
+
 ### Deprecated
 
 ### Removed
