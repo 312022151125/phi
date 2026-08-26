@@ -42,7 +42,7 @@ type ChatInput struct {
 	BorderStyle    xui.Style
 	TextStyle      xui.Style
 	CursorStyle    xui.Style // visual block when terminal cursor unavailable
-	UseBlockCursor bool      // paint reverse cell; hides the terminal hardware cursor
+	UseBlockCursor bool      // paint reverse cell in addition to terminal cursor
 
 	// Theme styles the pending-skills chip row (Muted label, Success names).
 	Theme components.Theme
@@ -654,9 +654,8 @@ func (c *ChatInput) Draw(ctx components.DrawContext) components.Surface {
 			}
 		}
 		s.SetCell(cx, cy, xui.Cell{Char: ch, Width: width, Style: cursorSt})
-	} else {
-		s.Cursor = &components.Point{X: cx, Y: cy}
 	}
+	s.Cursor = &components.Point{X: cx, Y: cy}
 
 	if debuglog.Enabled() && c.dumpNextDraw {
 		c.dumpNextDraw = false
