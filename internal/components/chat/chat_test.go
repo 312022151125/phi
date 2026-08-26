@@ -46,7 +46,7 @@ func TestChatInputBorderLabels(t *testing.T) {
 	bot := rowString(s, 4)
 	assert.Contains(t, bot, "5% of 128k")
 	assert.Contains(t, bot, "examples")
-	require.NotNil(t, s.Cursor, "expected cursor")
+	require.Nil(t, s.Cursor, "block cursor hides hardware cursor")
 }
 
 func TestChatInputTyping(t *testing.T) {
@@ -203,8 +203,8 @@ func TestChatInputCJKPasteNoContinuationReverse(t *testing.T) {
 	ctx := &components.EventContext{}
 	c.Handle(ctx, xui.PasteEvent{Text: "已修复中文粘贴"})
 	s := c.Draw(components.DrawContext{Max: components.Size{Width: 40, Height: 10}, Method: xui.WidthUnicode})
-	require.NotNil(t, s.Cursor, "expected cursor")
-	cy := s.Cursor.Y
+	require.Nil(t, s.Cursor, "block cursor hides hardware cursor")
+	cy := blockCursorRow(s)
 	revPrimaries := 0
 	for x := 0; x < s.Size.Width; {
 		cell := s.Buffer[cy*s.Size.Width+x]
@@ -289,6 +289,24 @@ func TestChatInputAddPendingSkillDedup(t *testing.T) {
 	require.Equal(t, "building-plugins", c.PendingSkills[0])
 }
 
+func blockCursorRow(s components.Surface) int {
+	_, y := blockCursorCell(s)
+	return y
+}
+
+func blockCursorCell(s components.Surface) (x, y int) {
+	for y := 0; y < s.Size.Height; y++ {
+		for x := 0; x < s.Size.Width; x++ {
+			cell := s.Buffer[y*s.Size.Width+x]
+			if cell.Style.Reverse {
+				return x, y
+			}
+		}
+	}
+	require.FailNow(nil, "expected reverse block cursor cell")
+	return 0, 0
+}
+
 func rowString(s components.Surface, y int) string {
 	var b strings.Builder
 	for x := 0; x < s.Size.Width; x++ {
@@ -311,8 +329,8 @@ func TestChatInputCJKBlockCursorKeepsWidth(t *testing.T) {
 		CursorStyle:    xui.Style{Reverse: true},
 	}
 	s := c.Draw(components.DrawContext{Max: components.Size{Width: 40, Height: 10}, Method: xui.WidthUnicode})
-	require.NotNil(t, s.Cursor, "expected cursor")
-	cx, cy := s.Cursor.X, s.Cursor.Y
+	require.Nil(t, s.Cursor, "block cursor hides hardware cursor")
+	cx, cy := blockCursorCell(s)
 	cell := s.Buffer[cy*s.Size.Width+cx]
 	require.Equal(t, "中", cell.Char)
 	require.EqualValues(t, 2, cell.Width)

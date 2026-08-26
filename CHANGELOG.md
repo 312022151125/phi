@@ -26,6 +26,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Composer caret uses a reverse-video block cursor instead of the terminal hardware cursor, fixing hollow/blinking carets in some terminals (e.g. `xterm-256color`).
+
 ### Security
 
 <!-- Released section -->
