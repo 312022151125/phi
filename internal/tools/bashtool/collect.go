@@ -47,16 +47,6 @@ func NewBashOutputTail(maxLines, maxBytes int) *BashOutputTail {
 	return &BashOutputTail{maxLines: maxLines, maxBytes: maxBytes}
 }
 
-// Write implements io.Writer while retaining only the newest display-sized
-// tail. It is safe for concurrent use.
-func (t *BashOutputTail) Write(p []byte) (int, error) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	t.buf.Write(p)
-	t.trimLocked()
-	return len(p), nil
-}
-
 // WriteString appends s to the bounded tail without an intermediate byte
 // slice.
 func (t *BashOutputTail) WriteString(s string) (int, error) {

@@ -40,6 +40,8 @@ go test ./internal/hooks -v    # one package
 make fmt                       # apply formatters
 make fmt-check                 # CI formatting gate
 make lint                      # golangci-lint
+make deadcode                  # unreachable funcs vs baseline
+make check                     # fmt-check + lint + deadcode (CI)
 make build                     # ./phi
 ```
 

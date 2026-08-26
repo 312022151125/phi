@@ -2,6 +2,7 @@ package text
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/alecthomas/chroma/v2"
@@ -16,6 +17,8 @@ import (
 
 	"github.com/pulseaiclub/phi/internal/components"
 )
+
+var rePathish = regexp.MustCompile(`\b[\w./-]+/(?:[\w./-]*/)?|\b[\w-]+\.(?:go|ts|js|md|json|zig)\b`)
 
 var mdParser = goldmark.New(
 	goldmark.WithExtensions(extension.GFM),
@@ -559,6 +562,16 @@ func highlightPathsStyled(text string, base xui.Style, th components.Theme) []co
 		out = []components.Span{{Text: text, Style: base}}
 	}
 	return out
+}
+
+func looksHighlightable(s string) bool {
+	if strings.Contains(s, "/") {
+		return true
+	}
+	if strings.Contains(s, ".") {
+		return true
+	}
+	return false
 }
 
 func spansText(spans []components.Span) string {

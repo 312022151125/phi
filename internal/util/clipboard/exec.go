@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"os"
 	"os/exec"
 	"time"
 )
@@ -67,8 +66,4 @@ func pipeToCommand(name string, data []byte, args ...string) error {
 		return err
 	}
 	return cmd.Wait()
-}
-
-func isWaylandSession() bool {
-	return os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("XDG_SESSION_TYPE") == "wayland"
 }

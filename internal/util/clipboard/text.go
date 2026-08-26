@@ -32,37 +32,3 @@ func CopyText(text string) error {
 		return errors.New("clipboard: copy text: install wl-clipboard or xclip")
 	}
 }
-
-// ReadText returns plain text from the system clipboard.
-func ReadText() (string, error) {
-	var (
-		data []byte
-		err  error
-	)
-	switch runtime.GOOS {
-	case "darwin":
-		data, err = runCommandTimeout(defaultReadTimeout, "pbpaste")
-	case "windows":
-		data, err = runCommandTimeout(
-			defaultReadTimeout, "powershell", "-NoProfile", "-Command", "(Get-Clipboard -Raw).ToString()",
-		)
-	default:
-		if isWaylandSession() && lookPath("wl-paste") {
-			data, err = runCommandTimeout(defaultReadTimeout, "wl-paste", "--no-newline")
-		} else if lookPath("xclip") {
-			data, err = runCommandTimeout(defaultReadTimeout, "xclip", "-selection", "clipboard", "-o")
-		} else if lookPath("wl-paste") {
-			data, err = runCommandTimeout(defaultReadTimeout, "wl-paste", "--no-newline")
-		} else {
-			return "", errors.New("clipboard: read text: install wl-clipboard or xclip")
-		}
-	}
-	if err != nil {
-		return "", err
-	}
-	text := string(data)
-	if strings.TrimSpace(text) == "" {
-		return "", ErrEmpty
-	}
-	return text, nil
-}

@@ -12,6 +12,10 @@ import (
 	"github.com/pulseaiclub/phi/internal/util"
 )
 
+func isWaylandSession() bool {
+	return os.Getenv("WAYLAND_DISPLAY") != "" || os.Getenv("XDG_SESSION_TYPE") == "wayland"
+}
+
 func readClipboardImagePlatform() (Image, error) {
 	if os.Getenv("TERMUX_VERSION") != "" {
 		return Image{}, ErrUnavailable

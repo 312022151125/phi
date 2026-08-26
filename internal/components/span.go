@@ -11,15 +11,6 @@ type Span struct {
 // RichLine is one visual line of spans.
 type RichLine []Span
 
-// MeasureSpans returns display width of spans.
-func MeasureSpans(spans []Span, method xui.WidthMethod) int {
-	w := 0
-	for _, s := range spans {
-		w += xui.StringWidth(s.Text, method)
-	}
-	return w
-}
-
 // PaintSpans writes spans starting at (x,y) on surface; returns columns advanced.
 func PaintSpans(s *Surface, x, y int, spans []Span, method xui.WidthMethod) int {
 	col := x
