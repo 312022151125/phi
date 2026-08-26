@@ -31,7 +31,7 @@ type ComposerPane struct {
 	theme components.Theme
 	cwd   string
 
-	Chat    chat.ChatInput
+	Chat     chat.ChatInput
 	mention  mention.Picker
 	slash    mention.Picker
 	question mention.Picker
