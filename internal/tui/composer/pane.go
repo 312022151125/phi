@@ -546,7 +546,7 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 }
 
 // handleEscape closes the topmost open overlay, then falls back to
-// cancelling an in-flight stream or selection. Returns true when the
+// canceling an in-flight stream or selection. Returns true when the
 // Escape key was consumed. Priority order matters: pickers first, then
 // the running stream, then a selection.
 func (c *ComposerPane) handleEscape(ctx *components.EventContext) bool {
@@ -624,7 +624,7 @@ func (c *ComposerPane) onSlashChange(active bool, query string) {
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
 	c.abandonMentionSearch()
-	items := []mention.Item{}
+	var items []mention.Item
 	if c.commands != nil {
 		items = c.commands.FilterSlash(query)
 	}
