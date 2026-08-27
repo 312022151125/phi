@@ -71,26 +71,6 @@ func (s *SessionCommands) Show() {
 	s.Transcript.StickToBottom()
 }
 
-// writeSessionList renders up to maxN sessions for the /sessions message.
-func writeSessionList(b *strings.Builder, list []session.SessionMeta, maxN int) {
-	fmt.Fprintf(b, "Sessions in this directory (%d):\n", len(list))
-	n := len(list)
-	n = min(n, maxN)
-	for i := 0; i < n; i++ {
-		m := list[i]
-		short := m.ID
-		if len(short) > 8 {
-			short = short[:8]
-		}
-		preview := m.Preview
-		if preview == "" {
-			preview = "(no preview)"
-		}
-		fmt.Fprintf(b, "  %s  %s  %s\n", short, m.Mtime.Format("01-02 15:04"), preview)
-	}
-	b.WriteString("Resume with /resume <id>")
-}
-
 // Resume loads a prior session by id into the UI.
 func (s *SessionCommands) Resume(id string) {
 	if s == nil {
@@ -139,4 +119,24 @@ func shortSessionID(id string) string {
 		return id[:8]
 	}
 	return id
+}
+
+// writeSessionList renders up to maxN sessions for the /sessions message.
+func writeSessionList(b *strings.Builder, list []session.SessionMeta, maxN int) {
+	fmt.Fprintf(b, "Sessions in this directory (%d):\n", len(list))
+	n := len(list)
+	n = min(n, maxN)
+	for i := 0; i < n; i++ {
+		m := list[i]
+		short := m.ID
+		if len(short) > 8 {
+			short = short[:8]
+		}
+		preview := m.Preview
+		if preview == "" {
+			preview = "(no preview)"
+		}
+		fmt.Fprintf(b, "  %s  %s  %s\n", short, m.Mtime.Format("01-02 15:04"), preview)
+	}
+	b.WriteString("Resume with /resume <id>")
 }
