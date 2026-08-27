@@ -442,17 +442,7 @@ func joinContextParts(parts ...string) string {
 			nonEmpty = append(nonEmpty, p)
 		}
 	}
-	if len(nonEmpty) == 0 {
-		return ""
-	}
-	if len(nonEmpty) == 1 {
-		return nonEmpty[0]
-	}
-	out := nonEmpty[0]
-	for i := 1; i < len(nonEmpty); i++ {
-		out += "\n\n" + nonEmpty[i]
-	}
-	return out
+	return strings.Join(nonEmpty, "\n\n")
 }
 
 func capContext(s string) string {

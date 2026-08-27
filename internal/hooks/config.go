@@ -2,6 +2,7 @@ package hooks
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -137,7 +138,7 @@ func parsePluginBytes(abs string, data []byte) ([]Hook, error) {
 
 func toHookMatchers(event HookEvent, raw []hookMatcherRaw) ([]HookMatcher, error) {
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("empty matcher list")
+		return nil, errors.New("empty matcher list")
 	}
 	matchers := make([]HookMatcher, 0, len(raw))
 	for i, m := range raw {
@@ -158,7 +159,7 @@ func toHookMatchers(event HookEvent, raw []hookMatcherRaw) ([]HookMatcher, error
 
 func toCommandHooks(raw []commandHookRaw) ([]CommandHook, error) {
 	if len(raw) == 0 {
-		return nil, fmt.Errorf("empty hooks list")
+		return nil, errors.New("empty hooks list")
 	}
 	out := make([]CommandHook, 0, len(raw))
 	for i, h := range raw {
@@ -192,7 +193,7 @@ func normalizeCommandHook(h commandHookRaw) (CommandHook, error) {
 
 	command := strings.TrimSpace(h.Command)
 	if command == "" {
-		return CommandHook{}, fmt.Errorf("empty command")
+		return CommandHook{}, errors.New("empty command")
 	}
 
 	shell := strings.TrimSpace(h.Shell)

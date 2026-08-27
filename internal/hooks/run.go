@@ -97,10 +97,7 @@ func (b binding) run(ctx context.Context, in hookInput) (syncHookOutput, int, st
 func (b binding) spawn(ctx context.Context, in hookInput) ([]byte, int, error) {
 	timeout := defaultTimeout
 	if b.cmd.Timeout > 0 {
-		timeout = time.Duration(b.cmd.Timeout) * time.Second
-		if timeout > maxTimeout {
-			timeout = maxTimeout
-		}
+		timeout = min(time.Duration(b.cmd.Timeout)*time.Second, maxTimeout)
 	}
 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
@@ -190,8 +187,7 @@ func applyPreOutput(out *PreOutcome, sync syncHookOutput, code int, rawLine stri
 			out.Reason = sync.StopReason
 		}
 	}
-	switch strings.ToLower(strings.TrimSpace(sync.Decision)) {
-	case "block":
+	if strings.ToLower(strings.TrimSpace(sync.Decision)) == "block" {
 		out.Denied = true
 		if sync.Reason != "" {
 			out.Reason = sync.Reason

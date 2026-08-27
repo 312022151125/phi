@@ -33,7 +33,7 @@ func writeToolHookPlugin(t *testing.T, event hooks.HookEvent, matcher, scriptBod
 	if matcher != "" {
 		matcherField = fmt.Sprintf(`"matcher": %q,`, matcher)
 	}
-	plugin := fmt.Sprintf(`{"hooks":{"%s":[{%s"hooks":[{"command":"./hook.sh"}]}]}}`, event, matcherField)
+	plugin := fmt.Sprintf(`{"hooks":{%q:[{%s"hooks":[{"command":"./hook.sh"}]}]}}`, event, matcherField)
 	require.NoError(t, os.WriteFile(filepath.Join(dir, hooks.PluginFileName), []byte(plugin), 0o644))
 	mgr, _, err := hooks.Load(dir, "")
 	require.NoError(t, err)

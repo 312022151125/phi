@@ -1,7 +1,6 @@
 package hooks
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -123,7 +122,7 @@ func TestLoadIntegration(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, warns)
 	require.NotNil(t, mgr)
-	out := mgr.SessionStart(context.Background(), SessionEvent{Reason: "startup"})
+	out := mgr.SessionStart(t.Context(), SessionEvent{Reason: "startup"})
 	assert.Empty(t, out.Toast)
 }
 
