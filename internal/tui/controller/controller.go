@@ -603,6 +603,9 @@ func (c *EngineController) StartPrompt(text string, pendingSkills []string, imag
 	go c.runLoop(ctx, gen, text, pendingSkills, images)
 }
 
+func (c *EngineController) EnterFork() {
+}
+
 // Cancel aborts the current stream context (if any).
 func (c *EngineController) Cancel() {
 	c.streamMu.Lock()

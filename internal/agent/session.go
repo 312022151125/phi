@@ -71,6 +71,9 @@ func NewSession(opts SessionOpts) (*Session, error) {
 	return &Session{manager: session.NewManager(opts.Cwd)}, nil
 }
 
+func (s *Session) Fork(parentID string) (*Session, error) {
+}
+
 // ID returns the durable session id (empty only if manager missing).
 func (s *Session) ID() string {
 	if s == nil || s.manager == nil {
