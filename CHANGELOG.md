@@ -10,6 +10,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+<!-- Released section -->
+<!-- Don't change this section unless doing release -->
+
+## [0.18.0] - 2026-08-27
+
+### Added
+
 - Composer shortcut help: type `?` at the start of the input (like `/` commands); Esc closes the picker.
 - `Ctrl+A` / `Ctrl+E` move the composer cursor to the start/end of the current line.
 - `Ctrl+U` clears the composer input, pending images, and pending skills.
@@ -29,10 +46,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Fixed
 
 - `@` file picker: cancel in-flight `fd` searches on each keystroke / close, surface timeouts as actionable hints, and note when the match list is truncated.
-### Security
 
-<!-- Released section -->
-<!-- Don't change this section unless doing release -->
+### Security
 
 ## [0.17.0] - 2026-08-25
 
@@ -165,7 +180,8 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.18.0
 [0.17.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.17.0
 [0.16.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.16.0
 [0.15.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.15.0
