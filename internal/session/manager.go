@@ -179,6 +179,63 @@ func (sm *Manager) Append(msg llm.Message) (string, error) {
 	return entry.ID, nil
 }
 
+// Fork creates a new Manager that shares the same session entries
+// but starts from the current leaf, allowing independent conversation branches.
+func (sm *Manager) Fork() (*Manager, error) {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+	newID := generateSessionID()
+
+	parentID := sm.sessionID
+	header := SessionHeader{
+		Type:          EntrySession,
+		ID:            newID,
+		Timestamp:     time.Now().Format("2006-01-02T15-04-05"),
+		Cwd:           sm.cwd,
+		ParentSession: parentID,
+	}
+	copied := make([]MessageEntry, 0, len(sm.entries))
+	copied = append(copied, header)
+	copied = append(copied, sm.entries[1:]...)
+
+	byIDs := make(map[string]MessageEntry, len(copied))
+	for _, entry := range copied {
+		byIDs[entry.GetID()] = entry
+	}
+
+	var leafCopy *string
+	if sm.leafID != nil {
+		id := *sm.leafID
+		leafCopy = &id
+	}
+
+	config := ManagerConfig{
+		sessionDir:  sm.config.sessionDir,
+		shouldFlush: true,
+		parentID:    parentID,
+	}
+
+	file := filepath.Join(sm.config.sessionDir,
+		fmt.Sprintf("%s_%s.jsonl", time.Now().Format("2006-01-02T15-04-05"), newID))
+
+	dst := &Manager{
+		cwd:             sm.cwd,
+		config:          config,
+		entries:         copied,
+		byIDs:           byIDs,
+		leafID:          leafCopy,
+		sessionID:       newID,
+		shouldFlush:     true,
+		sessionFile:     file,
+		hasAssistantMsg: sm.hasAssistantMsg,
+	}
+	if err := dst.flushAllEntries(); err != nil {
+		return nil, err
+	}
+	dst.flushed = true
+	return dst, nil
+}
+
 // AppendCompaction adds a compaction entry as a new leaf and returns its ID.
 func (sm *Manager) AppendCompaction(compaction Compaction) (string, error) {
 	sm.mu.Lock()

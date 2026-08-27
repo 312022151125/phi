@@ -2,6 +2,7 @@ package agent
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/pulseaiclub/phi/internal/llm"
@@ -69,6 +70,16 @@ func NewSession(opts SessionOpts) (*Session, error) {
 	}
 
 	return &Session{manager: session.NewManager(opts.Cwd)}, nil
+}
+
+// Fork creates a new Session that shares the same underlying manager state
+// but starts from the current leaf, allowing independent conversation branches.
+func (s *Session) Fork() (*Session, error) {
+	fork, err := s.manager.Fork()
+	if err != nil {
+		return nil, fmt.Errorf("agent: failed to fork session: %w", err)
+	}
+	return &Session{manager: fork, lastID: fork.LeafID()}, nil
 }
 
 // ID returns the durable session id (empty only if manager missing).

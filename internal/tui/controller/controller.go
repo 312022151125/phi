@@ -459,8 +459,8 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 		cfg = c.proj.Config().Model()
 	}
 
-	mgr := loadHooksManager(c.proj)
-	c.hooksManager.Store(mgr)
+	hooksManager := loadHooksManager(c.proj)
+	c.hooksManager.Store(hooksManager)
 	eng, err := agent.NewEngine(agent.EngineOpts{
 		Model: cfg,
 		SessionOpts: agent.SessionOpts{
@@ -473,7 +473,7 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 		Ask:         c.askPermission,
 		ContinueAsk: c.askContinue,
 		Jobs:        c.engineJobs(),
-		Hooks:       mgr,
+		Hooks:       hooksManager,
 		MCP:         c.mcpPool,
 	})
 	if err != nil {
