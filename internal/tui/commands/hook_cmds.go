@@ -41,11 +41,11 @@ type HookCommands struct {
 	running atomic.Bool
 }
 
-func (h *HookCommands) showToast(msg string, kind toast.ToastKind, d time.Duration) {
+func (h *HookCommands) showToast(msg string, kind toast.ToastKind) {
 	if h == nil || h.Publish == nil {
 		return
 	}
-	h.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
+	h.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: 3 * time.Second})
 }
 
 // Sync replaces hook-sourced slash commands from the current hooks.Manager.
@@ -139,7 +139,7 @@ func (h *HookCommands) Apply(msg controller.HookCommandResultMsg) {
 		return
 	}
 	if msg.Err != "" {
-		h.showToast(msg.Err, toast.ToastError, 3*time.Second)
+		h.showToast(msg.Err, toast.ToastError)
 		return
 	}
 	h.applyIntents(msg)
@@ -150,7 +150,7 @@ func (h *HookCommands) applyIntents(msg controller.HookCommandResultMsg) {
 		h.Footer.SetHookStatus(msg.Status)
 	}
 	if msg.Toast != "" {
-		h.showToast(msg.Toast, toast.ToastSuccess, 3*time.Second)
+		h.showToast(msg.Toast, toast.ToastSuccess)
 	}
 	if msg.List != nil && len(msg.List.Items) > 0 {
 		h.pushList(*msg.List)
@@ -158,7 +158,7 @@ func (h *HookCommands) applyIntents(msg controller.HookCommandResultMsg) {
 	}
 	if msg.Submit != "" {
 		if h.Submitter.IsBusy() {
-			h.showToast("Cannot submit hook command while a reply is running", toast.ToastWarning, 3*time.Second)
+			h.showToast("Cannot submit hook command while a reply is running", toast.ToastWarning)
 			return
 		}
 		h.Submitter.Submit(msg.Submit)
@@ -187,7 +187,7 @@ func (h *HookCommands) pushList(list hooks.CommandList) {
 					return
 				}
 				if h.Submitter.IsBusy() {
-					h.showToast("Cannot submit while a reply is running", toast.ToastWarning, 3*time.Second)
+					h.showToast("Cannot submit while a reply is running", toast.ToastWarning)
 					return
 				}
 				h.Submitter.Submit(item.Submit)
@@ -195,7 +195,7 @@ func (h *HookCommands) pushList(list hooks.CommandList) {
 		})
 	}
 	if len(cmds) == 0 {
-		h.showToast("Hook list had no usable items", toast.ToastWarning, 3*time.Second)
+		h.showToast("Hook list had no usable items", toast.ToastWarning)
 		return
 	}
 	h.Composer.PushPalette(title, cmds)
