@@ -160,11 +160,8 @@ Top-level object with a `hooks` map: event name → array of matchers.
           {
             "type": "command",
             "command": "./lint.sh",
-            "if": "Bash(git *)",
             "timeout": 30,
-            "statusMessage": "checking",
-            "once": true,
-            "asyncRewake": true
+            "async": true
           }
         ]
       }
@@ -183,13 +180,9 @@ Top-level object with a `hooks` map: event name → array of matchers.
 | --- | --- | --- | --- |
 | `type` | string | `command` | Only `command` is supported |
 | `command` | string | required | Shell command (may include args, e.g. `./lint.sh --strict`) |
-| `if` | string | — | Permission-rule filter (not yet enforced at runtime) |
 | `shell` | string | bash | `bash` (uses `$SHELL`), `powershell`, or `pwsh` |
 | `timeout` | number | `5` | Seconds; capped at `60` |
-| `statusMessage` | string | — | Reserved for future spinner text |
-| `once` | boolean | `false` | Reserved (run once then remove) |
 | `async` | boolean | `false` | Fire-and-forget; result ignored |
-| `asyncRewake` | boolean | `false` | Async; exit `2` may wake the model (implies `async`) |
 
 | Field (matcher) | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -402,8 +395,6 @@ In `permissions.mode: readonly`, all loaded hooks still run (there is no `fail_c
 
 ## Limitations
 
-- `if` conditions are parsed but not enforced yet
-- `once`, `statusMessage`, and `asyncRewake` are parsed but not enforced yet (`async` background spawn works)
 - No file-watch hot reload (use palette reload or restart)
 - Hooks cannot register new tools (use `tooldef.Tool`)
 - Only `type: "command"` hooks (no prompt / agent / http yet)

@@ -48,15 +48,11 @@ type hookMatcherRaw struct {
 }
 
 type commandHookRaw struct {
-	Type          string `json:"type"`                    // always "command"
-	Command       string `json:"command"`                 // shell command to execute
-	If            string `json:"if,omitempty"`            // permission-rule filter, e.g. "Bash(git *)"
-	Shell         string `json:"shell,omitempty"`         // "bash" (default, uses $SHELL) | "powershell" (pwsh)
-	Timeout       int    `json:"timeout,omitempty"`       // seconds, must be > 0
-	StatusMessage string `json:"statusMessage,omitempty"` // spinner text while running
-	Once          bool   `json:"once,omitempty"`          // run once, then removed
-	Async         bool   `json:"async,omitempty"`         // run in background without blocking
-	AsyncRewake   bool   `json:"asyncRewake,omitempty"`   // background; exit 2 wakes the model (implies async)
+	Type    string `json:"type"`              // always "command"
+	Command string `json:"command"`           // shell command to execute
+	Shell   string `json:"shell,omitempty"`   // "bash" (default, uses $SHELL) | "powershell" (pwsh)
+	Timeout int    `json:"timeout,omitempty"` // seconds, must be > 0
+	Async   bool   `json:"async,omitempty"`   // run in background without blocking
 }
 
 // Hook is one event's matchers from a plugin.json.
@@ -76,15 +72,10 @@ type HookMatcher struct {
 // paths are resolved at exec time against Dir (shell cwd), not Abs'd here—
 // the value may include args (e.g. "./lint.sh --strict").
 type CommandHook struct {
-	Type          string
-	Command       string
-	If            string
-	Shell         string
-	Timeout       int
-	StatusMessage string
-	Once          bool
-	Async         bool
-	AsyncRewake   bool
+	Command string
+	Shell   string
+	Timeout int
+	Async   bool
 }
 
 // ParsePlugin reads a hooks plugin.json and returns one Hook per event.
@@ -207,16 +198,10 @@ func normalizeCommandHook(h commandHookRaw) (CommandHook, error) {
 		return CommandHook{}, fmt.Errorf("timeout must be > 0, got %d", h.Timeout)
 	}
 
-	async := h.Async || h.AsyncRewake
 	return CommandHook{
-		Type:          typ,
-		Command:       command,
-		If:            strings.TrimSpace(h.If),
-		Shell:         shell,
-		Timeout:       h.Timeout,
-		StatusMessage: strings.TrimSpace(h.StatusMessage),
-		Once:          h.Once,
-		Async:         async,
-		AsyncRewake:   h.AsyncRewake,
+		Command: command,
+		Shell:   shell,
+		Timeout: h.Timeout,
+		Async:   h.Async,
 	}, nil
 }

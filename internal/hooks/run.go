@@ -65,7 +65,6 @@ type syncHookOutput struct {
 }
 
 type preToolSpecific struct {
-	HookEventName            string          `json:"hookEventName"`
 	PermissionDecision       string          `json:"permissionDecision"`
 	PermissionDecisionReason string          `json:"permissionDecisionReason"`
 	UpdatedInput             json.RawMessage `json:"updatedInput"`
@@ -73,16 +72,12 @@ type preToolSpecific struct {
 }
 
 type postToolSpecific struct {
-	HookEventName        string `json:"hookEventName"`
 	AdditionalContext    string `json:"additionalContext"`
 	UpdatedMCPToolOutput string `json:"updatedMCPToolOutput"`
 }
 
 type sessionStartSpecific struct {
-	HookEventName      string   `json:"hookEventName"`
-	AdditionalContext  string   `json:"additionalContext"`
-	InitialUserMessage string   `json:"initialUserMessage"`
-	WatchPaths         []string `json:"watchPaths"`
+	InitialUserMessage string `json:"initialUserMessage"`
 }
 
 func (b binding) run(ctx context.Context, in hookInput) (syncHookOutput, int, string, error) {
