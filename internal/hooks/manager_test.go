@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -11,6 +12,9 @@ import (
 )
 
 func TestManagerPreToolDenyExit2(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell hook fixture")
+	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "deny.sh")
 	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\nexit 2\n"), 0o644))
@@ -40,6 +44,9 @@ func TestManagerPreToolDenyExit2(t *testing.T) {
 }
 
 func TestManagerPreToolUpdatedInput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell hook fixture")
+	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "modify.sh")
 	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
@@ -70,6 +77,9 @@ printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":
 }
 
 func TestManagerPostToolFailureEvent(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell hook fixture")
+	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "post.sh")
 	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
@@ -127,6 +137,9 @@ func TestLoadIntegration(t *testing.T) {
 }
 
 func TestManagerRunCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell hook fixture")
+	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "cmd.sh")
 	require.NoError(
@@ -155,6 +168,9 @@ func TestManagerRunCommand(t *testing.T) {
 }
 
 func TestManagerSessionBeforeSwitchDeny(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell hook fixture")
+	}
 	dir := t.TempDir()
 	script := filepath.Join(dir, "deny.sh")
 	require.NoError(
@@ -183,6 +199,9 @@ func TestManagerSessionBeforeSwitchDeny(t *testing.T) {
 }
 
 func TestManagerPostTurn(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell hook fixture")
+	}
 	dir := t.TempDir()
 	marker := filepath.Join(dir, ".post-turn")
 	script := filepath.Join(dir, "audit.sh")
