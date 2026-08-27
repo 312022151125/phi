@@ -21,11 +21,8 @@ func TestParsePluginOK(t *testing.T) {
           {
             "type": "command",
             "command": "./guard.sh",
-            "if": "Bash(git *)",
             "timeout": 30,
-            "statusMessage": "checking",
-            "once": true,
-            "asyncRewake": true
+            "async": true
           }
         ]
       }
@@ -48,14 +45,9 @@ func TestParsePluginOK(t *testing.T) {
 	require.Len(t, hooks[0].Matchers[0].Hooks, 1)
 
 	cmd := hooks[0].Matchers[0].Hooks[0]
-	assert.Equal(t, "command", cmd.Type)
 	assert.Equal(t, "./guard.sh", cmd.Command)
-	assert.Equal(t, "Bash(git *)", cmd.If)
 	assert.Equal(t, 30, cmd.Timeout)
-	assert.Equal(t, "checking", cmd.StatusMessage)
-	assert.True(t, cmd.Once)
-	assert.True(t, cmd.Async, "asyncRewake implies async")
-	assert.True(t, cmd.AsyncRewake)
+	assert.True(t, cmd.Async)
 	assert.Equal(t, dir, hooks[0].Dir)
 
 	assert.Equal(t, EventSessionStart, hooks[1].Event)

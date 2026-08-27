@@ -13,6 +13,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Changed
 
 - **Breaking:** `plugin.json` hooks use an event-map shape (`PreToolUse`, `PostToolUse`, … + `type: "command"` shell commands). Legacy flat `pre_tool` / `run` manifests are no longer accepted. Phi extensions: `SessionShutdown` (leaving the active session; `SessionEnd` is a deprecated alias), `SessionBeforeSwitch`, `PostTurn`, and `Command` slash hooks. See [doc/hooks.md](doc/hooks.md).
+- Hooks: drop unimplemented `plugin.json` fields (`if`, `once`, `statusMessage`, `asyncRewake`) until needed.
 
 ### Deprecated
 
