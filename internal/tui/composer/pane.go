@@ -467,38 +467,7 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			return
 		}
 		if ev.Press && ev.Code == xui.KeyEscape {
-			if c.question.Open {
-				c.question.Cancel()
-				c.Chat.QuestionOpen = false
-				ctx.ConsumeAndRedraw()
-				return
-			}
-			if c.slash.Open {
-				c.slash.Cancel()
-				c.Chat.SlashOpen = false
-				ctx.ConsumeAndRedraw()
-				return
-			}
-			if c.mention.Open {
-				c.mention.Cancel()
-				c.Chat.MentionOpen = false
-				c.abandonMentionSearch()
-				ctx.ConsumeAndRedraw()
-				return
-			}
-			if c.submitter != nil && (c.submitter.RunningBash() || c.submitter.IsBusy()) {
-				if c.publish != nil {
-					c.publish(controller.CancelStreamMsg{})
-				}
-				if c.drainBus != nil {
-					c.drainBus()
-				}
-				ctx.ConsumeAndRedraw()
-				return
-			}
-			if c.transcript != nil && c.transcript.SelectionActive() {
-				c.transcript.ClearSelection()
-				ctx.ConsumeAndRedraw()
+			if c.handleEscape(ctx) {
 				return
 			}
 		}
@@ -576,6 +545,48 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 	}
 }
 
+// handleEscape closes the topmost open overlay, then falls back to
+// canceling an in-flight stream or selection. Returns true when the
+// Escape key was consumed. Priority order matters: pickers first, then
+// the running stream, then a selection.
+func (c *ComposerPane) handleEscape(ctx *components.EventContext) bool {
+	if c.question.Open {
+		c.question.Cancel()
+		c.Chat.QuestionOpen = false
+		ctx.ConsumeAndRedraw()
+		return true
+	}
+	if c.slash.Open {
+		c.slash.Cancel()
+		c.Chat.SlashOpen = false
+		ctx.ConsumeAndRedraw()
+		return true
+	}
+	if c.mention.Open {
+		c.mention.Cancel()
+		c.Chat.MentionOpen = false
+		c.abandonMentionSearch()
+		ctx.ConsumeAndRedraw()
+		return true
+	}
+	if c.submitter != nil && (c.submitter.RunningBash() || c.submitter.IsBusy()) {
+		if c.publish != nil {
+			c.publish(controller.CancelStreamMsg{})
+		}
+		if c.drainBus != nil {
+			c.drainBus()
+		}
+		ctx.ConsumeAndRedraw()
+		return true
+	}
+	if c.transcript != nil && c.transcript.SelectionActive() {
+		c.transcript.ClearSelection()
+		ctx.ConsumeAndRedraw()
+		return true
+	}
+	return false
+}
+
 func (c *ComposerPane) onMentionChange(active bool, query string) {
 	if c == nil {
 		return
@@ -613,7 +624,7 @@ func (c *ComposerPane) onSlashChange(active bool, query string) {
 	c.mention.Hide()
 	c.Chat.MentionOpen = false
 	c.abandonMentionSearch()
-	items := []mention.Item{}
+	var items []mention.Item
 	if c.commands != nil {
 		items = c.commands.FilterSlash(query)
 	}
