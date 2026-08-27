@@ -21,12 +21,12 @@ import (
 	"github.com/pulseaiclub/phi/internal/session"
 )
 
-// Controller owns agent.Engine lifecycle and stream cancellation.
+// EngineController owns agent.Engine lifecycle and stream cancellation.
 // It talks to the UI only by publishing Msg values onto the Bus.
 //
 // Construction: NewController(bus, proj, cwd). Callers (cmd) assemble
-// collaborators; Controller does not call project.GetDefaultProject.
-type Controller struct {
+// collaborators; EngineController does not call project.GetDefaultProject.
+type EngineController struct {
 	engine *agent.Engine
 	proj   *project.Project
 
@@ -54,10 +54,10 @@ type Controller struct {
 	lastJobProgress sync.Map
 }
 
-// NewController wires bus + project into a ready Controller with a live Engine.
+// NewController wires bus + project into a ready EngineController with a live Engine.
 // proj must be non-nil (typically already LoadConfig'd by cmd). On failure it
-// returns (nil, err) — never a half-initialized Controller.
-func NewController(bus *Bus, proj *project.Project, cwd string) (*Controller, error) {
+// returns (nil, err) — never a half-initialized EngineController.
+func NewController(bus *Bus, proj *project.Project, cwd string) (*EngineController, error) {
 	if bus == nil {
 		return nil, errors.New("tui: nil bus")
 	}
@@ -76,7 +76,7 @@ func NewController(bus *Bus, proj *project.Project, cwd string) (*Controller, er
 		return nil, err
 	}
 
-	c := &Controller{
+	c := &EngineController{
 		bus:           bus,
 		proj:          proj,
 		cwd:           cwd,
@@ -132,7 +132,7 @@ func NewController(bus *Bus, proj *project.Project, cwd string) (*Controller, er
 	return c, nil
 }
 
-func (c *Controller) startJobProgress() {
+func (c *EngineController) startJobProgress() {
 	if c.jobs == nil || c.bus == nil {
 		return
 	}
@@ -149,7 +149,7 @@ func (c *Controller) startJobProgress() {
 
 // shouldPublishJobProgress drops duplicate progress for the same child tool
 // slot (same status/detail/name). Status transitions and new children still publish.
-func (c *Controller) shouldPublishJobProgress(p job.Progress) bool {
+func (c *EngineController) shouldPublishJobProgress(p job.Progress) bool {
 	key := p.JobID + "\x00" + p.ToolUseID
 	if p.ToolUseID == "" {
 		key = p.JobID + "\x00" + p.Name + "\x00" + p.Detail
@@ -162,7 +162,7 @@ func (c *Controller) shouldPublishJobProgress(p job.Progress) bool {
 	return true
 }
 
-func (c *Controller) initGate(policy permission.Policy) {
+func (c *EngineController) initGate(policy permission.Policy) {
 	if policy.AskTimeoutSec > 0 {
 		c.askTimeoutSec = policy.AskTimeoutSec
 	}
@@ -186,7 +186,7 @@ func (c *Controller) initGate(policy permission.Policy) {
 }
 
 // AllowAll reports whether permission prompts are bypassed for this session.
-func (c *Controller) AllowAll() bool {
+func (c *EngineController) AllowAll() bool {
 	if c == nil {
 		return true
 	}
@@ -194,7 +194,7 @@ func (c *Controller) AllowAll() bool {
 }
 
 // SetAllowAll enables or disables session-wide permission bypass.
-func (c *Controller) SetAllowAll(v bool) {
+func (c *EngineController) SetAllowAll(v bool) {
 	if c == nil {
 		return
 	}
@@ -202,7 +202,7 @@ func (c *Controller) SetAllowAll(v bool) {
 }
 
 // AgentsEnabled reports whether sub-agent tools are registered on the main engine.
-func (c *Controller) AgentsEnabled() bool {
+func (c *EngineController) AgentsEnabled() bool {
 	if c == nil {
 		return false
 	}
@@ -210,7 +210,7 @@ func (c *Controller) AgentsEnabled() bool {
 }
 
 // SetAgentsEnabled registers or removes agent_* tools for this session.
-func (c *Controller) SetAgentsEnabled(v bool) {
+func (c *EngineController) SetAgentsEnabled(v bool) {
 	if c == nil {
 		return
 	}
@@ -221,7 +221,7 @@ func (c *Controller) SetAgentsEnabled(v bool) {
 }
 
 // engineJobs returns the job manager only when sub-agents are enabled.
-func (c *Controller) engineJobs() *job.Manager {
+func (c *EngineController) engineJobs() *job.Manager {
 	if c == nil || !c.agentsEnabled.Load() {
 		return nil
 	}
@@ -229,7 +229,7 @@ func (c *Controller) engineJobs() *job.Manager {
 }
 
 // Hooks returns the currently loaded hooks manager (may be nil).
-func (c *Controller) Hooks() *hooks.Manager {
+func (c *EngineController) Hooks() *hooks.Manager {
 	if c == nil {
 		return nil
 	}
@@ -238,7 +238,7 @@ func (c *Controller) Hooks() *hooks.Manager {
 
 // ReloadHooks re-discovers hooks from disk and swaps the manager on the engine
 // (and on future sub-agents via Hooks()).
-func (c *Controller) ReloadHooks() (loaded int, warns []hooks.Warning, err error) {
+func (c *EngineController) ReloadHooks() (loaded int, warns []hooks.Warning, err error) {
 	if c == nil {
 		return 0, nil, errors.New("controller not initialized")
 	}
@@ -250,7 +250,7 @@ func (c *Controller) ReloadHooks() (loaded int, warns []hooks.Warning, err error
 	if err != nil {
 		return 0, warns, err
 	}
-	mgr := hooks.NewManager(hooks.EntriesFromDiscovered(found)...)
+	mgr := hooks.NewManager(found...)
 	hooks.LogWarnings(warns)
 	c.hooksManager.Store(mgr)
 	if c.engine != nil {
@@ -260,7 +260,7 @@ func (c *Controller) ReloadHooks() (loaded int, warns []hooks.Warning, err error
 }
 
 // ListHooks returns the current on-disk discovery (does not swap the manager).
-func (c *Controller) ListHooks() ([]hooks.Discovered, []hooks.Warning, error) {
+func (c *EngineController) ListHooks() ([]hooks.Discovered, []hooks.Warning, error) {
 	if c == nil {
 		return nil, nil, errors.New("controller not initialized")
 	}
@@ -287,7 +287,7 @@ func loadHooksManager(proj *project.Project) *hooks.Manager {
 }
 
 // askPermission blocks until the confirmation UI answers.
-func (c *Controller) askPermission(
+func (c *EngineController) askPermission(
 	ctx context.Context,
 	req permission.Request,
 	reason string,
@@ -326,7 +326,7 @@ func (c *Controller) askPermission(
 }
 
 // askContinue blocks until the user chooses to continue or stop after max rounds.
-func (c *Controller) askContinue(ctx context.Context, maxRounds int) (bool, error) {
+func (c *EngineController) askContinue(ctx context.Context, maxRounds int) (bool, error) {
 	reply := make(chan ContinueReply, 1)
 	c.publish(ContinueAskMsg{MaxRounds: maxRounds, Reply: reply})
 
@@ -350,7 +350,7 @@ func (c *Controller) askContinue(ctx context.Context, maxRounds int) (bool, erro
 }
 
 // SetModel replaces the LLM client while keeping the same session tree.
-func (c *Controller) SetModel(name string) error {
+func (c *EngineController) SetModel(name string) error {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return errors.New("empty model name")
@@ -387,12 +387,12 @@ func (c *Controller) SetModel(name string) error {
 }
 
 // ImageEnabled reports whether the active model accepts attached images.
-func (c *Controller) ImageEnabled() bool {
+func (c *EngineController) ImageEnabled() bool {
 	return c != nil && c.modelCfg.ImageEnabled
 }
 
 // SessionID returns the short-form-friendly session id.
-func (c *Controller) SessionID() string {
+func (c *EngineController) SessionID() string {
 	if c.engine == nil {
 		return ""
 	}
@@ -400,7 +400,7 @@ func (c *Controller) SessionID() string {
 }
 
 // SessionDir returns the directory where session JSONL files are stored.
-func (c *Controller) SessionDir() string {
+func (c *EngineController) SessionDir() string {
 	if c == nil {
 		return ""
 	}
@@ -408,7 +408,7 @@ func (c *Controller) SessionDir() string {
 }
 
 // LiveJobCount returns in-flight sub-agent jobs (0 if jobs disabled).
-func (c *Controller) LiveJobCount() int {
+func (c *EngineController) LiveJobCount() int {
 	if c == nil || c.jobs == nil {
 		return 0
 	}
@@ -416,7 +416,7 @@ func (c *Controller) LiveJobCount() int {
 }
 
 // SessionFile returns the JSONL path when persisting.
-func (c *Controller) SessionFile() string {
+func (c *EngineController) SessionFile() string {
 	if c.engine == nil {
 		return ""
 	}
@@ -426,7 +426,7 @@ func (c *Controller) SessionFile() string {
 // Resume loads a prior session by id (exact or unique prefix).
 // On success the engine session is replaced; caller should refresh the UI transcript.
 // If the resumed session cwd differs from the process cwd, cwdWarning is non-empty.
-func (c *Controller) Resume(id string) (cwdWarning string, err error) {
+func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return "", errors.New("empty session id")
@@ -491,7 +491,7 @@ func (c *Controller) Resume(id string) (cwdWarning string, err error) {
 
 // Clear starts a brand-new persisted session (empty transcript, new id).
 // Caller must ensure no agent stream / local bash is in flight.
-func (c *Controller) Clear() error {
+func (c *EngineController) Clear() error {
 	if c.sessionDir == "" {
 		return errors.New("session directory not configured")
 	}
@@ -545,7 +545,7 @@ func (c *Controller) Clear() error {
 
 // ReplaySnapshot builds a UI transcript snapshot from the engine session
 // (user/assistant text; tool rows simplified away).
-func (c *Controller) ReplaySnapshot() session.Snapshot {
+func (c *EngineController) ReplaySnapshot() session.Snapshot {
 	var snap session.Snapshot
 	if c.engine == nil || c.engine.Session() == nil {
 		return snap
@@ -589,7 +589,7 @@ func (c *Controller) ReplaySnapshot() session.Snapshot {
 }
 
 // StartPrompt cancels any in-flight stream and starts a new agent loop.
-func (c *Controller) StartPrompt(text string, pendingSkills []string, images []llm.Image) {
+func (c *EngineController) StartPrompt(text string, pendingSkills []string, images []llm.Image) {
 	ctx, cancel := context.WithCancel(context.Background())
 	c.streamMu.Lock()
 	if c.streamCancel != nil {
@@ -604,7 +604,7 @@ func (c *Controller) StartPrompt(text string, pendingSkills []string, images []l
 }
 
 // Cancel aborts the current stream context (if any).
-func (c *Controller) Cancel() {
+func (c *EngineController) Cancel() {
 	c.streamMu.Lock()
 	cancel := c.streamCancel
 	c.streamMu.Unlock()
@@ -614,7 +614,7 @@ func (c *Controller) Cancel() {
 }
 
 // Close cancels the stream and shuts down the job manager.
-func (c *Controller) Close() {
+func (c *EngineController) Close() {
 	c.sessionShutdown("quit", c.SessionID())
 	c.Cancel()
 	if c.unsubJobs != nil {
@@ -630,7 +630,7 @@ func (c *Controller) Close() {
 	}
 }
 
-func (c *Controller) sessionBeforeSwitch(reason, fromID, targetID string) hooks.SessionOutcome {
+func (c *EngineController) sessionBeforeSwitch(reason, fromID, targetID string) hooks.SessionOutcome {
 	mgr := c.Hooks()
 	if mgr == nil {
 		return hooks.SessionOutcome{}
@@ -644,7 +644,7 @@ func (c *Controller) sessionBeforeSwitch(reason, fromID, targetID string) hooks.
 	})
 }
 
-func (c *Controller) sessionShutdown(reason, sessionID string) {
+func (c *EngineController) sessionShutdown(reason, sessionID string) {
 	mgr := c.Hooks()
 	if mgr == nil {
 		return
@@ -658,7 +658,7 @@ func (c *Controller) sessionShutdown(reason, sessionID string) {
 	c.publishSessionEffects(out)
 }
 
-func (c *Controller) emitSessionStart(reason, sessionID, previousID string) {
+func (c *EngineController) emitSessionStart(reason, sessionID, previousID string) {
 	mgr := c.Hooks()
 	if mgr == nil {
 		return
@@ -677,7 +677,7 @@ func (c *Controller) emitSessionStart(reason, sessionID, previousID string) {
 // this controller's run loop; zero when no turn has completed (or the provider
 // never reported usage). Usage comes from the stream, not the session store, so
 // a resumed session reports zero until its first turn finishes.
-func (c *Controller) sessionUsage() hooks.SessionUsage {
+func (c *EngineController) sessionUsage() hooks.SessionUsage {
 	c.streamMu.Lock()
 	defer c.streamMu.Unlock()
 	return c.lastUsage
@@ -685,7 +685,7 @@ func (c *Controller) sessionUsage() hooks.SessionUsage {
 
 // recordUsage snapshots the completed turn's usage for session lifecycle hooks
 // and fires post_turn audit hooks (cache metrics, etc.).
-func (c *Controller) recordUsage(m session.Message) {
+func (c *EngineController) recordUsage(m session.Message) {
 	usage := hooks.SessionUsage{
 		PromptTokens:     m.Usage.PromptTokens,
 		CompletionTokens: m.Usage.CompletionTokens,
@@ -710,13 +710,13 @@ func (c *Controller) recordUsage(m session.Message) {
 
 // resetUsage clears captured usage when switching sessions so a new or resumed
 // session does not inherit the previous one's counts.
-func (c *Controller) resetUsage() {
+func (c *EngineController) resetUsage() {
 	c.streamMu.Lock()
 	c.lastUsage = hooks.SessionUsage{}
 	c.streamMu.Unlock()
 }
 
-func (c *Controller) publishSessionEffects(out hooks.SessionOutcome) {
+func (c *EngineController) publishSessionEffects(out hooks.SessionOutcome) {
 	if out.Toast == "" && !out.StatusSet {
 		return
 	}
@@ -728,14 +728,14 @@ func (c *Controller) publishSessionEffects(out hooks.SessionOutcome) {
 }
 
 // Alive reports whether the stream generation still matches gen.
-func (c *Controller) Alive(gen int) bool {
+func (c *EngineController) Alive(gen int) bool {
 	c.streamMu.Lock()
 	ok := c.streamGen == gen
 	c.streamMu.Unlock()
 	return ok
 }
 
-func (c *Controller) waitOrDone(ctx context.Context, gen int, d time.Duration) bool {
+func (c *EngineController) waitOrDone(ctx context.Context, gen int, d time.Duration) bool {
 	select {
 	case <-ctx.Done():
 		return false
@@ -744,13 +744,19 @@ func (c *Controller) waitOrDone(ctx context.Context, gen int, d time.Duration) b
 	return c.Alive(gen)
 }
 
-func (c *Controller) publish(m Msg) {
+func (c *EngineController) publish(m Msg) {
 	if c.bus != nil {
 		c.bus.Publish(m)
 	}
 }
 
-func (c *Controller) runLoop(ctx context.Context, gen int, prompt string, pendingSkills []string, images []llm.Image) {
+func (c *EngineController) runLoop(
+	ctx context.Context,
+	gen int,
+	prompt string,
+	pendingSkills []string,
+	images []llm.Image,
+) {
 	if !c.waitOrDone(ctx, gen, 120*time.Millisecond) {
 		return
 	}

@@ -14,7 +14,7 @@ import (
 
 // SessionCommands owns /sessions, /resume, and /clear UI side effects.
 type SessionCommands struct {
-	Ctrl       *controller.Controller
+	Ctrl       *controller.EngineController
 	Transcript *transcript.TranscriptPane
 	Footer     *footer.FooterChrome
 	Toast      toast.Toast
@@ -23,7 +23,7 @@ type SessionCommands struct {
 
 // NewSessionCommands builds session command handlers.
 func NewSessionCommands(
-	ctrl *controller.Controller,
+	ctrl *controller.EngineController,
 	transcript *transcript.TranscriptPane,
 	footer *footer.FooterChrome,
 	toast toast.Toast,

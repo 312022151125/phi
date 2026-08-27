@@ -3,413 +3,218 @@ package hooks
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"strings"
-	"sync"
-	"sync/atomic"
+	"os"
+	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestManagerNilNoop(t *testing.T) {
-	var m *Manager
-	ev := Event{Tool: "bash", Input: json.RawMessage(`{"command":"ls"}`)}
-	pre := m.PreTool(t.Context(), ev)
-	assert.False(t, pre.Denied)
-	assert.JSONEq(t, `{"command":"ls"}`, string(pre.Input))
-	assert.Empty(t, pre.Context)
+func TestManagerPreToolDenyExit2(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "deny.sh")
+	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\nexit 2\n"), 0o644))
+	require.NoError(t, os.Chmod(script, 0o755))
 
-	post := m.PostTool(t.Context(), ev)
-	assert.Empty(t, post.Context)
-	assert.False(t, post.Stop)
-}
+	pluginPath := filepath.Join(dir, PluginFileName)
+	require.NoError(t, os.WriteFile(pluginPath, []byte(`{
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "bash",
+      "hooks": [{ "command": "./deny.sh" }]
+    }]
+  }
+}`), 0o644))
 
-func TestManagerPreDenyShortCircuit(t *testing.T) {
-	var secondCalled atomic.Bool
-	m := NewManager(
-		Entry{Hook: FuncHook{
-			HookName: "deny",
-			MatchFn:  MatchTool("bash"),
-			Pre: func(_ context.Context, _ Event) (PreResult, error) {
-				return PreResult{Action: ActionDeny, Reason: "nope"}, nil
-			},
-		}, Kind: KindPreTool},
-		Entry{Hook: FuncHook{
-			HookName: "second",
-			Pre: func(_ context.Context, _ Event) (PreResult, error) {
-				secondCalled.Store(true)
-				return PreResult{Action: ActionAllow}, nil
-			},
-		}, Kind: KindPreTool},
-	)
+	mgr, err := loadManagerFromPlugin(t, pluginPath)
+	require.NoError(t, err)
 
-	out := m.PreTool(t.Context(), Event{Tool: "bash", Input: json.RawMessage(`{}`)})
-	assert.True(t, out.Denied)
-	assert.Equal(t, "nope", out.Reason)
-	assert.False(t, secondCalled.Load(), "later pre hooks must not run after Deny")
-}
-
-func TestManagerPreMatchSkips(t *testing.T) {
-	var called atomic.Bool
-	m := NewManager(Entry{Hook: FuncHook{
-		HookName: "bash-only",
-		MatchFn:  MatchTool("bash"),
-		Pre: func(_ context.Context, _ Event) (PreResult, error) {
-			called.Store(true)
-			return PreResult{Action: ActionDeny, Reason: "x"}, nil
-		},
-	}, Kind: KindPreTool})
-
-	out := m.PreTool(t.Context(), Event{Tool: "write", Input: json.RawMessage(`{}`)})
-	assert.False(t, out.Denied)
-	assert.False(t, called.Load())
-}
-
-func TestManagerPreChainedModify(t *testing.T) {
-	m := NewManager(
-		Entry{Hook: FuncHook{
-			HookName: "add-timeout",
-			Pre: func(_ context.Context, ev Event) (PreResult, error) {
-				var v map[string]any
-				require.NoError(t, json.Unmarshal(ev.Input, &v))
-				v["timeout"] = 30
-				b, _ := json.Marshal(v)
-				return PreResult{Action: ActionModify, Input: b}, nil
-			},
-		}, Kind: KindPreTool},
-		Entry{Hook: FuncHook{
-			HookName: "prefix-cmd",
-			Pre: func(_ context.Context, ev Event) (PreResult, error) {
-				var v map[string]any
-				require.NoError(t, json.Unmarshal(ev.Input, &v))
-				v["command"] = "safe " + v["command"].(string)
-				b, _ := json.Marshal(v)
-				return PreResult{Action: ActionModify, Input: b, Context: "rewrote"}, nil
-			},
-		}, Kind: KindPreTool},
-	)
-
-	out := m.PreTool(t.Context(), Event{
-		Tool:  "bash",
-		Input: json.RawMessage(`{"command":"rm -rf /tmp/x"}`),
+	out := mgr.PreTool(t.Context(), ToolEvent{
+		SessionID: "s1",
+		Cwd:       dir,
+		Tool:      "bash",
+		ToolUseID: "tu1",
+		Input:     json.RawMessage(`{"command":"echo hi"}`),
 	})
-	require.False(t, out.Denied)
-	assert.JSONEq(t, `{"command":"safe rm -rf /tmp/x","timeout":30}`, string(out.Input))
-	assert.Equal(t, "rewrote", out.Context)
+	assert.True(t, out.Denied)
 }
 
-func TestManagerPreErrorFailOpenAndFailClosed(t *testing.T) {
-	boom := errors.New("boom")
+func TestManagerPreToolUpdatedInput(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "modify.sh")
+	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
+cat >/dev/null
+printf '%s' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","updatedInput":{"command":"echo safe"}}}'
+`), 0o644))
+	require.NoError(t, os.Chmod(script, 0o755))
 
-	open := NewManager(Entry{Hook: FuncHook{
-		HookName: "flaky",
-		Pre: func(_ context.Context, _ Event) (PreResult, error) {
-			return PreResult{}, boom
-		},
-	}, Kind: KindPreTool})
-	out := open.PreTool(t.Context(), Event{Tool: "bash", Input: json.RawMessage(`{"a":1}`)})
+	pluginPath := filepath.Join(dir, PluginFileName)
+	require.NoError(t, os.WriteFile(pluginPath, []byte(`{
+  "hooks": {
+    "PreToolUse": [{
+      "hooks": [{ "command": "./modify.sh" }]
+    }]
+  }
+}`), 0o644))
+
+	mgr, err := loadManagerFromPlugin(t, pluginPath)
+	require.NoError(t, err)
+
+	out := mgr.PreTool(t.Context(), ToolEvent{
+		Cwd:   dir,
+		Tool:  "bash",
+		Input: json.RawMessage(`{"command":"echo hi"}`),
+	})
 	assert.False(t, out.Denied)
-	assert.JSONEq(t, `{"a":1}`, string(out.Input))
-
-	closed := NewManager(Entry{Hook: FuncHook{
-		HookName: "strict",
-		Pre: func(_ context.Context, _ Event) (PreResult, error) {
-			return PreResult{}, boom
-		},
-	}, Kind: KindPreTool, FailClosed: true})
-	out = closed.PreTool(t.Context(), Event{Tool: "bash", Input: json.RawMessage(`{}`)})
-	assert.True(t, out.Denied)
-	assert.Contains(t, out.Reason, "fail_closed")
-	assert.Contains(t, out.Reason, "boom")
+	assert.JSONEq(t, `{"command":"echo safe"}`, string(out.Input))
 }
 
-func TestManagerPreModifyEmptyFailOpen(t *testing.T) {
-	m := NewManager(Entry{Hook: FuncHook{
-		HookName: "bad-modify",
-		Pre: func(_ context.Context, _ Event) (PreResult, error) {
-			return PreResult{Action: ActionModify}, nil
-		},
-	}, Kind: KindPreTool})
-	in := json.RawMessage(`{"command":"ls"}`)
-	out := m.PreTool(t.Context(), Event{Tool: "bash", Input: in})
-	assert.False(t, out.Denied)
-	assert.JSONEq(t, `{"command":"ls"}`, string(out.Input))
+func TestManagerPostToolFailureEvent(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "post.sh")
+	require.NoError(t, os.WriteFile(script, []byte(`#!/bin/sh
+cat >/dev/null
+printf '%s' '{"hookSpecificOutput":{"hookEventName":"PostToolUseFailure","additionalContext":"saw failure"}}'
+`), 0o644))
+	require.NoError(t, os.Chmod(script, 0o755))
+
+	pluginPath := filepath.Join(dir, PluginFileName)
+	require.NoError(t, os.WriteFile(pluginPath, []byte(`{
+  "hooks": {
+    "PostToolUseFailure": [{
+      "hooks": [{ "command": "./post.sh" }]
+    }]
+  }
+}`), 0o644))
+
+	mgr, err := loadManagerFromPlugin(t, pluginPath)
+	require.NoError(t, err)
+
+	out := mgr.PostTool(t.Context(), ToolEvent{
+		Cwd:  dir,
+		Tool: "bash",
+		Err:  "boom",
+	})
+	assert.Equal(t, "saw failure", out.Context)
 }
 
-func TestManagerPostContextAggregateAndTruncate(t *testing.T) {
-	big := strings.Repeat("x", MaxContextBytes)
-	m := NewManager(
-		Entry{Hook: FuncHook{
-			HookName: "a",
-			Post: func(_ context.Context, _ Event) (PostResult, error) {
-				return PostResult{Context: "one"}, nil
-			},
-		}, Kind: KindPostTool},
-		Entry{Hook: FuncHook{
-			HookName: "b",
-			Post: func(_ context.Context, _ Event) (PostResult, error) {
-				return PostResult{Context: big}, nil
-			},
-		}, Kind: KindPostTool},
+func TestMatchesPattern(t *testing.T) {
+	assert.True(t, matchesPattern("", "bash"))
+	assert.True(t, matchesPattern("Write|Edit", "Edit"))
+	assert.True(t, matchesPattern("^bash$", "bash"))
+	assert.False(t, matchesPattern("Write", "bash"))
+}
+
+func TestLoadIntegration(t *testing.T) {
+	dir := t.TempDir()
+	sub := filepath.Join(dir, "policy")
+	require.NoError(t, os.MkdirAll(sub, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(sub, PluginFileName), []byte(`{
+  "hooks": {
+    "SessionStart": [{
+      "matcher": "startup",
+      "hooks": [{ "command": "true" }]
+    }]
+  }
+}`), 0o644))
+
+	mgr, warns, err := Load(dir, "")
+	require.NoError(t, err)
+	assert.Empty(t, warns)
+	require.NotNil(t, mgr)
+	out := mgr.SessionStart(context.Background(), SessionEvent{Reason: "startup"})
+	assert.Empty(t, out.Toast)
+}
+
+func TestManagerRunCommand(t *testing.T) {
+	dir := t.TempDir()
+	script := filepath.Join(dir, "cmd.sh")
+	require.NoError(
+		t,
+		os.WriteFile(script, []byte("#!/bin/sh\ncat >/dev/null\necho '{\"submit\":\"hello from hook\"}'\n"), 0o644),
 	)
+	require.NoError(t, os.Chmod(script, 0o755))
+	pluginPath := filepath.Join(dir, PluginFileName)
+	require.NoError(t, os.WriteFile(pluginPath, []byte(`{
+  "hooks": {
+    "Command": [{
+      "matcher": "review",
+      "hooks": [{ "command": "./cmd.sh" }]
+    }]
+  }
+}`), 0o644))
 
-	out := m.PostTool(t.Context(), Event{Tool: "bash", Output: "ok"})
-	assert.False(t, out.Stop)
-	assert.LessOrEqual(t, len(out.Context), MaxContextBytes)
-	assert.Contains(t, out.Context, "one")
-}
+	mgr, err := loadManagerFromPlugin(t, pluginPath)
+	require.NoError(t, err)
+	require.Len(t, mgr.CommandEntries(), 1)
+	assert.Equal(t, "review", mgr.CommandEntries()[0].Name)
 
-// TestManagerPostOutputLastWriteWins pins the output-rewrite contract: the
-// last matching hook in entry order wins (execution is parallel, but the
-// merge is sequential), and the winner is not subject to the 4 KiB context
-// cap — tool result bodies are not model-facing notes.
-func TestManagerPostOutputLastWriteWins(t *testing.T) {
-	big := strings.Repeat("x", MaxContextBytes*2)
-	m := NewManager(
-		Entry{Hook: FuncHook{
-			HookName: "first",
-			Post: func(_ context.Context, _ Event) (PostResult, error) {
-				return PostResult{Output: "first"}, nil
-			},
-		}, Kind: KindPostTool},
-		Entry{Hook: FuncHook{
-			HookName: "rewriter",
-			Post: func(_ context.Context, _ Event) (PostResult, error) {
-				return PostResult{Output: big}, nil
-			},
-		}, Kind: KindPostTool},
-	)
-
-	out := m.PostTool(t.Context(), Event{Tool: "bash", Output: "ok"})
-	assert.Equal(t, big, out.Output, "last entry wins and is not truncated")
-}
-
-func TestManagerPostOutputEmptyWhenUnset(t *testing.T) {
-	m := NewManager(Entry{Hook: FuncHook{
-		HookName: "note",
-		Post: func(_ context.Context, _ Event) (PostResult, error) {
-			return PostResult{Context: "note"}, nil
-		},
-	}, Kind: KindPostTool})
-
-	out := m.PostTool(t.Context(), Event{Tool: "bash", Output: "ok"})
-	assert.Empty(t, out.Output, "no rewrite keeps the original tool result")
-	assert.Equal(t, "note", out.Context)
-}
-
-func TestManagerPostStopAndFailClosed(t *testing.T) {
-	m := NewManager(
-		Entry{Hook: FuncHook{
-			HookName: "stopper",
-			Post: func(_ context.Context, _ Event) (PostResult, error) {
-				return PostResult{Stop: true, Reason: "limit"}, nil
-			},
-		}, Kind: KindPostTool},
-		Entry{Hook: FuncHook{
-			HookName: "err",
-			Post: func(_ context.Context, _ Event) (PostResult, error) {
-				return PostResult{}, errors.New("disk")
-			},
-		}, Kind: KindPostTool, FailClosed: true},
-	)
-	out := m.PostTool(t.Context(), Event{Tool: "write"})
-	assert.True(t, out.Stop)
-	assert.Contains(t, out.Reason, "limit")
-	assert.Contains(t, out.Reason, "fail_closed")
-}
-
-func TestManagerPostErrorFailOpen(t *testing.T) {
-	m := NewManager(Entry{Hook: FuncHook{
-		HookName: "flaky",
-		Post: func(_ context.Context, _ Event) (PostResult, error) {
-			return PostResult{}, errors.New("nope")
-		},
-	}, Kind: KindPostTool})
-	out := m.PostTool(t.Context(), Event{Tool: "bash"})
-	assert.False(t, out.Stop)
-	assert.Empty(t, out.Context)
-}
-
-func TestManagerPostAsyncDetached(t *testing.T) {
-	done := make(chan struct{})
-	m := NewManager(
-		Entry{Hook: FuncHook{
-			HookName: "sync",
-			Post: func(_ context.Context, _ Event) (PostResult, error) {
-				return PostResult{Context: "sync-ctx"}, nil
-			},
-		}, Kind: KindPostTool},
-		Entry{Hook: FuncHook{
-			HookName: "audit",
-			Post: func(_ context.Context, _ Event) (PostResult, error) {
-				close(done)
-				return PostResult{Context: "should-not-appear"}, nil
-			},
-		}, Kind: KindPostTool, Async: true},
-	)
-
-	out := m.PostTool(t.Context(), Event{Tool: "bash"})
-	assert.Equal(t, "sync-ctx", out.Context)
-
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("async post hook did not run")
-	}
-}
-
-func TestManagerSkipsWrongKind(t *testing.T) {
-	var preCalled, postCalled atomic.Bool
-	h := FuncHook{
-		HookName: "pre-only-registered-as-post",
-		Pre: func(_ context.Context, _ Event) (PreResult, error) {
-			preCalled.Store(true)
-			return PreResult{Action: ActionDeny}, nil
-		},
-		Post: func(_ context.Context, _ Event) (PostResult, error) {
-			postCalled.Store(true)
-			return PostResult{Context: "x"}, nil
-		},
-	}
-	// Registered only as post — PreTool must not call Pre.
-	m := NewManager(Entry{Hook: h, Kind: KindPostTool})
-	pre := m.PreTool(t.Context(), Event{Tool: "bash", Input: json.RawMessage(`{}`)})
-	assert.False(t, pre.Denied)
-	assert.False(t, preCalled.Load())
-
-	post := m.PostTool(t.Context(), Event{Tool: "bash"})
-	assert.True(t, postCalled.Load())
-	assert.Equal(t, "x", post.Context)
-}
-
-func TestManagerPostParallel(t *testing.T) {
-	var gate sync.WaitGroup
-	gate.Add(2)
-	entered := make(chan struct{}, 2)
-
-	m := NewManager(
-		Entry{Hook: FuncHook{HookName: "p1", Post: func(_ context.Context, _ Event) (PostResult, error) {
-			entered <- struct{}{}
-			gate.Done()
-			gate.Wait()
-			return PostResult{Context: "a"}, nil
-		}}, Kind: KindPostTool},
-		Entry{Hook: FuncHook{HookName: "p2", Post: func(_ context.Context, _ Event) (PostResult, error) {
-			entered <- struct{}{}
-			gate.Done()
-			gate.Wait()
-			return PostResult{Context: "b"}, nil
-		}}, Kind: KindPostTool},
-	)
-
-	done := make(chan PostOutcome, 1)
-	go func() { done <- m.PostTool(t.Context(), Event{Tool: "bash"}) }()
-
-	// Both must enter before either finishes — proves overlap.
-	for range 2 {
-		select {
-		case <-entered:
-		case <-time.After(2 * time.Second):
-			t.Fatal("hooks did not run in parallel")
-		}
-	}
-	out := <-done
-	assert.Contains(t, out.Context, "a")
-	assert.Contains(t, out.Context, "b")
-}
-
-func TestManagerFailClosedOnlySkipsAuditHooks(t *testing.T) {
-	var auditCalled, strictCalled atomic.Bool
-	m := NewManager(
-		Entry{Hook: FuncHook{
-			HookName: "audit",
-			Pre: func(_ context.Context, _ Event) (PreResult, error) {
-				auditCalled.Store(true)
-				return PreResult{Action: ActionAllow}, nil
-			},
-		}, Kind: KindPreTool},
-		Entry{Hook: FuncHook{
-			HookName: "strict",
-			Pre: func(_ context.Context, _ Event) (PreResult, error) {
-				strictCalled.Store(true)
-				return PreResult{Action: ActionDeny, Reason: "nope"}, nil
-			},
-		}, Kind: KindPreTool, FailClosed: true},
-	)
-
-	full := m.PreTool(t.Context(), Event{Tool: "bash", Input: json.RawMessage(`{}`)})
-	assert.True(t, full.Denied)
-	assert.True(t, auditCalled.Load())
-	assert.True(t, strictCalled.Load())
-
-	auditCalled.Store(false)
-	strictCalled.Store(false)
-	out := m.FailClosedOnly().PreTool(t.Context(), Event{Tool: "bash", Input: json.RawMessage(`{}`)})
-	assert.True(t, out.Denied)
-	assert.False(t, auditCalled.Load(), "non-fail_closed must be skipped in readonly view")
-	assert.True(t, strictCalled.Load())
-}
-
-func TestNewManagerFiltersInvalid(t *testing.T) {
-	m := NewManager(
-		Entry{Hook: nil, Kind: KindPreTool},
-		Entry{Hook: FuncHook{HookName: "ok"}, Kind: Kind("nope")},
-		Entry{Hook: FuncHook{HookName: "pre", Pre: func(_ context.Context, _ Event) (PreResult, error) {
-			return PreResult{Action: ActionDeny, Reason: "hit"}, nil
-		}}, Kind: KindPreTool},
-	)
-	out := m.PreTool(t.Context(), Event{Tool: "bash", Input: json.RawMessage(`{}`)})
-	assert.True(t, out.Denied)
-	assert.Equal(t, "hit", out.Reason)
+	res, err := mgr.RunCommand(t.Context(), "review", CommandEvent{Cwd: dir, Args: []string{"a", "b"}})
+	require.NoError(t, err)
+	assert.Equal(t, "hello from hook", res.Submit)
 }
 
 func TestManagerSessionBeforeSwitchDeny(t *testing.T) {
-	m := NewManager(Entry{Hook: FuncHook{
-		HookName: "guard",
-		Sess: func(_ context.Context, ev SessionEvent) (SessionResult, error) {
-			assert.Equal(t, KindSessionBeforeSwitch, ev.Kind)
-			assert.Equal(t, "new", ev.Reason)
-			return SessionResult{Action: ActionDeny, Reason: "dirty"}, nil
-		},
-	}, Kind: KindSessionBeforeSwitch})
-	out := m.SessionBeforeSwitch(t.Context(), SessionEvent{Reason: "new"})
-	assert.True(t, out.Denied)
-	assert.Equal(t, "dirty", out.Reason)
-}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "deny.sh")
+	require.NoError(
+		t,
+		os.WriteFile(
+			script,
+			[]byte("#!/bin/sh\ncat >/dev/null\necho '{\"action\":\"deny\",\"reason\":\"dirty repo\"}'\n"),
+			0o644,
+		),
+	)
+	require.NoError(t, os.Chmod(script, 0o755))
+	pluginPath := filepath.Join(dir, PluginFileName)
+	require.NoError(t, os.WriteFile(pluginPath, []byte(`{
+  "hooks": {
+    "SessionBeforeSwitch": [{
+      "hooks": [{ "command": "./deny.sh" }]
+    }]
+  }
+}`), 0o644))
 
-func TestManagerSessionStartToast(t *testing.T) {
-	m := NewManager(Entry{Hook: FuncHook{
-		HookName: "boot",
-		Sess: func(_ context.Context, _ SessionEvent) (SessionResult, error) {
-			return SessionResult{Toast: "hi", Status: "on", StatusSet: true}, nil
-		},
-	}, Kind: KindSessionStart})
-	out := m.SessionStart(t.Context(), SessionEvent{Reason: "startup"})
-	assert.False(t, out.Denied)
-	assert.Equal(t, "hi", out.Toast)
-	assert.True(t, out.StatusSet)
-	assert.Equal(t, "on", out.Status)
+	mgr, err := loadManagerFromPlugin(t, pluginPath)
+	require.NoError(t, err)
+	out := mgr.SessionBeforeSwitch(t.Context(), SessionEvent{Reason: "new"})
+	assert.True(t, out.Denied)
+	assert.Equal(t, "dirty repo", out.Reason)
 }
 
 func TestManagerPostTurn(t *testing.T) {
-	var got SessionEvent
-	m := NewManager(Entry{Hook: FuncHook{
-		HookName: "cache-ratio",
-		Sess: func(_ context.Context, ev SessionEvent) (SessionResult, error) {
-			got = ev
-			return SessionResult{}, nil
-		},
-	}, Kind: KindPostTurn})
-	m.PostTurn(t.Context(), SessionEvent{
-		SessionID: "sess-1",
-		MessageID: "assistant-1",
-		Usage:     SessionUsage{PromptTokens: 50, CachedTokens: 25, TotalTokens: 60},
+	dir := t.TempDir()
+	marker := filepath.Join(dir, ".post-turn")
+	script := filepath.Join(dir, "audit.sh")
+	require.NoError(t, os.WriteFile(script, []byte("#!/bin/sh\ncat >/dev/null\ntouch .post-turn\n"), 0o644))
+	require.NoError(t, os.Chmod(script, 0o755))
+	pluginPath := filepath.Join(dir, PluginFileName)
+	require.NoError(t, os.WriteFile(pluginPath, []byte(`{
+  "hooks": {
+    "PostTurn": [{
+      "hooks": [{ "command": "./audit.sh" }]
+    }]
+  }
+}`), 0o644))
+
+	mgr, err := loadManagerFromPlugin(t, pluginPath)
+	require.NoError(t, err)
+	mgr.PostTurn(t.Context(), SessionEvent{
+		SessionID: "s1",
+		Cwd:       dir,
+		MessageID: "m1",
+		Usage:     SessionUsage{TotalTokens: 42},
 	})
-	assert.Equal(t, KindPostTurn, got.Kind)
-	assert.Equal(t, "sess-1", got.SessionID)
-	assert.Equal(t, "assistant-1", got.MessageID)
-	assert.Equal(t, 25, got.Usage.CachedTokens)
+	_, err = os.Stat(marker)
+	assert.NoError(t, err)
+}
+
+func loadManagerFromPlugin(t *testing.T, pluginPath string) (*Manager, error) {
+	t.Helper()
+	hookList, err := ParsePlugin(pluginPath)
+	if err != nil {
+		return nil, err
+	}
+	return NewManager(Discovered{Plugin: "test", Path: pluginPath, Hooks: hookList}), nil
 }

@@ -1,4 +1,4 @@
-package v1
+package hooks
 
 import (
 	"encoding/json"
@@ -12,19 +12,25 @@ import (
 type HookEvent string
 
 const (
-	EventPreToolUse         HookEvent = "PreToolUse"
-	EventPostToolUse        HookEvent = "PostToolUse"
-	EventPostToolUseFailure HookEvent = "PostToolUseFailure"
-	EventSessionStart       HookEvent = "SessionStart"
-	EventSessionEnd         HookEvent = "SessionEnd"
+	EventPreToolUse          HookEvent = "PreToolUse"
+	EventPostToolUse         HookEvent = "PostToolUse"
+	EventPostToolUseFailure  HookEvent = "PostToolUseFailure"
+	EventSessionStart        HookEvent = "SessionStart"
+	EventSessionShutdown     HookEvent = "SessionShutdown"
+	EventSessionBeforeSwitch HookEvent = "SessionBeforeSwitch"
+	EventPostTurn            HookEvent = "PostTurn"
+	EventCommand             HookEvent = "Command"
 )
 
 var knownEvents = map[HookEvent]struct{}{
-	EventPreToolUse:         {},
-	EventPostToolUse:        {},
-	EventPostToolUseFailure: {},
-	EventSessionStart:       {},
-	EventSessionEnd:         {},
+	EventPreToolUse:          {},
+	EventPostToolUse:         {},
+	EventPostToolUseFailure:  {},
+	EventSessionStart:        {},
+	EventSessionShutdown:     {},
+	EventSessionBeforeSwitch: {},
+	EventPostTurn:            {},
+	EventCommand:             {},
 }
 
 // PluginFileName is the manifest that lists hooks in a hooks directory
@@ -110,11 +116,12 @@ func parsePluginBytes(abs string, data []byte) ([]Hook, error) {
 	slices.Sort(events)
 
 	hooks := make([]Hook, 0, len(events))
-	for _, event := range events {
+	for _, origEvent := range events {
+		event := normalizeHookEvent(origEvent)
 		if _, ok := knownEvents[event]; !ok {
-			return nil, fmt.Errorf("hooks: %s: unknown event %q", abs, event)
+			return nil, fmt.Errorf("hooks: %s: unknown event %q", abs, origEvent)
 		}
-		matchers, err := toHookMatchers(raw.Hooks[event])
+		matchers, err := toHookMatchers(event, raw.Hooks[origEvent])
 		if err != nil {
 			return nil, fmt.Errorf("hooks: %s: %s: %w", abs, event, err)
 		}
@@ -128,12 +135,15 @@ func parsePluginBytes(abs string, data []byte) ([]Hook, error) {
 	return hooks, nil
 }
 
-func toHookMatchers(raw []hookMatcherRaw) ([]HookMatcher, error) {
+func toHookMatchers(event HookEvent, raw []hookMatcherRaw) ([]HookMatcher, error) {
 	if len(raw) == 0 {
 		return nil, fmt.Errorf("empty matcher list")
 	}
 	matchers := make([]HookMatcher, 0, len(raw))
 	for i, m := range raw {
+		if event == EventCommand && strings.TrimSpace(m.Matcher) == "" {
+			return nil, fmt.Errorf("matcher[%d]: Command hooks require matcher (slash command name)", i)
+		}
 		cmds, err := toCommandHooks(m.Hooks)
 		if err != nil {
 			return nil, fmt.Errorf("matcher[%d]: %w", i, err)
@@ -159,6 +169,16 @@ func toCommandHooks(raw []commandHookRaw) ([]CommandHook, error) {
 		out = append(out, cmd)
 	}
 	return out, nil
+}
+
+// normalizeHookEvent maps legacy/CC names to Phi event names.
+func normalizeHookEvent(e HookEvent) HookEvent {
+	if e == "SessionEnd" {
+		// CC SessionEnd implies termination; Phi fires this when leaving/switching
+		// the active session (new / resume / quit), not when a session file is destroyed.
+		return EventSessionShutdown
+	}
+	return e
 }
 
 func normalizeCommandHook(h commandHookRaw) (CommandHook, error) {

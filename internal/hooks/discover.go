@@ -1,7 +1,6 @@
 package hooks
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -9,13 +8,13 @@ import (
 	"strings"
 )
 
-// Source labels where a discovered hook came from.
+// Source labels where a discovered plugin came from.
 const (
 	SourceUser    = "user"
 	SourceProject = "project"
 )
 
-// EnvHooks is the environment variable that disables or filters hooks.
+// EnvHooks is the environment variable that disables hooks.
 // Value "off" (case-insensitive) skips discovery entirely.
 const EnvHooks = "PHI_HOOKS"
 
@@ -32,11 +31,12 @@ func (w Warning) String() string {
 	return w.Path + ": " + w.Message
 }
 
-// Discovered is a validated, enabled hook with an absolute run path.
+// Discovered is one plugin.json worth of hooks from a discovery root.
 type Discovered struct {
-	Manifest Manifest
-	RunPath  string // absolute path to the executable
-	Source   string // SourceUser or SourceProject
+	Plugin string // plugin id (directory name, or "root" for hooksDir/plugin.json)
+	Path   string // absolute path to plugin.json
+	Hooks  []Hook
+	Source string // SourceUser or SourceProject
 }
 
 // HooksDisabled reports whether PHI_HOOKS=off.
@@ -46,20 +46,17 @@ func HooksDisabled() bool {
 }
 
 // Discover loads plugin.json from userDir then projectDir.
-// Same hook Name: project replaces user (whole-entry shadow).
+// Same Plugin id: project replaces user (whole-file shadow).
 // Missing directories are fine. Parse errors become Warnings; only unexpected
 // I/O on a present directory returns err.
 //
 // Layout: <hooksDir>/plugin.json and <hooksDir>/<plugin>/plugin.json.
-// Relative run paths resolve against the directory that contains plugin.json.
-//
-// When PHI_HOOKS=off, returns empty slices without reading disk.
 func Discover(userDir, projectDir string) ([]Discovered, []Warning, error) {
 	if HooksDisabled() {
 		return nil, nil, nil
 	}
 
-	byName := make(map[string]Discovered)
+	byPlugin := make(map[string]Discovered)
 	var warnings []Warning
 
 	load := func(dir, source string) error {
@@ -72,7 +69,7 @@ func Discover(userDir, projectDir string) ([]Discovered, []Warning, error) {
 			return err
 		}
 		for _, d := range found {
-			byName[d.Manifest.Name] = d
+			byPlugin[d.Plugin] = d
 		}
 		return nil
 	}
@@ -84,16 +81,11 @@ func Discover(userDir, projectDir string) ([]Discovered, []Warning, error) {
 		return nil, warnings, err
 	}
 
-	out := make([]Discovered, 0, len(byName))
-	for _, d := range byName {
+	out := make([]Discovered, 0, len(byPlugin))
+	for _, d := range byPlugin {
 		out = append(out, d)
 	}
-	sort.Slice(out, func(i, j int) bool {
-		if out[i].Manifest.Name != out[j].Manifest.Name {
-			return out[i].Manifest.Name < out[j].Manifest.Name
-		}
-		return out[i].Source < out[j].Source
-	})
+	sort.Slice(out, func(i, j int) bool { return out[i].Plugin < out[j].Plugin })
 	return out, warnings, nil
 }
 
@@ -109,18 +101,20 @@ func scanHooksDir(dir, source string) ([]Discovered, []Warning, error) {
 	var (
 		out      []Discovered
 		warnings []Warning
-		seen     = make(map[string]string) // hook name → plugin path
+		seen     = make(map[string]string) // plugin id → plugin path
 	)
 
-	loadFile := func(pluginPath string) {
-		found, warns := loadPluginFile(pluginPath, source, seen)
+	loadFile := func(pluginID, pluginPath string) {
+		d, warns := loadPluginFile(pluginID, pluginPath, source, seen)
 		warnings = append(warnings, warns...)
-		out = append(out, found...)
+		if d != nil {
+			out = append(out, *d)
+		}
 	}
 
 	rootPlugin := filepath.Join(dir, PluginFileName)
 	if st, err := os.Stat(rootPlugin); err == nil && !st.IsDir() {
-		loadFile(rootPlugin)
+		loadFile("root", rootPlugin)
 	} else if err != nil && !os.IsNotExist(err) {
 		warnings = append(warnings, Warning{Path: rootPlugin, Message: err.Error()})
 	}
@@ -141,74 +135,42 @@ func scanHooksDir(dir, source string) ([]Discovered, []Warning, error) {
 		if st.IsDir() {
 			continue
 		}
-		loadFile(pluginPath)
+		loadFile(ent.Name(), pluginPath)
 	}
 	return out, warnings, nil
 }
 
-func loadPluginFile(pluginPath, source string, seen map[string]string) ([]Discovered, []Warning) {
-	manifests, err := ParsePlugin(pluginPath)
+func loadPluginFile(pluginID, pluginPath, source string, seen map[string]string) (*Discovered, []Warning) {
+	if prev, dup := seen[pluginID]; dup {
+		return nil, []Warning{{
+			Path:    pluginPath,
+			Message: fmt.Sprintf("duplicate plugin %q (already defined in %s); skipped", pluginID, prev),
+		}}
+	}
+
+	hooks, err := ParsePlugin(pluginPath)
 	if err != nil {
 		return nil, []Warning{{Path: pluginPath, Message: err.Error()}}
 	}
 
-	var (
-		out      []Discovered
-		warnings []Warning
-	)
-	for _, m := range manifests {
-		if m.Disabled {
-			continue
-		}
-		if prev, dup := seen[m.Name]; dup {
-			warnings = append(warnings, Warning{
-				Path:    pluginPath,
-				Message: fmt.Sprintf("duplicate hook name %q (already defined in %s); skipped", m.Name, prev),
-			})
-			continue
-		}
-		runPath, err := resolveRunPath(m.Dir, m.Run)
-		if err != nil {
-			warnings = append(warnings, Warning{Path: pluginPath, Message: m.Name + ": " + err.Error()})
-			continue
-		}
-		seen[m.Name] = pluginPath
-		out = append(out, Discovered{
-			Manifest: m,
-			RunPath:  runPath,
-			Source:   source,
-		})
-	}
-	return out, warnings
-}
-
-func resolveRunPath(hookDir, run string) (string, error) {
-	run = strings.TrimSpace(run)
-	if run == "" {
-		return "", errors.New("empty run path")
-	}
-	if filepath.IsAbs(run) {
-		return filepath.Clean(run), nil
-	}
-	abs, err := filepath.Abs(filepath.Join(hookDir, run))
-	if err != nil {
-		return "", fmt.Errorf("resolve run %q: %w", run, err)
-	}
-	return abs, nil
+	seen[pluginID] = pluginPath
+	return &Discovered{
+		Plugin: pluginID,
+		Path:   pluginPath,
+		Hooks:  hooks,
+		Source: source,
+	}, nil
 }
 
 // FormatDiscovered returns a one-line status for palette / logs.
 func FormatDiscovered(d Discovered) string {
-	m := d.Manifest
-	extra := ""
-	if m.FailClosed {
-		extra += " fail_closed"
+	events := make([]string, 0, len(d.Hooks))
+	n := 0
+	for _, h := range d.Hooks {
+		events = append(events, string(h.Event))
+		for _, m := range h.Matchers {
+			n += len(m.Hooks)
+		}
 	}
-	if m.Async {
-		extra += " async"
-	}
-	if m.Kind == KindCommand {
-		return fmt.Sprintf("%s  %s  [%s]%s", m.Name, m.Kind, d.Source, extra)
-	}
-	return fmt.Sprintf("%s  %s  match=%s  [%s]%s", m.Name, m.Kind, m.Match, d.Source, extra)
+	return fmt.Sprintf("%s  events=%s  commands=%d  [%s]", d.Plugin, strings.Join(events, ","), n, d.Source)
 }

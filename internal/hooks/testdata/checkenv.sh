@@ -4,7 +4,7 @@ if [ -n "$PHI_API_KEY" ]; then
   echo '{"action":"deny","reason":"api key leaked"}'
   exit 0
 fi
-if [ "$PHI_HOOK_EVENT" != "pre_tool" ]; then
+if [ "$PHI_HOOK_EVENT" != "PreToolUse" ]; then
   echo '{"action":"deny","reason":"missing hook event"}'
   exit 0
 fi

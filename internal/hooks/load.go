@@ -6,15 +6,13 @@ import (
 	"github.com/pulseaiclub/phi/internal/debuglog"
 )
 
-// Load discovers hooks under userDir and projectDir and builds a Manager.
-// Discovery warnings are returned; only unexpected I/O fails with err.
-// When PHI_HOOKS=off, returns an empty Manager and no warnings.
+// Load discovers hooks and builds a Manager.
 func Load(userDir, projectDir string) (*Manager, []Warning, error) {
 	found, warns, err := Discover(userDir, projectDir)
 	if err != nil {
 		return nil, warns, err
 	}
-	return NewManager(EntriesFromDiscovered(found)...), warns, nil
+	return NewManager(found...), warns, nil
 }
 
 // LogWarnings writes each warning to the debug log (PHI_DEBUG=1).

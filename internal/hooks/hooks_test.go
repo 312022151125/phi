@@ -1,4 +1,4 @@
-package v1
+package hooks
 
 import (
 	"os"
@@ -75,6 +75,7 @@ func TestParsePluginErrors(t *testing.T) {
 		{"neg timeout", `{"hooks":{"PreToolUse":[{"hooks":[{"command":"x","timeout":-1}]}]}}`},
 		{"empty matchers", `{"hooks":{"PreToolUse":[]}}`},
 		{"empty hooks", `{"hooks":{"PreToolUse":[{"hooks":[]}]}}`},
+		{"command without matcher", `{"hooks":{"Command":[{"hooks":[{"command":"./x.sh"}]}]}}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -84,6 +85,24 @@ func TestParsePluginErrors(t *testing.T) {
 			assert.Error(t, err)
 		})
 	}
+}
+
+func TestParsePluginSessionEndAlias(t *testing.T) {
+	path := filepath.Join(t.TempDir(), PluginFileName)
+	require.NoError(t, os.WriteFile(path, []byte(`{
+  "hooks": {
+    "SessionEnd": [{
+      "matcher": "quit",
+      "hooks": [{ "command": "true" }]
+    }]
+  }
+}`), 0o644))
+
+	hooks, err := ParsePlugin(path)
+	require.NoError(t, err)
+	require.Len(t, hooks, 1)
+	assert.Equal(t, EventSessionShutdown, hooks[0].Event)
+	assert.Equal(t, "quit", hooks[0].Matchers[0].Matcher)
 }
 
 func TestDiscoverProjectShadowsUser(t *testing.T) {

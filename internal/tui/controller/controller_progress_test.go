@@ -7,7 +7,7 @@ import (
 )
 
 func TestShouldPublishJobProgressDedup(t *testing.T) {
-	c := &Controller{}
+	c := &EngineController{}
 	p := job.Progress{
 		JobID:     "j",
 		ToolUseID: "t1",

@@ -15,7 +15,7 @@ import (
 
 // Submitter owns submit / cancel / slash dispatch and coordinates bash runs.
 type Submitter struct {
-	ctrl       *controller.Controller
+	ctrl       *controller.EngineController
 	commands   *commands.CommandRegistry
 	transcript *transcript.TranscriptPane
 	activity   *controller.ActivityHandler
@@ -33,7 +33,7 @@ type Submitter struct {
 
 // NewSubmitter builds a Submitter from explicit collaborators (no *Editor back-pointer).
 func NewSubmitter(
-	ctrl *controller.Controller,
+	ctrl *controller.EngineController,
 	commands *commands.CommandRegistry,
 	transcript *transcript.TranscriptPane,
 	activity *controller.ActivityHandler,

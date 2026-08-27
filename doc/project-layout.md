@@ -25,7 +25,7 @@
 | `internal/version/`      | Build-time `Version` (splash / `phi update`) |
 | `internal/util/`         | Shared helpers (diff, retry, SSE, file search, …) |
 | `internal/permission/`   | Permission policy and ask gate                 |
-| `internal/hooks/`        | Tool-loop hooks (`plugin.json`, Manager, CommandHook) |
+| `internal/hooks/`        | Tool-loop hooks (`plugin.json`, Manager, shell command execution) |
 | `internal/mcp/`          | MCP config + stdio client + pool (meta-tool route) |
 
 ## Design docs

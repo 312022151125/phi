@@ -27,14 +27,12 @@ func TestLoadedHooksDenyBash(t *testing.T) {
 
 	userDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(userDir, hooks.PluginFileName), []byte(`{
-  "hooks": [{
-    "name": "guard-bash",
-    "event": "pre_tool",
-    "match": "bash",
-    "run": "./run.sh",
-    "fail_closed": true,
-    "timeout": "5s"
-  }]
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "bash",
+      "hooks": [{ "type": "command", "command": "./run.sh", "timeout": 5 }]
+    }]
+  }
 }`), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(userDir, "run.sh"), []byte(`#!/bin/sh
 input=$(cat)
@@ -87,13 +85,12 @@ func TestLoadedHooksOffAllows(t *testing.T) {
 	}
 	userDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(userDir, hooks.PluginFileName), []byte(`{
-  "hooks": [{
-    "name": "guard-bash",
-    "event": "pre_tool",
-    "match": "bash",
-    "run": "./run.sh",
-    "fail_closed": true
-  }]
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "bash",
+      "hooks": [{ "command": "./run.sh" }]
+    }]
+  }
 }`), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(userDir, "run.sh"), []byte(`#!/bin/sh
 echo '{"action":"deny","reason":"should not load"}'

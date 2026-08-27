@@ -26,10 +26,10 @@ type hookSubmitter interface {
 	Submit(text string)
 }
 
-// HookCommands owns slash commands registered from KindCommand hooks.
+// HookCommands owns slash commands registered from Command hooks.
 type HookCommands struct {
 	Registry   *CommandRegistry
-	Ctrl       *controller.Controller
+	Ctrl       *controller.EngineController
 	CWD        string
 	Composer   hookComposer
 	Footer     hookFooter
@@ -51,7 +51,7 @@ func (h *HookCommands) Sync() {
 	h.Registry.clearHookCommands()
 	if h.Ctrl != nil {
 		for _, entry := range h.Ctrl.Hooks().CommandEntries() {
-			name := entry.Hook.Name()
+			name := entry.Name
 			if !h.Registry.registerHook(h.slashCommand(name)) {
 				debuglog.Logf("hooks: command %q skipped (name already registered)", name)
 			}
