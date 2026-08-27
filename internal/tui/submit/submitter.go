@@ -32,13 +32,13 @@ type Submitter struct {
 }
 
 // NewSubmitter builds a Submitter from explicit collaborators (no *Editor back-pointer).
+// BashRunner is composed internally from transcript/composer/publish.
 func NewSubmitter(
 	ctrl *controller.EngineController,
 	commands *commands.CommandRegistry,
 	transcript *transcript.TranscriptPane,
 	activity *controller.ActivityHandler,
 	composer composer.Input,
-	bash *BashRunner,
 	commandContext func() commands.CommandContext,
 	publish func(controller.Msg),
 	permissionActive func() bool,
@@ -52,7 +52,7 @@ func NewSubmitter(
 		transcript:        transcript,
 		activity:          activity,
 		composer:          composer,
-		bash:              bash,
+		bash:              newBashRunner(transcript, composer, publish),
 		commandContext:    commandContext,
 		publish:           publish,
 		permissionActive:  permissionActive,
@@ -60,14 +60,6 @@ func NewSubmitter(
 		resolvePermission: resolvePermission,
 		resolveContinue:   resolveContinue,
 	}
-}
-
-// Bash returns the local shell runner owned by this submitter.
-func (s *Submitter) Bash() *BashRunner {
-	if s == nil {
-		return nil
-	}
-	return s.bash
 }
 
 // SyncBashBorder updates composer chrome for "!cmd" prefix.

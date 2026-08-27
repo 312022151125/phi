@@ -17,7 +17,7 @@ type SessionCommands struct {
 	Ctrl       *controller.EngineController
 	Transcript *transcript.TranscriptPane
 	Footer     *footer.FooterChrome
-	Toast      toast.Toast
+	Publish    func(controller.Msg)
 	SyncHooks  func()
 }
 
@@ -26,16 +26,23 @@ func NewSessionCommands(
 	ctrl *controller.EngineController,
 	transcript *transcript.TranscriptPane,
 	footer *footer.FooterChrome,
-	toast toast.Toast,
+	publish func(controller.Msg),
 	syncHooks func(),
 ) *SessionCommands {
 	return &SessionCommands{
 		Ctrl:       ctrl,
 		Transcript: transcript,
 		Footer:     footer,
-		Toast:      toast,
+		Publish:    publish,
 		SyncHooks:  syncHooks,
 	}
+}
+
+func (s *SessionCommands) showToast(msg string, kind toast.ToastKind, d time.Duration) {
+	if s == nil || s.Publish == nil {
+		return
+	}
+	s.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
 }
 
 // Show lists recent sessions for the current session directory.
@@ -49,7 +56,7 @@ func (s *SessionCommands) Show() {
 	}
 	list, err := session.ListSessions(dir)
 	if err != nil {
-		s.Toast.Show(err.Error(), toast.ToastError, 3*time.Second)
+		s.showToast(err.Error(), toast.ToastError, 3*time.Second)
 		return
 	}
 	const maxN = 12
@@ -57,22 +64,7 @@ func (s *SessionCommands) Show() {
 	if len(list) == 0 {
 		b.WriteString("No sessions for this directory")
 	} else {
-		fmt.Fprintf(&b, "Sessions in this directory (%d):\n", len(list))
-		n := len(list)
-		n = min(n, maxN)
-		for i := 0; i < n; i++ {
-			m := list[i]
-			short := m.ID
-			if len(short) > 8 {
-				short = short[:8]
-			}
-			preview := m.Preview
-			if preview == "" {
-				preview = "(no preview)"
-			}
-			fmt.Fprintf(&b, "  %s  %s  %s\n", short, m.Mtime.Format("01-02 15:04"), preview)
-		}
-		b.WriteString("Resume with /resume <id>")
+		writeSessionList(&b, list, maxN)
 	}
 	s.Transcript.ApplySession(session.AssistantMessageUpdate{Message: session.Message{
 		ID:    fmt.Sprintf("sessions-%d", time.Now().UnixNano()),
@@ -93,7 +85,7 @@ func (s *SessionCommands) Resume(id string) {
 	}
 	warn, err := s.Ctrl.Resume(id)
 	if err != nil {
-		s.Toast.Show(err.Error(), toast.ToastError, 4*time.Second)
+		s.showToast(err.Error(), toast.ToastError, 4*time.Second)
 		return
 	}
 	if s.SyncHooks != nil {
@@ -104,10 +96,10 @@ func (s *SessionCommands) Resume(id string) {
 	s.Transcript.StickToBottom()
 	msg := "Resumed " + shortSessionID(s.Ctrl.SessionID())
 	if warn != "" {
-		s.Toast.Show(msg+": "+warn, toast.ToastWarning, 5*time.Second)
+		s.showToast(msg+": "+warn, toast.ToastWarning, 5*time.Second)
 		return
 	}
-	s.Toast.Show(msg, toast.ToastSuccess, 3*time.Second)
+	s.showToast(msg, toast.ToastSuccess, 3*time.Second)
 }
 
 // Clear starts a new empty session. Caller must ensure the stream is idle
@@ -117,7 +109,7 @@ func (s *SessionCommands) Clear() {
 		return
 	}
 	if err := s.Ctrl.Clear(); err != nil {
-		s.Toast.Show(err.Error(), toast.ToastError, 4*time.Second)
+		s.showToast(err.Error(), toast.ToastError, 4*time.Second)
 		return
 	}
 	s.Transcript.LoadReplay(s.Ctrl.ReplaySnapshot())
@@ -126,7 +118,7 @@ func (s *SessionCommands) Clear() {
 	s.Footer.Activity().Apply(controller.ActivityIdle)
 	s.Transcript.Sync()
 	s.Transcript.StickToBottom()
-	s.Toast.Show("Cleared "+shortSessionID(s.Ctrl.SessionID()), toast.ToastSuccess, 3*time.Second)
+	s.showToast("Cleared "+shortSessionID(s.Ctrl.SessionID()), toast.ToastSuccess, 3*time.Second)
 }
 
 func shortSessionID(id string) string {
@@ -134,4 +126,24 @@ func shortSessionID(id string) string {
 		return id[:8]
 	}
 	return id
+}
+
+// writeSessionList renders up to maxN sessions for the /sessions message.
+func writeSessionList(b *strings.Builder, list []session.SessionMeta, maxN int) {
+	fmt.Fprintf(b, "Sessions in this directory (%d):\n", len(list))
+	n := len(list)
+	n = min(n, maxN)
+	for i := 0; i < n; i++ {
+		m := list[i]
+		short := m.ID
+		if len(short) > 8 {
+			short = short[:8]
+		}
+		preview := m.Preview
+		if preview == "" {
+			preview = "(no preview)"
+		}
+		fmt.Fprintf(b, "  %s  %s  %s\n", short, m.Mtime.Format("01-02 15:04"), preview)
+	}
+	b.WriteString("Resume with /resume <id>")
 }

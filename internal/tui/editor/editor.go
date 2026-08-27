@@ -87,9 +87,6 @@ func NewEditor(
 		composer:   composer.NewComposerPane(theme, model, cwd),
 		footer:     footer.NewFooterChrome(theme, contextWindow),
 	}
-	e.composer.SetToast(func(msg string, kind toast.ToastKind, d time.Duration) {
-		e.toast.Show(msg, kind, d)
-	})
 	e.transcript = transcript.NewTranscriptPane(theme, e.footer.Spinner(), "Phi "+version.Version)
 	e.transcript.SetUsageCallback(e.footer.UpdateTokenDisplay)
 	e.footer.BindComposer(e.composer)
@@ -119,9 +116,7 @@ func NewEditor(
 		func(text string) bool {
 			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
 		},
-		func(msg string, kind toast.ToastKind, d time.Duration) {
-			e.toast.Show(msg, kind, d)
-		},
+		e.Publish,
 	)
 	e.hookCmds = &commands.HookCommands{
 		Registry: e.commands,
@@ -129,33 +124,23 @@ func NewEditor(
 		CWD:      e.cwd,
 		Composer: e.composer,
 		Footer:   e.footer,
-		Toast:    e.toast,
 		Publish:  e.Publish,
 	}
 	e.sessions = commands.NewSessionCommands(
 		e.ctrl,
 		e.transcript,
 		e.footer,
-		e.toast,
+		e.Publish,
 		e.hookCmds.Sync,
 	)
 
 	var bridge *commandBridge
-	bashRunner := submit.NewBashRunner(
-		e.transcript,
-		e.composer,
-		func(msg string, kind toast.ToastKind, d time.Duration) {
-			e.toast.Show(msg, kind, d)
-		},
-		e.Publish,
-	)
 	e.submitter = submit.NewSubmitter(
 		e.ctrl,
 		e.commands,
 		e.transcript,
 		e.footer.Activity(),
 		e.composer,
-		bashRunner,
 		func() commands.CommandContext {
 			if bridge == nil {
 				return commands.CommandContext{}
@@ -170,7 +155,7 @@ func NewEditor(
 	)
 	e.hookCmds.Submitter = e.submitter
 	bridge = newCommandBridge(
-		e.toast,
+		e.Publish,
 		e.composer,
 		e.transcript,
 		e.ctrl,
@@ -248,6 +233,8 @@ func (e *Editor) Update(m controller.Msg) {
 		e.overlays.Apply(m)
 	case controller.SetActivityMsg, controller.ClearIfActivityMsg, controller.UpdateAvailableMsg:
 		e.footer.Apply(m)
+	case controller.ToastMsg:
+		e.toast.Show(msg.Message, msg.Kind, msg.Duration)
 	case controller.HookSessionEffectsMsg:
 		e.footer.Apply(m)
 		if msg.Toast != "" {
@@ -512,7 +499,7 @@ func (e *Editor) SubmitPrompt(text string) {
 }
 
 type commandBridge struct {
-	toast      toast.Toast
+	publish    func(controller.Msg)
 	composer   *composer.ComposerPane
 	transcript *transcript.TranscriptPane
 	ctrl       *controller.EngineController
@@ -533,7 +520,7 @@ type commandBridge struct {
 }
 
 func newCommandBridge(
-	toast toast.Toast,
+	publish func(controller.Msg),
 	composer *composer.ComposerPane,
 	transcript *transcript.TranscriptPane,
 	ctrl *controller.EngineController,
@@ -551,7 +538,7 @@ func newCommandBridge(
 	skillPath string,
 ) *commandBridge {
 	return &commandBridge{
-		toast:           toast,
+		publish:         publish,
 		composer:        composer,
 		transcript:      transcript,
 		ctrl:            ctrl,
@@ -575,9 +562,7 @@ func (b *commandBridge) context() commands.CommandContext {
 		return commands.CommandContext{}
 	}
 	return commands.CommandContext{
-		Toast: func(msg string, kind toast.ToastKind, d time.Duration) {
-			b.toast.Show(msg, kind, d)
-		},
+		Publish: b.publish,
 		PushSubmenu: func(title string, cmds []palette.PaletteCommand) {
 			b.composer.PushPalette(title, cmds)
 		},
@@ -585,7 +570,13 @@ func (b *commandBridge) context() commands.CommandContext {
 		ResumeSession: b.sessions.Resume,
 		ClearSession: func() {
 			if b.submitter != nil && b.submitter.StreamActive() {
-				b.toast.Show("Cannot clear while a reply or command is running", toast.ToastWarning, 3*time.Second)
+				if b.publish != nil {
+					b.publish(controller.ToastMsg{
+						Message:  "Cannot clear while a reply or command is running",
+						Kind:     toast.ToastWarning,
+						Duration: 3 * time.Second,
+					})
+				}
 				return
 			}
 			b.sessions.Clear()

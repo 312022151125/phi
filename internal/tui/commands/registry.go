@@ -8,6 +8,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/components/mention"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
+	"github.com/pulseaiclub/phi/internal/tui/controller"
 )
 
 // CommandContext is the capability surface passed to command Run / palette
@@ -16,7 +17,7 @@ import (
 type CommandContext struct {
 	Args []string // slash args after the command name
 
-	Toast       func(msg string, kind toast.ToastKind, d time.Duration)
+	Publish     func(controller.Msg)
 	PushSubmenu func(title string, cmds []palette.PaletteCommand)
 
 	ShowSessions  func()
@@ -37,8 +38,8 @@ type CommandContext struct {
 }
 
 func (ctx CommandContext) toast(msg string, kind toast.ToastKind, d time.Duration) {
-	if ctx.Toast != nil {
-		ctx.Toast(msg, kind, d)
+	if ctx.Publish != nil {
+		ctx.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
 	}
 }
 
@@ -74,9 +75,6 @@ func NewCommandRegistry() *CommandRegistry {
 
 // Register adds cmd. Duplicate names (case-insensitive) replace the prior entry.
 func (r *CommandRegistry) Register(cmd Command) {
-	if r == nil {
-		return
-	}
 	name := strings.ToLower(strings.TrimSpace(cmd.Name))
 	if name == "" {
 		return
@@ -102,9 +100,6 @@ func (r *CommandRegistry) Register(cmd Command) {
 // registerHook adds a slash command from a Command hook.
 // Returns false if name is empty or already taken by a builtin.
 func (r *CommandRegistry) registerHook(cmd Command) bool {
-	if r == nil {
-		return false
-	}
 	name := strings.ToLower(strings.TrimSpace(cmd.Name))
 	if name == "" {
 		return false
@@ -134,9 +129,6 @@ func (r *CommandRegistry) registerHook(cmd Command) bool {
 
 // clearHookCommands removes every command registered via registerHook.
 func (r *CommandRegistry) clearHookCommands() {
-	if r == nil {
-		return
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	kept := make([]Command, 0, len(r.cmds))
@@ -212,9 +204,6 @@ func (r *CommandRegistry) BuildPalette(ctx CommandContext) []palette.PaletteComm
 }
 
 func (r *CommandRegistry) lookup(name string) (Command, bool) {
-	if r == nil {
-		return Command{}, false
-	}
 	key := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/"))
 	r.mu.RLock()
 	defer r.mu.RUnlock()

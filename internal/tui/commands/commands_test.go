@@ -4,14 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/components/palette"
-	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/hooks"
+	"github.com/pulseaiclub/phi/internal/tui/controller"
 )
 
 func TestThemeCommand_Submenu(t *testing.T) {
@@ -127,24 +126,25 @@ func TestSkillsCommand_Empty(t *testing.T) {
 }
 
 func TestFilterSlashCommands(t *testing.T) {
-	all := FilterSlashCommands("")
+	r := NewBuiltinRegistry()
+	all := r.FilterSlash("")
 	require.Len(t, all, 3)
 
-	resu := FilterSlashCommands("resu")
+	resu := r.FilterSlash("resu")
 	require.Len(t, resu, 1)
 	assert.Equal(t, "resume", resu[0].Path)
 	assert.Contains(t, resu[0].Description, "Resume")
 
-	clr := FilterSlashCommands("cle")
+	clr := r.FilterSlash("cle")
 	require.Len(t, clr, 1)
 	assert.Equal(t, "clear", clr[0].Path)
 
-	none := FilterSlashCommands("zzz")
+	none := r.FilterSlash("zzz")
 	assert.Empty(t, none)
 
-	assert.Equal(t, "/resume ", LookupSlashInsert("resume"))
-	assert.Equal(t, "/sessions", LookupSlashInsert("sessions"))
-	assert.Equal(t, "/clear", LookupSlashInsert("clear"))
+	assert.Equal(t, "/resume ", r.LookupInsert("resume"))
+	assert.Equal(t, "/sessions", r.LookupInsert("sessions"))
+	assert.Equal(t, "/clear", r.LookupInsert("clear"))
 }
 
 func TestCommandRegistry_DispatchSlash(t *testing.T) {
@@ -157,8 +157,10 @@ func TestCommandRegistry_DispatchSlash(t *testing.T) {
 		ShowSessions:  func() { sessions++ },
 		ResumeSession: func(id string) { resumeID = id },
 		ClearSession:  func() { cleared++ },
-		Toast: func(msg string, _ toast.ToastKind, _ time.Duration) {
-			toastMsg = msg
+		Publish: func(m controller.Msg) {
+			if tm, ok := m.(controller.ToastMsg); ok {
+				toastMsg = tm.Message
+			}
 		},
 	}
 

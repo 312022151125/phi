@@ -15,6 +15,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/job"
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tools"
+	"github.com/pulseaiclub/phi/internal/tui/controller"
 )
 
 // textSel tracks drag selection over the transcript.
@@ -50,7 +51,7 @@ type TranscriptPane struct {
 
 	onUsage func(session.TokenUsage)
 	copyFn  func(text string) bool
-	toastFn func(msg string, kind toast.ToastKind, d time.Duration)
+	publish func(controller.Msg)
 }
 
 // NewTranscriptPane builds an empty transcript view.
@@ -84,16 +85,16 @@ func (t *TranscriptPane) SetUsageCallback(fn func(session.TokenUsage)) {
 	}
 }
 
-// SetCopyHandlers wires clipboard copy and user feedback toasts.
+// SetCopyHandlers wires clipboard copy; feedback toasts go through publish.
 func (t *TranscriptPane) SetCopyHandlers(
 	copyFn func(text string) bool,
-	toastFn func(msg string, kind toast.ToastKind, d time.Duration),
+	publish func(controller.Msg),
 ) {
 	if t == nil {
 		return
 	}
 	t.copyFn = copyFn
-	t.toastFn = toastFn
+	t.publish = publish
 }
 
 // Snapshot returns the current session model (read-only use on UI goroutine).
@@ -415,10 +416,13 @@ func (t *TranscriptPane) copyResult(text, okMsg, failMsg string) {
 		return
 	}
 	ok := t.copyFn != nil && t.copyFn(text)
-	if ok && t.toastFn != nil {
-		t.toastFn(okMsg, toast.ToastSuccess, 2*time.Second)
-	} else if !ok && t.toastFn != nil {
-		t.toastFn(failMsg, toast.ToastError, 2*time.Second)
+	if t.publish == nil {
+		return
+	}
+	if ok {
+		t.publish(controller.ToastMsg{Message: okMsg, Kind: toast.ToastSuccess, Duration: 2 * time.Second})
+	} else {
+		t.publish(controller.ToastMsg{Message: failMsg, Kind: toast.ToastError, Duration: 2 * time.Second})
 	}
 }
 

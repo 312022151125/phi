@@ -25,7 +25,7 @@ cmd/main.go
 | `Overlays` | `permAskState`, `continueAskState` | `activity` ref, reply callbacks |
 | `Submitter` | `BashRunner` | `Controller`, `Bus`, `CommandRegistry`, pane refs |
 
-**Hard rule:** no `*Editor` back-pointers on handlers. Cross-domain work uses injected refs, callbacks, or `Bus.Publish`.
+**Hard rule:** no `*Editor` back-pointers on handlers. Cross-domain work uses injected refs, callbacks, or `Bus.Publish`. Toast feedback uses `ToastMsg` (Editor owns the overlay); do not inject toast callbacks.
 
 ---
 
@@ -84,7 +84,7 @@ Inside `NewEditor`, panes are built in dependency order:
 2. `TranscriptPane` — shares footer spinner; usage callback → footer tokens
 3. `ComposerPane` — chat chrome; footer binds composer for labels
 4. `Overlays` — permission/continue UI; uses footer activity + composer focus
-5. `SessionCommands`, `HookCommands`, `BashRunner`, `Submitter` — explicit deps, no `*Editor` fields
+5. `SessionCommands`, `HookCommands`, `Submitter` (owns `BashRunner`) — explicit deps, no `*Editor` fields
 6. `ComposerPane.Wire(...)` — connects composer keyboard path to submitter, overlays, bus
 
 `Editor` does **not** call `project.GetDefaultProject` or construct `Controller`.
@@ -131,6 +131,7 @@ app frame
 | `PermissionAskMsg`, `PermissionDismissMsg`, `ContinueAskMsg`, `ContinueDismissMsg` | `Overlays` |
 | `SetActivityMsg`, `ClearIfActivityMsg`, `UpdateAvailableMsg`, `HookSessionEffectsMsg` | `FooterChrome` |
 | `MentionResultsMsg`, `BranchLabelMsg` | `ComposerPane` |
+| `ToastMsg` | `Editor` toast overlay |
 | `HookCommandResultMsg` | `HookCommands` |
 | `RedrawMsg` | no-op (redraw already scheduled) |
 
