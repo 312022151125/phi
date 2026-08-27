@@ -459,8 +459,8 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 		cfg = c.proj.Config().Model()
 	}
 
-	mgr := loadHooksManager(c.proj)
-	c.hooksManager.Store(mgr)
+	hooksManager := loadHooksManager(c.proj)
+	c.hooksManager.Store(hooksManager)
 	eng, err := agent.NewEngine(agent.EngineOpts{
 		Model: cfg,
 		SessionOpts: agent.SessionOpts{
@@ -473,7 +473,7 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 		Ask:         c.askPermission,
 		ContinueAsk: c.askContinue,
 		Jobs:        c.engineJobs(),
-		Hooks:       mgr,
+		Hooks:       hooksManager,
 		MCP:         c.mcpPool,
 	})
 	if err != nil {
@@ -601,9 +601,6 @@ func (c *EngineController) StartPrompt(text string, pendingSkills []string, imag
 	c.streamMu.Unlock()
 
 	go c.runLoop(ctx, gen, text, pendingSkills, images)
-}
-
-func (c *EngineController) EnterFork() {
 }
 
 // Cancel aborts the current stream context (if any).

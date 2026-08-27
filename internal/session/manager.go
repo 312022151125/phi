@@ -179,10 +179,14 @@ func (sm *Manager) Append(msg llm.Message) (string, error) {
 	return entry.ID, nil
 }
 
-func (sm *Manager) Fork(parentID string) (*Manager, error) {
+// Fork creates a new Manager that shares the same session entries
+// but starts from the current leaf, allowing independent conversation branches.
+func (sm *Manager) Fork() (*Manager, error) {
 	sm.mu.Lock()
 	defer sm.mu.Unlock()
-	newID := sm.generateID()
+	newID := generateSessionID()
+
+	parentID := sm.sessionID
 	header := SessionHeader{
 		Type:          EntrySession,
 		ID:            newID,
@@ -228,6 +232,7 @@ func (sm *Manager) Fork(parentID string) (*Manager, error) {
 	if err := dst.flushAllEntries(); err != nil {
 		return nil, err
 	}
+	dst.flushed = true
 	return dst, nil
 }
 
