@@ -319,11 +319,15 @@ func HookListEntries(found []hooks.Discovered, warns []hooks.Warning, err error)
 		return out
 	}
 	for _, d := range found {
-		name := d.Manifest.Name
+		name := d.Plugin
+		events := make([]string, 0, len(d.Hooks))
+		for _, h := range d.Hooks {
+			events = append(events, string(h.Event))
+		}
 		out = append(out, palette.PaletteCommand{
 			ID:       "hook-" + name,
 			Verb:     hooks.FormatDiscovered(d),
-			Keywords: []string{name, string(d.Manifest.Kind), d.Source},
+			Keywords: []string{name, strings.Join(events, ","), d.Source},
 			Disabled: true,
 		})
 	}

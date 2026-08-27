@@ -94,7 +94,7 @@ type UpdateAvailableMsg struct {
 
 func (UpdateAvailableMsg) isMsg() {}
 
-// HookCommandResultMsg delivers the result of a KindCommand hook slash command.
+// HookCommandResultMsg delivers the result of a Command hook slash command.
 type HookCommandResultMsg struct {
 	Gen       uint64
 	Submit    string

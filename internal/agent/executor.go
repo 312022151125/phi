@@ -30,10 +30,6 @@ type Executor struct {
 	hooks     *hooks.Manager // nil = no hooks (behavior identical to pre-hooks)
 	sessionID string
 	cwd       string
-
-	// failClosedHooksOnly is set in ModeReadonly: only FailClosed hooks run
-	// so slow audit hooks cannot stall exploration.
-	failClosedHooksOnly bool
 }
 
 // NewExecutor builds an executor. hookMgr may be nil.
@@ -47,7 +43,6 @@ func NewExecutor(
 		gate = permission.AllowAll{}
 	}
 	e := &Executor{registry: registry, gate: gate, ask: ask, hooks: hookMgr}
-	e.syncHookFilter()
 	return e
 }
 
@@ -60,19 +55,9 @@ func (e *Executor) SetMeta(sessionID, cwd string) {
 	e.cwd = cwd
 }
 
-func (e *Executor) syncHookFilter() {
-	if e == nil {
-		return
-	}
-	e.failClosedHooksOnly = permission.ModeOf(e.gate) == permission.ModeReadonly
-}
-
 func (e *Executor) activeHooks() *hooks.Manager {
 	if e == nil || e.hooks == nil {
 		return nil
-	}
-	if e.failClosedHooksOnly {
-		return e.hooks.FailClosedOnly()
 	}
 	return e.hooks
 }

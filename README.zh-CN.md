@@ -340,31 +340,29 @@ Instructions the agent should follow when this skill is relevant.
 Hooks 在每个工具调用周围运行自定义逻辑——权限门控之前、执行之后。用于组织
 策略、审计或改写工具输入，无需改动 phi 二进制或 `config.yaml`。
 
-每个插件是 `hooks/` 下的一个目录，`plugin.json` 和可执行文件放在一起：
+每个插件是 `hooks/` 下的一个目录，`plugin.json` 与脚本放在一起（事件表）：
 
 ```json
 {
-  "hooks": [
-    {
-      "name": "guard-bash",
-      "event": "pre_tool",
-      "match": "bash",
-      "run": "./run.sh",
-      "fail_closed": true
-    },
-    {
-      "name": "review",
-      "event": "command",
-      "run": "./review.sh"
-    }
-  ]
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "bash",
+        "hooks": [
+          { "type": "command", "command": "./guard.sh", "timeout": 5 }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [{ "type": "command", "command": "./stamp.sh" }]
+      }
+    ]
+  }
 }
 ```
 
-Hooks 从 `~/.phi/hooks/` 和 `<cwd>/.phi/hooks/` 加载；同名项目 hook 会覆盖
-用户 hook。`event: "command"` 会注册 TUI 斜杠命令（`/name` 跑对应脚本）。在 TUI 中可用 `Ctrl+K` → hooks 列出或重新加载。`readonly` 权限
-模式下只运行 `fail_closed` 的 hook，慢速审计 hook 不会拖慢探索。完整指南见
-[doc/hooks.md](doc/hooks.md)。
+Hooks 从 `~/.phi/hooks/` 和 `<cwd>/.phi/hooks/` 加载；同名插件 id（目录名）的项目配置会覆盖用户配置。命令经 shell 执行，stdin/stdout 为 CC 形态 JSON。TUI 中 `Ctrl+K` → hooks 列出或重新加载。完整指南见 [doc/hooks.md](doc/hooks.md)。
 
 ## MCP
 

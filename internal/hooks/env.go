@@ -1,7 +1,6 @@
 package hooks
 
 import (
-	"os"
 	"strings"
 )
 
@@ -13,8 +12,6 @@ const (
 	EnvProjectDir = "PHI_PROJECT_DIR"
 )
 
-// sensitiveEnvSubstrings match (case-insensitive) against the env key.
-// Keys containing any of these are stripped before spawning a hook.
 var sensitiveEnvSubstrings = []string{
 	"API_KEY",
 	"SECRET",
@@ -38,7 +35,6 @@ type hookEnv struct {
 	ProjectDir string
 }
 
-// sanitizeEnv copies parent env, drops sensitive keys, and injects PHI_HOOK_*.
 func sanitizeEnv(parent []string, extra hookEnv) []string {
 	out := make([]string, 0, len(parent)+4)
 	for _, kv := range parent {
@@ -46,7 +42,6 @@ func sanitizeEnv(parent []string, extra hookEnv) []string {
 		if isSensitiveEnvKey(key) {
 			continue
 		}
-		// Drop keys we are about to overwrite so duplicates don't confuse hooks.
 		switch key {
 		case EnvHookEvent, EnvSessionID, EnvCwd, EnvProjectDir:
 			continue
@@ -64,9 +59,6 @@ func sanitizeEnv(parent []string, extra hookEnv) []string {
 
 func isSensitiveEnvKey(key string) bool {
 	k := strings.ToUpper(key)
-	if k == "PHI_API_KEY" {
-		return true
-	}
 	for _, sub := range sensitiveEnvSubstrings {
 		if strings.Contains(k, sub) {
 			return true
@@ -74,6 +66,3 @@ func isSensitiveEnvKey(key string) bool {
 	}
 	return false
 }
-
-// environ is overridable in tests.
-var environ = os.Environ

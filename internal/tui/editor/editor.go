@@ -28,11 +28,11 @@ import (
 
 // Editor is the TUI root widget: layout composition and the UI-goroutine
 // message loop. Cross-component work goes through controller.Bus — producers Publish,
-// Draw drains and Update applies. Agent lifecycle lives in controller.Controller;
+// Draw drains and Update applies. Agent lifecycle lives in controller.EngineController;
 // session→widget projection lives in TranscriptPane (Mapper/SubagentStore).
 //
-// Construction: cmd assembles App, controller.Bus, controller.Controller, CommandRegistry and passes
-// them into NewEditor. Editor does not create controller.Controller or fetch the project singleton.
+// Construction: cmd assembles App, controller.Bus, controller.EngineController, CommandRegistry and passes
+// them into NewEditor. Editor does not create controller.EngineController or fetch the project singleton.
 type Editor struct {
 	vx    *xui.XUI
 	App   *app.App
@@ -46,7 +46,7 @@ type Editor struct {
 	overlays   *overlays.Overlays
 	toast      toast.Toast
 
-	ctrl *controller.Controller
+	ctrl *controller.EngineController
 
 	commands   *commands.CommandRegistry
 	modelNames []string
@@ -62,7 +62,7 @@ type Editor struct {
 func NewEditor(
 	application *app.App,
 	bus *controller.Bus,
-	ctrl *controller.Controller,
+	ctrl *controller.EngineController,
 	registry *commands.CommandRegistry,
 	vx *xui.XUI,
 	theme components.Theme,
@@ -515,7 +515,7 @@ type commandBridge struct {
 	toast      toast.Toast
 	composer   *composer.ComposerPane
 	transcript *transcript.TranscriptPane
-	ctrl       *controller.Controller
+	ctrl       *controller.EngineController
 	submitter  *submit.Submitter
 	sessions   *commands.SessionCommands
 
@@ -536,7 +536,7 @@ func newCommandBridge(
 	toast toast.Toast,
 	composer *composer.ComposerPane,
 	transcript *transcript.TranscriptPane,
-	ctrl *controller.Controller,
+	ctrl *controller.EngineController,
 	submitter *submit.Submitter,
 	sessions *commands.SessionCommands,
 	reloadHooks func(),

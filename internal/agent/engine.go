@@ -213,7 +213,6 @@ func (engine *Engine) SetPermission(gate permission.Gate, ask permission.AskFunc
 	if engine.executor != nil {
 		engine.executor.gate = gate
 		engine.executor.ask = ask
-		engine.executor.syncHookFilter()
 	}
 }
 

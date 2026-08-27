@@ -6,9 +6,11 @@ Use hooks when you need organization policy, audit trails, or input rewriting th
 
 | Audience | This document |
 | --- | --- |
-| Hook authors | Create and test scripts under `.phi/hooks/` |
+| Hook authors | Create scripts under `.phi/hooks/<plugin>/` |
 | Operators | Deploy user- or project-level policy |
 | Contributors | See [Related code](#related-code) |
+
+Configuration is an event map: events as keys, matchers, and `type: "command"` shell commands.
 
 ---
 
@@ -18,95 +20,111 @@ Use hooks when you need organization policy, audit trails, or input rewriting th
 
 ```text
 emit(InProgress)
-  → PreTool hooks     (allow | deny | modify)
+  → PreToolUse        (deny | modify input)
   → Gate              (Ask UI / permission rules)
   → tool.Run
-  → PostTool hooks    (optional context / output rewrite)
+  → PostToolUse / PostToolUseFailure
   → emit(Done | …)
 ```
 
-- **PreTool** runs before Gate. A deny can stop a tool without user approval.
-- **PostTool** can append model-facing `context` and/or rewrite the tool `output`.
-  - `context` is wrapped in `<hook_context>…</hook_context>` on the tool result sent to the model only. TUI Detail/Output are unchanged by `context`. If no hook returns `context`, the tags are omitted.
-  - `output` replaces both the model-facing tool content and the TUI Output string for that tool run (Detail is unchanged). Omit `output` (or leave it empty) to keep the original tool result.
+- **PreToolUse** runs before Gate. A deny stops the tool without user approval.
+- **PostToolUse** runs after a successful tool run. Hooks can append model-facing `additionalContext` and/or rewrite output (`updatedMCPToolOutput`).
+- **PostToolUseFailure** runs when the tool returns an error (same response fields as PostToolUse).
+- Aggregated context is wrapped in `<hook_context>…</hook_context>` on the tool result sent to the model only. TUI Detail/Output are unchanged by context.
+- Output rewrites affect both the model-facing tool content and the TUI Output string (Detail is unchanged).
 - If no hooks are loaded, behavior matches a build with hooks disabled.
+
+### Supported events
+
+| Event | When | `matcher` matches |
+| --- | --- | --- |
+| `PreToolUse` | Before tool + Gate | Tool name |
+| `PostToolUse` | After successful tool run | Tool name |
+| `PostToolUseFailure` | After tool error | Tool name |
+| `SessionStart` | Session ready (`startup` / `new` / `resume`) | `source` |
+| `SessionShutdown` | Active session left (`new` / `resume` / `quit`) — session file may remain | `reason` |
+| `SessionBeforeSwitch` | Before `/clear` or `/resume` replaces the engine (`reason`: `new` or `resume`) | `reason` |
+| `PostTurn` | After each completed assistant stream (TUI) | Ignored (all bindings run) |
+| `Command` | TUI slash command (`/name`) | Slash command name |
 
 ### Discovery model
 
-One **plugin** is one directory with a `plugin.json` plus its scripts. Phi
-loads every such directory under the hooks root (one level only — nested
-folders are ignored). An optional `plugin.json` directly in the hooks root is
-for a single ad-hoc plugin; with more than one plugin, use subdirectories.
+One **plugin** is one directory with a `plugin.json` plus scripts. Phi loads every such directory under the hooks root (one level only). An optional `plugin.json` directly in the hooks root is treated as plugin id `root`.
 
 ```text
 ~/.phi/hooks/                    # user (lower)
   org-policy/
     plugin.json
     guard.sh
-    audit.py
   secrets-scan/
     plugin.json
     scan.py
 
-<cwd>/.phi/hooks/                # project (higher; same hook name replaces user)
-  guard-bash/
+<cwd>/.phi/hooks/                # project (higher; same plugin id replaces user)
+  try-hooks/
     plugin.json
-    run.sh
+    guard.py
 ```
 
 | Scope | Path | Precedence |
 | --- | --- | --- |
 | User | `~/.phi/hooks/<plugin>/plugin.json` (and optional `~/.phi/hooks/plugin.json`) | Lower |
-| Project | `<cwd>/.phi/hooks/<plugin>/plugin.json` (and optional `<cwd>/.phi/hooks/plugin.json`) | Higher — same hook `name` replaces the user hook entirely |
+| Project | `<cwd>/.phi/hooks/<plugin>/plugin.json` (and optional `<cwd>/.phi/hooks/plugin.json`) | Higher — same **plugin id** (directory name, or `root`) replaces the user plugin entirely |
 
 - Phi creates an empty `~/.phi/hooks/` on startup if needed.
-- `run` paths are relative to the directory that contains that `plugin.json`.
+- `command` strings run through the shell (`$SHELL -c` on Unix). Working directory is the directory that contains `plugin.json`.
 - Missing `plugin.json` is fine. Parse errors produce warnings and do not block startup.
-- Duplicate hook names in the same scope: first definition wins (root file, then subdirs in filesystem order); later files warn and skip.
+- Duplicate plugin ids in the same scope: first wins; later files warn and skip.
 - Set `PHI_HOOKS=off` to disable discovery and execution entirely.
 
 ---
 
 ## Getting started
 
+This repo ships a sample plugin at `.phi/hooks/try-hooks/`.
+
 ### 1. Create a project plugin
 
 ```text
 .phi/hooks/guard-bash/
   plugin.json
-  run.sh
+  guard.sh
 ```
 
 **`plugin.json`**
 
 ```json
 {
-  "hooks": [
-    {
-      "name": "guard-bash",
-      "event": "pre_tool",
-      "match": "bash",
-      "run": "./run.sh",
-      "timeout": "5s",
-      "fail_closed": true
-    }
-  ]
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./guard.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
 }
 ```
 
-**`run.sh`** (must be executable: `chmod +x run.sh`)
+**`guard.sh`** (`chmod +x guard.sh`)
 
 ```bash
 #!/usr/bin/env bash
-# Deny bash commands whose text contains "phi-deny".
+# Deny bash when tool_input contains "phi-deny".
 input=$(cat)
 case "$input" in
   *phi-deny*)
-    echo '{"action":"deny","reason":"blocked by guard-bash (matched phi-deny)"}'
+    printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"blocked (phi-deny)"}}'
     exit 2
     ;;
 esac
-echo '{"action":"allow"}'
+printf '%s\n' '{}'
 ```
 
 ### 2. Load hooks
@@ -114,11 +132,15 @@ echo '{"action":"allow"}'
 - Restart Phi, or
 - Command palette: **hooks → reload** (`Ctrl+K`)
 
-List loaded hooks with **hooks → list**.
+List loaded plugins with **hooks → list**.
 
 ### 3. Verify
 
-Ask the agent to run `echo phi-deny`. The PreTool hook should deny the call.
+Ask the agent to run `echo phi-deny`. The PreToolUse hook should deny the call.
+
+Try `echo phi-rewrite` to see input rewriting (`updatedInput`).
+
+Any successful tool should get a PostToolUse stamp from `try-hooks/stamp.py` when that plugin is loaded.
 
 ---
 
@@ -126,24 +148,79 @@ Ask the agent to run `echo phi-deny`. The PreTool hook should deny the call.
 
 ### Manifest (`plugin.json`)
 
-A file is either `{"name":"plugin-id","hooks":[…]}` or a top-level `[…]` array of hook objects. `run` is relative to the directory that contains `plugin.json` (or absolute).
+Top-level object with a `hooks` map: event name → array of matchers.
 
-| Field | Type | Required | Default | Description |
-| --- | --- | --- | --- | --- |
-| `name` (plugin) | string | no | directory name | Optional plugin id |
-| `hooks` | array | yes* | — | Hook entries (`*` not needed for a top-level array) |
-| `name` (hook) | string | yes† | plugin `name` | Unique id; used for user/project override. †Optional only when the file has exactly one hook and the plugin has a name |
-| `event` | string | yes | — | `pre_tool`, `post_tool`, `post_turn`, `command`, `session_start`, `session_shutdown`, or `session_before_switch` |
-| `match` | string | no | `*` | Exact tool name, or `*` for all tools. Not a regex. Ignored for `command` and session events. |
-| `run` | string | yes | — | Executable path relative to `plugin.json`'s directory, or absolute. Executed directly (no shell). |
-| `timeout` | string \| number | no | `5s` | Go duration string (e.g. `"5s"`) or seconds as a number. Maximum `60s`. |
-| `fail_closed` | boolean | no | `false` | On failure, deny (Pre / before_switch) / stop (Post). Invalid on `command`, `session_start`, `session_shutdown`. |
-| `async` | boolean | no | `false` | `post_tool` / `post_turn` / `session_start` / `session_shutdown`: fire-and-forget; result ignored |
-| `disabled` | boolean | no | `false` | Skip loading this hook |
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./lint.sh",
+            "if": "Bash(git *)",
+            "timeout": 30,
+            "statusMessage": "checking",
+            "once": true,
+            "asyncRewake": true
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "startup",
+        "hooks": [{ "type": "command", "command": "echo hello" }]
+      }
+    ]
+  }
+}
+```
 
-### PreTool response
+| Field (hook command) | Type | Default | Description |
+| --- | --- | --- | --- |
+| `type` | string | `command` | Only `command` is supported |
+| `command` | string | required | Shell command (may include args, e.g. `./lint.sh --strict`) |
+| `if` | string | — | Permission-rule filter (not yet enforced at runtime) |
+| `shell` | string | bash | `bash` (uses `$SHELL`), `powershell`, or `pwsh` |
+| `timeout` | number | `5` | Seconds; capped at `60` |
+| `statusMessage` | string | — | Reserved for future spinner text |
+| `once` | boolean | `false` | Reserved (run once then remove) |
+| `async` | boolean | `false` | Fire-and-forget; result ignored |
+| `asyncRewake` | boolean | `false` | Async; exit `2` may wake the model (implies `async`) |
 
-Write one JSON object on stdout (first line only). Empty stdout with exit `0` means allow.
+| Field (matcher) | Type | Default | Description |
+| --- | --- | --- | --- |
+| `matcher` | string | `*` | Pattern against tool name (Pre/Post) or `source` / `reason` (session events) |
+| `hooks` | array | required | Command hooks for this matcher |
+
+**Matcher syntax** (tool names and session fields):
+
+1. Empty or `*` → match all.
+2. `Write|Edit` → exact match on any pipe-separated name.
+3. Otherwise → regular expression (e.g. `^bash$`).
+
+### PreToolUse response
+
+Write one JSON object on stdout (first line). Empty stdout with exit `0` means allow.
+
+**Preferred shape:**
+
+```json
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "permissionDecision": "deny",
+    "permissionDecisionReason": "policy violation",
+    "updatedInput": { "command": "echo safe" },
+    "additionalContext": "optional note"
+  }
+}
+```
+
+**Legacy Phi shape** (still parsed when `hookSpecificOutput` is absent):
 
 ```json
 { "action": "allow" }
@@ -154,152 +231,114 @@ Write one JSON object on stdout (first line only). Empty stdout with exit `0` me
 | Exit code | Behavior |
 | --- | --- |
 | `0` | Parse stdout; empty body → allow |
-| `2` | Hard deny (even with empty body) |
-| other | Treated as hook error → fail-open skip, or deny if `fail_closed` |
+| `2` | Hard deny (stderr optional; stdout JSON can add `reason`) |
+| other | Non-blocking error — hook skipped, tool loop continues |
 
-Optional fields on success: `reason`, `context` (model-facing note).
+`permissionDecision`: `allow` | `deny` | `ask` (`ask` falls through to Gate).
 
-### PostTool response
+### PostToolUse / PostToolUseFailure response
 
 ```json
-{ "context": "note for the model", "output": "rewritten tool result", "stop": false, "reason": "" }
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PostToolUse",
+    "additionalContext": "note for the model",
+    "updatedMCPToolOutput": "rewritten tool result text"
+  }
+}
 ```
+
+Legacy: `{ "context": "…", "output": "…", "stop": false }`.
 
 | Field | Effect |
 | --- | --- |
-| `context` | Model-only note (see Concepts). Aggregated from matching sync hooks (joined; capped at 4 KiB). |
-| `output` | Rewrites tool result for the model **and** TUI Output. Among sync hooks that set it, the last matching hook in entry order wins (execution is parallel, but the merge is deterministic) — prefer one rewrite hook. Not subject to the 4 KiB context cap. |
-| `stop` / `reason` | Reserved stop signal (not yet wired into the agent loop). |
+| `additionalContext` / `context` | Model-only note; aggregated (joined; capped at 4 KiB) |
+| `updatedMCPToolOutput` / `output` | Rewrites tool result for model and TUI Output; last sync hook wins |
+| `stop` / exit `2` | Stop signal (not yet wired into the agent loop) |
 
-`async: true` hooks are fire-and-forget: their stdout is ignored, so they cannot contribute `context` or `output`.
+`async: true` hooks are fire-and-forget — stdout is ignored.
 
-| Exit code | Behavior |
-| --- | --- |
-| `0` | Parse stdout; empty body → no-op |
-| `2` | Treated as stop request |
-| other | Hook error → fail-open skip, or stop if `fail_closed` |
+### Command (`Command`)
 
-### Command (`event: "command"`)
+Registers a TUI slash command. `matcher` is the command name (case-insensitive at runtime). `/review` runs the matching hook.
 
-A `command` hook registers a TUI slash command named after the hook `name` (leading `/` stripped, lowercased; must be one token). `/review` runs that hook's `run` script. Hook names are unique across all events — a `command` named `audit` replaces a `pre_tool` named `audit`. Builtin slash names (`sessions`, `resume`, `clear`, …) are not overwritten.
-
-`async` and `fail_closed` are invalid. `match` is ignored.
+```json
+{
+  "hooks": {
+    "Command": [
+      {
+        "matcher": "review",
+        "hooks": [{ "type": "command", "command": "./review.sh" }]
+      }
+    ]
+  }
+}
+```
 
 stdin:
 
 ```json
-{ "session_id": "…", "cwd": "/path/to/project", "hook_event": "command", "command": "review", "args": ["the", "diff"] }
+{
+  "session_id": "…",
+  "cwd": "/path/to/project",
+  "hook_event_name": "Command",
+  "command": "review",
+  "args": ["the", "diff"]
+}
 ```
 
-stdout (first JSON line). Empty body + exit `0` is a silent success.
-
-Apply order after a successful run: **status** → **toast** → **list** (palette page) → **submit** (skipped when `list` is present).
+stdout (first JSON line). Apply order: **status** → **toast** → **list** → **submit** (submit skipped when `list` is set).
 
 ```json
-{ "submit": "optional text sent as a user message" }
-{ "toast": "optional success toast" }
-{ "status": "footer status text" }
-{ "status": "" }
-{ "list": { "title": "Findings", "items": [{ "label": "auth.go:12", "detail": "nil check", "submit": "fix auth.go:12" }] } }
+{ "submit": "optional user message", "toast": "done", "status": "footer text", "list": { "title": "Findings", "items": [] } }
 ```
 
-| Field | Effect |
-| --- | --- |
-| `submit` | Send as a user message (ignored when `list` is set) |
-| `toast` | Success toast |
-| `status` | Set footer status when the key is present (empty string clears) |
-| `list` | Push a Ctrl+K palette page; item `submit` runs on select |
+### SessionBeforeSwitch / PostTurn
 
-| Exit code | Behavior |
-| --- | --- |
-| `0` | Parse stdout; empty body → no-op |
-| other | Error toast (`reason` from JSON if present) |
+**SessionBeforeSwitch** runs serially; first deny wins (`action: deny` or exit `2`). Matcher filters on `reason` (`new`, `resume`, …).
 
-The TUI runs at most one hook command at a time (like `!` bash). Reload drops in-flight results.
+**PostTurn** is audit-only (stdout not injected into the model). Runs in parallel; `async: true` recommended.
 
-### Session lifecycle
+stdin adds `message_id` and `usage` on **PostTurn**; **SessionBeforeSwitch** may include `target_session_id`.
 
-| Event | When | Can block? |
+### SessionStart / SessionShutdown
+
+Phi uses **`SessionShutdown`**, not CC **`SessionEnd`**: hooks run when the TUI **stops using** the current session (switch or quit), not when a session is deleted from disk. `SessionEnd` in `plugin.json` is accepted as a deprecated alias.
+
+| Event | Phi `reason` / `source` | Matcher value |
 | --- | --- | --- |
-| `session_before_switch` | Before `/clear` or `/resume` replaces the engine | Yes — `action: deny` or exit `2` |
-| `session_shutdown` | Leaving a session (`new` / `resume` / `quit`) | No |
-| `session_start` | After a session is ready (`startup` / `new` / `resume`) | No |
+| `SessionStart` | `startup`, `new`, `resume` | `source` |
+| `SessionShutdown` | `new`, `resume`, `quit` | `reason` |
 
-`async: true` is allowed on `session_start` and `session_shutdown` (fire-and-forget). `fail_closed` is allowed only on `session_before_switch`. `match` is ignored.
-
-stdin:
-
-```json
-{
-  "session_id": "…",
-  "cwd": "/path/to/project",
-  "hook_event": "session_before_switch",
-  "reason": "resume",
-  "target_session_id": "abcd…",
-  "usage": { "prompt_tokens": 12, "completion_tokens": 7, "total_tokens": 19 }
-}
-```
-
-| Field | Meaning |
-| --- | --- |
-| `reason` | `startup` \| `new` \| `resume` \| `quit` |
-| `previous_session_id` | On `session_start` after a switch: the session just left |
-| `target_session_id` | On `session_before_switch` for resume: destination id |
-| `usage` | Token usage of the latest completed assistant turn (see below) |
-
-stdout examples:
-
-```json
-{ "action": "deny", "reason": "uncommitted changes" }
-{ "toast": "session ready", "status": "hooks on" }
-```
-
-`session_before_switch` runs **serially** (first deny wins). Start/shutdown run **in parallel** (like PostTool). Toast/status from session hooks are applied by the TUI when present.
-
-`usage` reports the token usage of the most recent completed assistant turn: `prompt_tokens`, `completion_tokens`, `cached_tokens` (prompt cache reads), and `total_tokens`, each omitted when zero. The value comes from the live stream, not the session file: `session_start` sees an empty usage (a just-started or resumed session has no completed turn yet in this process), while `session_shutdown` and `session_before_switch` carry the last turn of the session being left. A cancelled or errored turn does not overwrite the previous value.
-
-### Post-turn (`post_turn`)
-
-Fires after each completed assistant stream in the interactive TUI run loop
-(Controller.recordUsage). stdin matches session lifecycle fields: `session_id`, `cwd`, `message_id`, and `usage`. `async: true` is recommended so slow loggers do not stall the agent loop. `fail_closed` is not valid. Results are audit-only — stdout is not injected into the model or transcript.
-
-Example stdin:
-
-```json
-{
-  "session_id": "…",
-  "cwd": "/path/to/project",
-  "hook_event": "post_turn",
-  "message_id": "assistant-…",
-  "usage": { "prompt_tokens": 1200, "cached_tokens": 900, "completion_tokens": 40, "total_tokens": 1240 }
-}
-```
-
-Project example: `.phi/hooks/cache-ratio/` logs `cache_ratio` and `cache_pct` to `.phi/cache-ratio.jsonl` on each round.
-
-### Failure policy (`fail_closed`)
-
-| Value | When the script crashes, times out, or returns invalid JSON |
-| --- | --- |
-| `false` (default) | Ignore that hook (suitable for audit) |
-| `true` | Deny (Pre / before_switch) or stop (Post) (suitable for security gates) |
-
-In `permissions.mode: readonly`, only hooks with `fail_closed: true` run for the tool loop, so slow audit hooks do not stall exploratory tool use. Interactive sessions and `phi run` run all loaded hooks. `session_start` / `session_shutdown` cannot set `fail_closed`, so they are skipped under the readonly FailClosedOnly view; use `session_before_switch` with `fail_closed` when a switch must be gated.
+stdin includes `session_id`, `cwd`, `hook_event_name`, and session fields. stdout may set `systemMessage` or `hookSpecificOutput.initialUserMessage` (shown as toast).
 
 ### Ordering and concurrency
 
-- Matching **PreTool** hooks run **serially**. First deny wins; modify results chain onto `input`.
-- Matching **PostTool** hooks run **in parallel** (except `async`, which is detached).
-- **session_before_switch** runs **serially**. First deny wins.
-- **session_start** / **session_shutdown** run **in parallel** (except `async`).
-- Order across multiple hooks is **not** guaranteed. If order matters, put the logic in one hook.
-- Because PostTool runs in parallel, do not rely on several hooks each rewriting `output` for the same tool call; put rewrite logic in one sync hook.
+- Matching **PreToolUse** hooks run **serially**. First deny wins; `updatedInput` chains.
+- Matching **PostToolUse** / **PostToolUseFailure** hooks run **in parallel** (except `async`, detached).
+- **SessionBeforeSwitch** runs **serially**; first deny wins.
+- **SessionStart** / **SessionShutdown** run in parallel (except `async`).
+- **PostTurn** runs in parallel; stdout is audit-only (ignored).
+- **Command** runs a single matching hook (first binding wins).
+- Order across multiple hooks is **not** guaranteed — combine logic in one command when order matters.
+
+### Result aggregation
+
+| Field | PreToolUse | PostToolUse / Failure | Session* | Command |
+| --- | --- | --- | --- | --- |
+| `additionalContext` / `context` | `\n\n` join, 4 KiB cap | `\n\n` join, 4 KiB cap | N/A (not injected to model) | N/A |
+| `updatedInput` | Chain (serial) | — | — | — |
+| `updatedMCPToolOutput` / `output` | — | Last sync hook wins | — | — |
+| deny / block | First deny stops | exit `2` → stop flag | BeforeSwitch: first deny | exit ≠ 0 → error |
+| toast / status | — | — | Last hook wins | One hook only |
+
+Pre and Post context are both injected into the model tool result (inside `<hook_context>`). `async: true` hooks never contribute to merged results.
 
 ---
 
 ## Protocol reference
 
-External hooks use a single JSON line on stdin and a single JSON line on stdout. Working directory is the directory that contains `plugin.json`. stdout/stderr are capped at **1 MiB** each. Aggregated model context from hooks is capped at **4 KiB**.
+External hooks receive one JSON line on stdin and may write one JSON line on stdout. stdout/stderr are capped at **1 MiB** each. Aggregated model context is capped at **4 KiB**.
 
 ### Request (stdin)
 
@@ -307,43 +346,42 @@ External hooks use a single JSON line on stdin and a single JSON line on stdout.
 {
   "session_id": "…",
   "cwd": "/path/to/project",
-  "hook_event": "pre_tool",
-  "tool": "bash",
+  "hook_event_name": "PreToolUse",
+  "tool_name": "bash",
   "tool_use_id": "call_…",
-  "input": { "command": "ls" }
+  "tool_input": { "command": "ls" }
 }
 ```
 
-| Field | PreTool | PostTool | Command | Session |
-| --- | --- | --- | --- | --- |
-| `session_id` | yes | yes | yes | yes |
-| `cwd` | yes | yes | yes | yes |
-| `hook_event` | `pre_tool` | `post_tool` | `command` | `session_*` / `post_turn` |
-| `tool` | yes | yes | — | — |
-| `tool_use_id` | yes | yes | — | — |
-| `input` | yes | yes | — | — |
-| `output` | — | tool stdout / result text when present | — | — |
-| `error` | — | tool error text; empty on success | — | — |
-| `command` | — | — | hook name | — |
-| `args` | — | — | slash args after `/name` | — |
-| `reason` | — | — | — | `startup` / `new` / `resume` / `quit` |
-| `previous_session_id` | — | — | — | start after switch |
-| `target_session_id` | — | — | — | before_switch resume |
-| `message_id` | — | — | — | post_turn assistant id |
-| `usage` | — | — | — | latest completed assistant turn token counts |
+| Field | PreToolUse | PostToolUse | PostToolUseFailure | SessionStart | SessionShutdown | SessionBeforeSwitch | PostTurn | Command |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `hook_event_name` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `tool_name` | ✓ | ✓ | ✓ | — | — | — | — | — |
+| `tool_use_id` | ✓ | ✓ | ✓ | — | — | — | — | — |
+| `tool_input` | ✓ | ✓ | ✓ | — | — | — | — | — |
+| `tool_response` | — | ✓ | — | — | — | — | — | — |
+| `error` | — | — | ✓ | — | — | — | — | — |
+| `source` | — | — | — | ✓ | — | — | — | — |
+| `reason` | — | — | — | — | ✓ | ✓ | — | — |
+| `previous_session_id` | — | — | — | ✓ | ✓ | — | — | — |
+| `target_session_id` | — | — | — | — | — | ✓ | — | — |
+| `message_id` | — | — | — | — | — | — | ✓ | — |
+| `usage` | — | — | — | — | ✓ | ✓ | — | — |
+| `command` / `args` | — | — | — | — | — | — | — | ✓ |
+
+Events not in the table above use the same base fields (`session_id`, `cwd`, `hook_event_name`) plus event-specific fields documented in [Authoring guide](#authoring-guide).
 
 ### Environment
 
-Sensitive parent environment keys are stripped before spawn (substring match, case-insensitive), including patterns such as `API_KEY`, `SECRET`, `TOKEN`, `PASSWORD`, `PHI_API_KEY`, and common cloud credential names.
-
-Injected variables:
+Sensitive parent environment keys are stripped before spawn.
 
 | Variable | Value |
 | --- | --- |
-| `PHI_HOOK_EVENT` | `pre_tool`, `post_tool`, `command`, or `session_*` |
+| `PHI_HOOK_EVENT` | `PreToolUse`, `PostToolUse`, etc. |
 | `PHI_SESSION_ID` | Session id |
 | `PHI_CWD` | Workspace cwd |
-| `PHI_PROJECT_DIR` | Same as cwd for command hooks |
+| `PHI_PROJECT_DIR` | Same as cwd |
+| `PHI_PLUGIN_ROOT` | Directory containing `plugin.json` |
 
 ---
 
@@ -354,20 +392,21 @@ Injected variables:
 | Disable all hooks | `PHI_HOOKS=off` |
 | Inspect load warnings | `PHI_DEBUG=1` |
 | List / reload in TUI | `Ctrl+K` → **hooks → list** / **hooks → reload** |
-| Override a user hook | Declare the same hook `name` under `<cwd>/.phi/hooks/<plugin>/plugin.json` |
+| Override a user plugin | Same plugin id under `<cwd>/.phi/hooks/<plugin>/` |
 
-Configuration for hooks is **not** stored in `~/.phi/config.yaml` or managed via `phi config`.
+Configuration for hooks is **not** stored in `~/.phi/config.yaml`.
+
+In `permissions.mode: readonly`, all loaded hooks still run (there is no `fail_closed` flag in the v1 schema). Use fast hooks or `async` for audit-only work.
 
 ---
 
 ## Limitations
 
-The following are intentionally out of scope:
-
-- Long-lived plugin host processes or bidirectional RPC
-- File-watch based hot reload (use palette reload or restart)
-- Registering new tools from hooks (use `tooldef.Tool`)
-- Mixing hook definitions into the main YAML config
+- `if` conditions are parsed but not enforced yet
+- `once`, `statusMessage`, and `asyncRewake` are parsed but not enforced yet (`async` background spawn works)
+- No file-watch hot reload (use palette reload or restart)
+- Hooks cannot register new tools (use `tooldef.Tool`)
+- Only `type: "command"` hooks (no prompt / agent / http yet)
 
 ---
 
@@ -375,7 +414,7 @@ The following are intentionally out of scope:
 
 | Path | Role |
 | --- | --- |
-| `internal/hooks/` | Types, Manager, discovery (`plugin.json`), CommandHook, Load |
-| `internal/agent/executor.go` | Pre → Gate → Run → Post |
+| `internal/hooks/` | Types, Manager, discovery, shell execution, Load |
+| `internal/agent/executor.go` | PreToolUse → Gate → Run → PostToolUse |
 | `internal/project` | `HooksDir()`, directory bootstrap |
-| `internal/tui` | Engine wiring; list / reload; `HookCommands` registers slash commands |
+| `internal/tui` | Engine wiring; list / reload |

@@ -99,7 +99,7 @@ func (r *CommandRegistry) Register(cmd Command) {
 	r.cmds = append(r.cmds, cmd)
 }
 
-// registerHook adds a slash command from a KindCommand hook.
+// registerHook adds a slash command from a Command hook.
 // Returns false if name is empty or already taken by a builtin.
 func (r *CommandRegistry) registerHook(cmd Command) bool {
 	if r == nil {

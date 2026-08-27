@@ -3,6 +3,10 @@ package agent
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -16,6 +20,25 @@ import (
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tools"
 )
+
+func writeToolHookPlugin(t *testing.T, event hooks.HookEvent, matcher, scriptBody string) *hooks.Manager {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell hook fixture")
+	}
+	dir := t.TempDir()
+	script := filepath.Join(dir, "hook.sh")
+	require.NoError(t, os.WriteFile(script, []byte(scriptBody), 0o644))
+	require.NoError(t, os.Chmod(script, 0o755))
+	matcherField := ""
+	if matcher != "" {
+		matcherField = fmt.Sprintf(`"matcher": %q,`, matcher)
+	}
+	plugin := fmt.Sprintf(`{"hooks":{%q:[{%s"hooks":[{"command":"./hook.sh"}]}]}}`, event, matcherField)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, hooks.PluginFileName), []byte(plugin), 0o644))
+	mgr, _, err := hooks.Load(dir, "")
+	require.NoError(t, err)
+	return mgr
+}
 
 type fixedGate struct {
 	dec    permission.Decision
@@ -241,16 +264,10 @@ func TestExecutorHookDenySkipsGateAsk(t *testing.T) {
 		askCalled.Add(1)
 		return permission.AskResult{Approved: true}, nil
 	}
-	mgr := hooks.NewManager(hooks.Entry{
-		Hook: hooks.FuncHook{
-			HookName: "guard",
-			MatchFn:  hooks.MatchTool("bash"),
-			Pre: func(_ context.Context, _ hooks.Event) (hooks.PreResult, error) {
-				return hooks.PreResult{Action: hooks.ActionDeny, Reason: "hook blocked"}, nil
-			},
-		},
-		Kind: hooks.KindPreTool,
-	})
+	mgr := writeToolHookPlugin(t, hooks.EventPreToolUse, "bash", `#!/bin/sh
+printf '%s\n' '{"action":"deny","reason":"hook blocked"}'
+exit 2
+`)
 	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, ask, mgr)
 	var statuses []session.ToolStatus
 	msgs := ex.Run(t.Context(), []llm.ToolCall{{
@@ -299,19 +316,10 @@ func TestExecutorHookModifySeenByGateAndRun(t *testing.T) {
 		},
 	}
 	gate := &recordingGate{}
-	mgr := hooks.NewManager(hooks.Entry{
-		Hook: hooks.FuncHook{
-			HookName: "rewrite",
-			MatchFn:  hooks.MatchTool("bash"),
-			Pre: func(_ context.Context, _ hooks.Event) (hooks.PreResult, error) {
-				return hooks.PreResult{
-					Action: hooks.ActionModify,
-					Input:  json.RawMessage(`{"command":"echo safe"}`),
-				}, nil
-			},
-		},
-		Kind: hooks.KindPreTool,
-	})
+	mgr := writeToolHookPlugin(t, hooks.EventPreToolUse, "bash", `#!/bin/sh
+cat >/dev/null
+printf '%s' '{"action":"modify","input":{"command":"echo safe"}}'
+`)
 	ex := NewExecutor(reg, gate, nil, mgr)
 	var detail string
 	msgs := ex.Run(t.Context(), []llm.ToolCall{{
@@ -346,15 +354,10 @@ func TestExecutorHookPostContextOnModelOnly(t *testing.T) {
 			},
 		},
 	}
-	mgr := hooks.NewManager(hooks.Entry{
-		Hook: hooks.FuncHook{
-			HookName: "note",
-			Post: func(_ context.Context, _ hooks.Event) (hooks.PostResult, error) {
-				return hooks.PostResult{Context: "policy note"}, nil
-			},
-		},
-		Kind: hooks.KindPostTool,
-	})
+	mgr := writeToolHookPlugin(t, hooks.EventPostToolUse, "", `#!/bin/sh
+cat >/dev/null
+printf '%s' '{"context":"policy note"}'
+`)
 	ex := NewExecutor(reg, permission.AllowAll{}, nil, mgr)
 	var uiOut string
 	msgs := ex.Run(t.Context(), []llm.ToolCall{{
@@ -380,24 +383,34 @@ func TestExecutorHookPostContextOnModelOnly(t *testing.T) {
 	}
 }
 
-func TestExecutorReadonlySkipsNonFailClosedHooks(t *testing.T) {
-	var auditCalled atomic.Int32
-	mgr := hooks.NewManager(
-		hooks.Entry{Hook: hooks.FuncHook{
-			HookName: "audit",
-			Pre: func(_ context.Context, _ hooks.Event) (hooks.PreResult, error) {
-				auditCalled.Add(1)
-				return hooks.PreResult{Action: hooks.ActionAllow}, nil
-			},
-		}, Kind: hooks.KindPreTool},
-		hooks.Entry{Hook: hooks.FuncHook{
-			HookName: "strict",
-			MatchFn:  hooks.MatchTool("bash"),
-			Pre: func(_ context.Context, _ hooks.Event) (hooks.PreResult, error) {
-				return hooks.PreResult{Action: hooks.ActionDeny, Reason: "strict"}, nil
-			},
-		}, Kind: hooks.KindPreTool, FailClosed: true},
-	)
+func TestExecutorReadonlyHookDenyStillBlocks(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("shell hook fixture")
+	}
+	dir := t.TempDir()
+	writeScript := func(name, body string) {
+		path := filepath.Join(dir, name)
+		require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
+		require.NoError(t, os.Chmod(path, 0o755))
+	}
+	writeScript("audit.sh", `#!/bin/sh
+touch .audit-ran
+echo '{"action":"allow"}'
+`)
+	writeScript("strict.sh", `#!/bin/sh
+echo '{"action":"deny","reason":"strict"}'
+exit 2
+`)
+	require.NoError(t, os.WriteFile(filepath.Join(dir, hooks.PluginFileName), []byte(`{
+  "hooks": {
+    "PreToolUse": [
+      { "hooks": [{ "command": "./audit.sh" }] },
+      { "matcher": "bash", "hooks": [{ "command": "./strict.sh" }] }
+    ]
+  }
+}`), 0o644))
+	mgr, _, err := hooks.Load(dir, "")
+	require.NoError(t, err)
 
 	policy := permission.DefaultPolicy()
 	policy.Mode = permission.ModeReadonly
@@ -420,7 +433,8 @@ func TestExecutorReadonlySkipsNonFailClosedHooks(t *testing.T) {
 		Function: llm.Function{Name: "bash", Arguments: `{"command":"ls"}`},
 	}}, func(session.ToolData) bool { return true })
 
-	assert.Equal(t, int32(0), auditCalled.Load(), "audit hook must not run in readonly")
+	_, err = os.Stat(filepath.Join(dir, ".audit-ran"))
+	assert.NoError(t, err, "audit hook should still run in readonly mode")
 	assert.Equal(t, int32(0), ran.Load())
 	require.Len(t, msgs, 1)
 	assert.Contains(t, msgs[0].Content, "strict")
