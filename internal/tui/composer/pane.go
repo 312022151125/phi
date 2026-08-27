@@ -56,7 +56,6 @@ type ComposerPane struct {
 	requestFocusEditor    func()
 	requestFocus          func(components.Widget)
 	ctrlClose             func()
-	toastFn               func(msg string, kind toast.ToastKind, d time.Duration)
 	imageEnabled          func() bool
 }
 
@@ -260,13 +259,6 @@ func (c *ComposerPane) AddPendingImage(att imgutil.Attachment) {
 		if c.onRedraw != nil {
 			c.onRedraw()
 		}
-	}
-}
-
-// SetToast wires user feedback for clipboard attach failures.
-func (c *ComposerPane) SetToast(fn func(msg string, kind toast.ToastKind, d time.Duration)) {
-	if c != nil {
-		c.toastFn = fn
 	}
 }
 
@@ -760,14 +752,18 @@ func (c *ComposerPane) imagesSupported() bool {
 }
 
 func (c *ComposerPane) warnImagesDisabled() {
-	if c == nil || c.toastFn == nil {
-		return
-	}
-	c.toastFn(
+	c.showToast(
 		"Current model does not support images (set image_enabled: true in config)",
 		toast.ToastWarning,
 		3*time.Second,
 	)
+}
+
+func (c *ComposerPane) showToast(msg string, kind toast.ToastKind, d time.Duration) {
+	if c == nil || c.publish == nil {
+		return
+	}
+	c.publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
 }
 
 func (c *ComposerPane) tryAttachClipboardImage(ctx *components.EventContext) bool {
@@ -781,9 +777,7 @@ func (c *ComposerPane) tryAttachClipboardImage(ctx *components.EventContext) boo
 		return false
 	}
 	if err != nil {
-		if c.toastFn != nil {
-			c.toastFn(err.Error(), toast.ToastError, 3*time.Second)
-		}
+		c.showToast(err.Error(), toast.ToastError, 3*time.Second)
 		ctx.ConsumeAndRedraw()
 		return true
 	}

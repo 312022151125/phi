@@ -4,14 +4,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/components/palette"
-	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/hooks"
+	"github.com/pulseaiclub/phi/internal/tui/controller"
 )
 
 func TestThemeCommand_Submenu(t *testing.T) {
@@ -158,8 +157,10 @@ func TestCommandRegistry_DispatchSlash(t *testing.T) {
 		ShowSessions:  func() { sessions++ },
 		ResumeSession: func(id string) { resumeID = id },
 		ClearSession:  func() { cleared++ },
-		Toast: func(msg string, _ toast.ToastKind, _ time.Duration) {
-			toastMsg = msg
+		Publish: func(m controller.Msg) {
+			if tm, ok := m.(controller.ToastMsg); ok {
+				toastMsg = tm.Message
+			}
 		},
 	}
 

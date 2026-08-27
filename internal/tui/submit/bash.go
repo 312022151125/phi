@@ -20,7 +20,6 @@ import (
 type BashRunner struct {
 	transcript *transcript.TranscriptPane
 	composer   composer.Input
-	toast      func(msg string, kind toast.ToastKind, d time.Duration)
 	publish    func(controller.Msg)
 
 	running atomic.Bool
@@ -28,17 +27,14 @@ type BashRunner struct {
 	cancel  context.CancelFunc
 }
 
-// NewBashRunner builds a BashRunner from explicit collaborators.
-func NewBashRunner(
+func newBashRunner(
 	transcript *transcript.TranscriptPane,
 	composer composer.Input,
-	toast func(msg string, kind toast.ToastKind, d time.Duration),
 	publish func(controller.Msg),
 ) *BashRunner {
 	return &BashRunner{
 		transcript: transcript,
 		composer:   composer,
-		toast:      toast,
 		publish:    publish,
 	}
 }
@@ -154,9 +150,10 @@ func (b *BashRunner) publishSession(ev session.Event) {
 }
 
 func (b *BashRunner) showToast(msg string, kind toast.ToastKind, d time.Duration) {
-	if b != nil && b.toast != nil {
-		b.toast(msg, kind, d)
+	if b == nil || b.publish == nil {
+		return
 	}
+	b.publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
 }
 
 // Cancel aborts a running user "!cmd". Returns true if one was cancelled.

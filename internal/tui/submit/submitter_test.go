@@ -34,9 +34,8 @@ func TestSubmitter_IsBusy(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
 	transcript := transcript.NewTranscriptPane(th, spin, "Phi test")
-	bash := NewBashRunner(transcript, stubComposer{}, nil, nil)
 
-	sub := NewSubmitter(nil, nil, transcript, nil, stubComposer{}, bash, nil, nil, nil, nil, nil, nil)
+	sub := NewSubmitter(nil, nil, transcript, nil, stubComposer{}, nil, nil, nil, nil, nil, nil)
 
 	if sub.IsBusy() {
 		t.Fatal("expected idle submitter")
@@ -53,7 +52,6 @@ func TestSubmitter_StreamActive_activity(t *testing.T) {
 		transcript.NewTranscriptPane(th, spin, "Phi test"),
 		activity,
 		stubComposer{},
-		nil,
 		nil,
 		nil,
 		nil,
@@ -78,7 +76,6 @@ func TestSubmitter_Submit_unknownSlashFallsThroughToAgent(t *testing.T) {
 		tp,
 		nil,
 		stubComposer{},
-		nil,
 		func() commands.CommandContext { return commands.CommandContext{} },
 		nil,
 		nil,
@@ -103,7 +100,6 @@ func TestSubmitter_Submit_bareBangFallsThroughToAgent(t *testing.T) {
 		tp,
 		nil,
 		stubComposer{},
-		NewBashRunner(tp, stubComposer{}, nil, nil),
 		nil,
 		nil,
 		nil,
@@ -130,7 +126,6 @@ func TestSubmitter_Submit_withImagesOnly(t *testing.T) {
 		tp,
 		nil,
 		stubComposer{images: images},
-		nil,
 		nil,
 		nil,
 		nil,

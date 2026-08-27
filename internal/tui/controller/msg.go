@@ -1,6 +1,9 @@
 package controller
 
 import (
+	"time"
+
+	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/hooks"
 	"github.com/pulseaiclub/phi/internal/job"
 	"github.com/pulseaiclub/phi/internal/permission"
@@ -37,6 +40,16 @@ func (SetActivityMsg) isMsg() {}
 type RedrawMsg struct{}
 
 func (RedrawMsg) isMsg() {}
+
+// ToastMsg asks the Editor to show a transient overlay notification.
+// Producers Publish this instead of holding a toast callback.
+type ToastMsg struct {
+	Message  string
+	Kind     toast.ToastKind
+	Duration time.Duration
+}
+
+func (ToastMsg) isMsg() {}
 
 // ClearIfActivityMsg sets Idle only when current activity still matches If.
 // Used for delayed "Stopped" → Idle without clobbering a newer state.

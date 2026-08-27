@@ -9,7 +9,7 @@ import (
 	imgutil "github.com/pulseaiclub/phi/internal/util/image"
 )
 
-// Input is the composer surface Submitter and BashRunner use.
+// Input is the composer surface Submitter (and its BashRunner) use.
 type Input interface {
 	HideCompleters()
 	ClearInput()

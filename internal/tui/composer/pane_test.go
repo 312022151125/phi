@@ -5,14 +5,13 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/mention"
-	"github.com/pulseaiclub/phi/internal/components/toast"
+	"github.com/pulseaiclub/phi/internal/tui/controller"
 )
 
 // png1x1Base64 is a 1x1 transparent PNG (same fixture as util/image tests).
@@ -21,7 +20,11 @@ const png1x1Base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42m
 func TestTryAttachClipboardImageBlockedWithoutModelSupport(t *testing.T) {
 	c := NewComposerPane(components.DefaultTheme(), "m", "/tmp")
 	var got string
-	c.SetToast(func(msg string, _ toast.ToastKind, _ time.Duration) { got = msg })
+	c.publish = func(m controller.Msg) {
+		if tm, ok := m.(controller.ToastMsg); ok {
+			got = tm.Message
+		}
+	}
 	c.imageEnabled = func() bool { return false }
 
 	ctx := &components.EventContext{}
@@ -56,7 +59,11 @@ func TestAcceptMentionImageBlockedWithoutModelSupport(t *testing.T) {
 
 	c := NewComposerPane(components.DefaultTheme(), "m", dir)
 	var got string
-	c.SetToast(func(msg string, _ toast.ToastKind, _ time.Duration) { got = msg })
+	c.publish = func(m controller.Msg) {
+		if tm, ok := m.(controller.ToastMsg); ok {
+			got = tm.Message
+		}
+	}
 	c.imageEnabled = func() bool { return false }
 	c.Chat.Value = "@pixel.png"
 	c.Chat.Cursor = len(c.Chat.Value)

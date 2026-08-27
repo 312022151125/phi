@@ -8,6 +8,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/components/mention"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
+	"github.com/pulseaiclub/phi/internal/tui/controller"
 )
 
 // CommandContext is the capability surface passed to command Run / palette
@@ -16,7 +17,7 @@ import (
 type CommandContext struct {
 	Args []string // slash args after the command name
 
-	Toast       func(msg string, kind toast.ToastKind, d time.Duration)
+	Publish     func(controller.Msg)
 	PushSubmenu func(title string, cmds []palette.PaletteCommand)
 
 	ShowSessions  func()
@@ -37,8 +38,8 @@ type CommandContext struct {
 }
 
 func (ctx CommandContext) toast(msg string, kind toast.ToastKind, d time.Duration) {
-	if ctx.Toast != nil {
-		ctx.Toast(msg, kind, d)
+	if ctx.Publish != nil {
+		ctx.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
 	}
 }
 
