@@ -130,13 +130,6 @@ func modelSettingsCommand(onModel func(name string), modelNames []string) palett
 			},
 		})
 	}
-	if len(models) == 0 {
-		models = append(models, palette.PaletteCommand{
-			ID:       "model-empty",
-			Verb:     "No models configured",
-			Disabled: true,
-		})
-	}
 	return palette.PaletteCommand{
 		ID:           "settings-model",
 		Noun:         "settings",

@@ -74,9 +74,6 @@ func NewCommandRegistry() *CommandRegistry {
 
 // Register adds cmd. Duplicate names (case-insensitive) replace the prior entry.
 func (r *CommandRegistry) Register(cmd Command) {
-	if r == nil {
-		return
-	}
 	name := strings.ToLower(strings.TrimSpace(cmd.Name))
 	if name == "" {
 		return
@@ -102,9 +99,6 @@ func (r *CommandRegistry) Register(cmd Command) {
 // registerHook adds a slash command from a Command hook.
 // Returns false if name is empty or already taken by a builtin.
 func (r *CommandRegistry) registerHook(cmd Command) bool {
-	if r == nil {
-		return false
-	}
 	name := strings.ToLower(strings.TrimSpace(cmd.Name))
 	if name == "" {
 		return false
@@ -134,9 +128,6 @@ func (r *CommandRegistry) registerHook(cmd Command) bool {
 
 // clearHookCommands removes every command registered via registerHook.
 func (r *CommandRegistry) clearHookCommands() {
-	if r == nil {
-		return
-	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	kept := make([]Command, 0, len(r.cmds))
@@ -212,9 +203,6 @@ func (r *CommandRegistry) BuildPalette(ctx CommandContext) []palette.PaletteComm
 }
 
 func (r *CommandRegistry) lookup(name string) (Command, bool) {
-	if r == nil {
-		return Command{}, false
-	}
 	key := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(name), "/"))
 	r.mu.RLock()
 	defer r.mu.RUnlock()
