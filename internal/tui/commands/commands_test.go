@@ -127,24 +127,25 @@ func TestSkillsCommand_Empty(t *testing.T) {
 }
 
 func TestFilterSlashCommands(t *testing.T) {
-	all := FilterSlashCommands("")
+	r := NewBuiltinRegistry()
+	all := r.FilterSlash("")
 	require.Len(t, all, 3)
 
-	resu := FilterSlashCommands("resu")
+	resu := r.FilterSlash("resu")
 	require.Len(t, resu, 1)
 	assert.Equal(t, "resume", resu[0].Path)
 	assert.Contains(t, resu[0].Description, "Resume")
 
-	clr := FilterSlashCommands("cle")
+	clr := r.FilterSlash("cle")
 	require.Len(t, clr, 1)
 	assert.Equal(t, "clear", clr[0].Path)
 
-	none := FilterSlashCommands("zzz")
+	none := r.FilterSlash("zzz")
 	assert.Empty(t, none)
 
-	assert.Equal(t, "/resume ", LookupSlashInsert("resume"))
-	assert.Equal(t, "/sessions", LookupSlashInsert("sessions"))
-	assert.Equal(t, "/clear", LookupSlashInsert("clear"))
+	assert.Equal(t, "/resume ", r.LookupInsert("resume"))
+	assert.Equal(t, "/sessions", r.LookupInsert("sessions"))
+	assert.Equal(t, "/clear", r.LookupInsert("clear"))
 }
 
 func TestCommandRegistry_DispatchSlash(t *testing.T) {

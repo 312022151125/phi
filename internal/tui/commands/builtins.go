@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/pulseaiclub/phi/internal/components"
-	"github.com/pulseaiclub/phi/internal/components/mention"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/hooks"
@@ -115,17 +114,6 @@ func registerBuiltinCommands(r *CommandRegistry) {
 			}
 		},
 	})
-}
-
-// FilterSlashCommands returns commands whose name starts with query (case-insensitive).
-// Prefer CommandRegistry.FilterSlash when a registry is available.
-func FilterSlashCommands(query string) []mention.Item {
-	return NewBuiltinRegistry().FilterSlash(query)
-}
-
-// LookupSlashInsert returns the Insert string for a command name, or empty.
-func LookupSlashInsert(name string) string {
-	return NewBuiltinRegistry().LookupInsert(name)
 }
 
 // modelSettingsCommand returns settings → model submenu.
