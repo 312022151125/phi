@@ -521,10 +521,8 @@ func (engine *Engine) toolCallsToBlocks(calls []llm.ToolCall) []session.ContentB
 	out := make([]session.ContentBlock, 0, len(calls))
 	for _, c := range calls {
 		input := c.Function.Arguments
-		if tool, ok := engine.executor.registry[c.Function.Name]; ok && tool.DetailFromArgs != nil {
-			if d := tool.DetailFromArgs(json.RawMessage(c.Function.Arguments)); d != "" {
-				input = d
-			}
+		if d := engine.ToolDetail(c.Function.Name, c.Function.Arguments); d != "" {
+			input = d
 		}
 		out = append(out, session.ContentBlock{
 			Type:     session.BlockToolUse,
@@ -535,6 +533,22 @@ func (engine *Engine) toolCallsToBlocks(calls []llm.ToolCall) []session.ContentB
 		})
 	}
 	return out
+}
+
+// ToolDetail resolves a friendly one-line detail for a tool call's raw JSON
+// arguments via the tool's DetailFromArgs, matching the live executor. It is
+// used both when building live tool_use blocks and by UI transcript replay so
+// resumed sessions show the same detail (e.g. "read foo.go:10-20") instead of
+// raw JSON. Returns "" when the tool is unknown or has no detail formatter.
+func (engine *Engine) ToolDetail(name, args string) string {
+	if engine == nil || engine.executor == nil {
+		return ""
+	}
+	tool, ok := engine.executor.registry[name]
+	if !ok || tool.DetailFromArgs == nil {
+		return ""
+	}
+	return tool.DetailFromArgs(json.RawMessage(args))
 }
 
 func buildContent(thinking, text string, tools []session.ContentBlock) []session.ContentBlock {

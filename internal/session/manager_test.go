@@ -227,7 +227,7 @@ func TestBuildSessionContext(t *testing.T) {
 func TestReplaySnapshotEmpty(t *testing.T) {
 	m := NewManager(t.TempDir())
 
-	snap := ReplaySnapshot(m.BuildContext())
+	snap := ReplaySnapshot(m.BuildContext(), nil)
 
 	assert.Empty(t, snap.Messages)
 	assert.Empty(t, snap.Tools)
@@ -251,7 +251,7 @@ func TestReplaySnapshotMessages(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	snap := ReplaySnapshot(m.BuildContext())
+	snap := ReplaySnapshot(m.BuildContext(), nil)
 	require.Len(t, snap.Messages, 2)
 
 	user := snap.Messages[0]
@@ -271,6 +271,64 @@ func TestReplaySnapshotMessages(t *testing.T) {
 	}, asst.Content)
 }
 
+func TestReplaySnapshotTools(t *testing.T) {
+	m := NewManager(t.TempDir())
+
+	_, err := m.Append(llm.Message{Role: llm.RoleUser, Content: "read the file"})
+	require.NoError(t, err)
+
+	_, err = m.Append(llm.Message{
+		Role:    llm.RoleAssistant,
+		Content: "calling tool",
+		ToolCalls: []llm.ToolCall{{
+			ID:   "t1",
+			Type: "function",
+			Function: llm.Function{
+				Name:      "Read",
+				Arguments: `{"path":"a.go"}`,
+			},
+		}},
+	})
+	require.NoError(t, err)
+
+	_, err = m.Append(llm.Message{
+		Role:       llm.RoleTool,
+		ToolCallID: "t1",
+		Content:    "package main",
+	})
+	require.NoError(t, err)
+
+	detail := func(toolName, _ string) string {
+		if toolName == "Read" {
+			return "read a.go"
+		}
+		return ""
+	}
+	snap := ReplaySnapshot(m.BuildContext(), detail)
+	require.Len(t, snap.Messages, 2)
+
+	asst := snap.Messages[1]
+	assert.Equal(t, StateComplete, asst.State)
+	assert.Equal(t, StopToolUse, asst.StopReason)
+	assert.Equal(t, []ContentBlock{
+		{Type: BlockText, Text: "calling tool"},
+		{Type: BlockToolUse, ID: "t1", Name: "Read", Input: "read a.go", Complete: true},
+	}, asst.Content)
+
+	run, ok := snap.Tools["t1"]
+	require.True(t, ok)
+	assert.Equal(t, "Read", run.Name)
+	assert.Equal(t, ToolDone, run.Status)
+	assert.Equal(t, "read a.go", run.Detail)
+	assert.Equal(t, "package main", run.Output)
+
+	items := Project(snap)
+	require.Len(t, items, 3)
+	assert.Equal(t, ItemTool, items[2].Kind)
+	assert.Equal(t, "Read", items[2].ToolName)
+	assert.Equal(t, "package main", items[2].ToolRun.Output)
+}
+
 func TestReplaySnapshotCompactionDropsOldMessages(t *testing.T) {
 	m := NewManager(t.TempDir())
 
@@ -286,7 +344,7 @@ func TestReplaySnapshotCompactionDropsOldMessages(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	snap := ReplaySnapshot(m.BuildContext())
+	snap := ReplaySnapshot(m.BuildContext(), nil)
 	require.Len(t, snap.Messages, 2)
 
 	assert.Equal(t, compactionID, snap.Messages[0].ID)

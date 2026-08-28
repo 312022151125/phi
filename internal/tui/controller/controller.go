@@ -543,13 +543,14 @@ func (c *EngineController) Clear() error {
 	return nil
 }
 
-// ReplaySnapshot builds a UI transcript snapshot from the engine session
-// (user/assistant text; tool rows simplified away).
+// ReplaySnapshot builds a UI transcript snapshot from the engine session,
+// resolving tool-call details through the live tool registry so resumed tool
+// rows match the original rendering.
 func (c *EngineController) ReplaySnapshot() session.Snapshot {
 	if c.engine == nil || c.engine.Session() == nil {
 		return session.Snapshot{}
 	}
-	return session.ReplaySnapshot(c.engine.Session().PathEntries())
+	return session.ReplaySnapshot(c.engine.Session().PathEntries(), c.engine.ToolDetail)
 }
 
 // StartPrompt cancels any in-flight stream and starts a new agent loop.
