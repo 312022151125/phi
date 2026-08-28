@@ -12,12 +12,13 @@ import (
 )
 
 // CommandContext is the capability surface passed to command Run / palette
-// builders. Callers fill only what they need; nil funcs are no-ops.
+// builders. Callers fill only what they need; nil funcs are no-ops and a
+// nil Bus swallows publishes.
 // It must not hold *Editor (keeps commands free of the root widget).
 type CommandContext struct {
 	Args []string // slash args after the command name
 
-	Publish     func(controller.Msg)
+	Bus         *controller.Bus
 	PushSubmenu func(title string, cmds []palette.PaletteCommand)
 
 	ShowSessions  func()
@@ -38,9 +39,7 @@ type CommandContext struct {
 }
 
 func (ctx CommandContext) toast(msg string, kind toast.ToastKind, d time.Duration) {
-	if ctx.Publish != nil {
-		ctx.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
-	}
+	ctx.Bus.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
 }
 
 // Command is one registered slash and/or palette entry.

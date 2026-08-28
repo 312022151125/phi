@@ -151,17 +151,13 @@ func TestCommandRegistry_DispatchSlash(t *testing.T) {
 	r := NewBuiltinRegistry()
 	var sessions, cleared int
 	var resumeID string
-	var toastMsg string
+	bus := controller.NewBus(nil)
 
 	ctx := CommandContext{
 		ShowSessions:  func() { sessions++ },
 		ResumeSession: func(id string) { resumeID = id },
 		ClearSession:  func() { cleared++ },
-		Publish: func(m controller.Msg) {
-			if tm, ok := m.(controller.ToastMsg); ok {
-				toastMsg = tm.Message
-			}
-		},
+		Bus:           bus,
 	}
 
 	assert.True(t, r.DispatchSlash("/sessions", ctx))
@@ -171,7 +167,7 @@ func TestCommandRegistry_DispatchSlash(t *testing.T) {
 	assert.Equal(t, "abc", resumeID)
 
 	assert.True(t, r.DispatchSlash("/resume", ctx))
-	assert.Contains(t, toastMsg, "Usage:")
+	assert.Contains(t, drainToast(t, bus), "Usage:")
 
 	assert.True(t, r.DispatchSlash("/clear", ctx))
 	assert.Equal(t, 1, cleared)
@@ -242,4 +238,16 @@ func TestCommandRegistry_HookCommandsDoNotReplaceBuiltins(t *testing.T) {
 	r.clearHookCommands()
 	assert.Empty(t, r.LookupInsert("review"))
 	assert.Equal(t, "/clear", r.LookupInsert("clear"))
+}
+
+// drainToast returns the message of the last queued ToastMsg and empties the bus.
+func drainToast(t *testing.T, bus *controller.Bus) string {
+	t.Helper()
+	var msg string
+	for _, m := range bus.Drain() {
+		if tm, ok := m.(controller.ToastMsg); ok {
+			msg = tm.Message
+		}
+	}
+	return msg
 }

@@ -13,7 +13,7 @@ import (
 )
 
 type commandBridge struct {
-	publish    func(controller.Msg)
+	bus        *controller.Bus
 	composer   *composer.ComposerPane
 	transcript *transcript.TranscriptPane
 	ctrl       *controller.EngineController
@@ -34,7 +34,7 @@ type commandBridge struct {
 }
 
 func newCommandBridge(
-	publish func(controller.Msg),
+	bus *controller.Bus,
 	composer *composer.ComposerPane,
 	transcript *transcript.TranscriptPane,
 	ctrl *controller.EngineController,
@@ -52,7 +52,7 @@ func newCommandBridge(
 	skillPath string,
 ) *commandBridge {
 	return &commandBridge{
-		publish:         publish,
+		bus:             bus,
 		composer:        composer,
 		transcript:      transcript,
 		ctrl:            ctrl,
@@ -76,7 +76,7 @@ func (b *commandBridge) context() commands.CommandContext {
 		return commands.CommandContext{}
 	}
 	return commands.CommandContext{
-		Publish: b.publish,
+		Bus: b.bus,
 		PushSubmenu: func(title string, cmds []palette.PaletteCommand) {
 			b.composer.PushPalette(title, cmds)
 		},
@@ -84,13 +84,11 @@ func (b *commandBridge) context() commands.CommandContext {
 		ResumeSession: b.sessions.Resume,
 		ClearSession: func() {
 			if b.submitter != nil && b.submitter.StreamActive() {
-				if b.publish != nil {
-					b.publish(controller.ToastMsg{
-						Message:  "Cannot clear while a reply or command is running",
-						Kind:     toast.ToastWarning,
-						Duration: 3 * time.Second,
-					})
-				}
+				b.bus.Publish(controller.ToastMsg{
+					Message:  "Cannot clear while a reply or command is running",
+					Kind:     toast.ToastWarning,
+					Duration: 3 * time.Second,
+				})
 				return
 			}
 			b.sessions.Clear()

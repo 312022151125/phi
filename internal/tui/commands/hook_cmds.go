@@ -34,7 +34,7 @@ type HookCommands struct {
 	Composer   hookComposer
 	Footer     hookFooter
 	Submitter  hookSubmitter
-	Publish    func(controller.Msg)
+	Bus        *controller.Bus
 	CommandCtx func() CommandContext
 
 	gen     atomic.Uint64
@@ -42,10 +42,10 @@ type HookCommands struct {
 }
 
 func (h *HookCommands) showToast(msg string, kind toast.ToastKind) {
-	if h == nil || h.Publish == nil {
+	if h == nil {
 		return
 	}
-	h.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: 3 * time.Second})
+	h.Bus.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: 3 * time.Second})
 }
 
 // Sync replaces hook-sourced slash commands from the current hooks.Manager.
@@ -93,7 +93,7 @@ func (h *HookCommands) run(name string, args []string) {
 		return
 	}
 	if !h.running.CompareAndSwap(false, true) {
-		h.Publish(controller.HookCommandResultMsg{
+		h.Bus.Publish(controller.HookCommandResultMsg{
 			Gen: h.gen.Load(),
 			Err: "A hook command is already running",
 		})
@@ -103,12 +103,12 @@ func (h *HookCommands) run(name string, args []string) {
 
 	gen := h.gen.Load()
 	if h.Ctrl == nil {
-		h.Publish(controller.HookCommandResultMsg{Gen: gen, Err: "hooks are not loaded"})
+		h.Bus.Publish(controller.HookCommandResultMsg{Gen: gen, Err: "hooks are not loaded"})
 		return
 	}
 	mgr := h.Ctrl.Hooks()
 	if mgr == nil {
-		h.Publish(controller.HookCommandResultMsg{Gen: gen, Err: "hooks are not loaded"})
+		h.Bus.Publish(controller.HookCommandResultMsg{Gen: gen, Err: "hooks are not loaded"})
 		return
 	}
 	res, err := mgr.RunCommand(context.Background(), name, hooks.CommandEvent{
@@ -120,10 +120,10 @@ func (h *HookCommands) run(name string, args []string) {
 		return
 	}
 	if err != nil {
-		h.Publish(controller.HookCommandResultMsg{Gen: gen, Err: err.Error()})
+		h.Bus.Publish(controller.HookCommandResultMsg{Gen: gen, Err: err.Error()})
 		return
 	}
-	h.Publish(controller.HookCommandResultMsg{
+	h.Bus.Publish(controller.HookCommandResultMsg{
 		Gen:       gen,
 		Submit:    res.Submit,
 		Toast:     res.Toast,

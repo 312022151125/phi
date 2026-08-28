@@ -17,7 +17,7 @@ type SessionCommands struct {
 	Ctrl       *controller.EngineController
 	Transcript *transcript.TranscriptPane
 	Footer     *footer.FooterChrome
-	Publish    func(controller.Msg)
+	Bus        *controller.Bus
 	SyncHooks  func()
 }
 
@@ -26,23 +26,23 @@ func NewSessionCommands(
 	ctrl *controller.EngineController,
 	transcript *transcript.TranscriptPane,
 	footer *footer.FooterChrome,
-	publish func(controller.Msg),
+	bus *controller.Bus,
 	syncHooks func(),
 ) *SessionCommands {
 	return &SessionCommands{
 		Ctrl:       ctrl,
 		Transcript: transcript,
 		Footer:     footer,
-		Publish:    publish,
+		Bus:        bus,
 		SyncHooks:  syncHooks,
 	}
 }
 
 func (s *SessionCommands) showToast(msg string, kind toast.ToastKind, d time.Duration) {
-	if s == nil || s.Publish == nil {
+	if s == nil {
 		return
 	}
-	s.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
+	s.Bus.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
 }
 
 // Show lists recent sessions for the current session directory.
