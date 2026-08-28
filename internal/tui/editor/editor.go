@@ -3,9 +3,6 @@ package editor
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	"github.com/pulseaiclub/xui"
@@ -407,14 +404,9 @@ func (e *Editor) StartUpdateCheck(cacheDir string) {
 }
 
 // StartBranchWatch hot-reloads the git branch in the path label when the
-// repo HEAD changes (checkout from another terminal, editor, …). Polling
-// HEAD is a file read; the git process only runs after a real switch.
+// repo HEAD changes (checkout from another terminal, editor, …).
 func (e *Editor) StartBranchWatch() {
-	if e.cwd == "" {
-		return
-	}
-	stop := make(chan struct{}) // lives for the process; Close is process exit
-	go (&branchWatch{dir: e.cwd, interval: branchPollInterval}).run(stop, func(label string) {
+	pathutil.WatchBranch(e.cwd, func(label string) {
 		e.Publish(controller.BranchLabelMsg{Text: label})
 	})
 }
@@ -496,54 +488,4 @@ func (e *Editor) copyLastMessage() {
 // SubmitPrompt publishes a user prompt onto the bus.
 func (e *Editor) SubmitPrompt(text string) {
 	e.Publish(controller.SubmitMsg{Text: text})
-}
-
-const branchPollInterval = time.Second
-
-type branchWatch struct {
-	dir      string
-	interval time.Duration
-}
-
-func (b *branchWatch) run(stop <-chan struct{}, publish func(label string)) {
-	if b.interval <= 0 {
-		b.interval = branchPollInterval
-	}
-	last := branchState(b.dir)
-	ticker := time.NewTicker(b.interval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-stop:
-			return
-		case <-ticker.C:
-		}
-		if cur := branchState(b.dir); cur != last {
-			last = cur
-			publish(pathutil.PathWithBranch(b.dir))
-		}
-	}
-}
-
-func branchState(dir string) string {
-	gitDir := resolveGitDir(dir)
-	data, err := os.ReadFile(filepath.Join(gitDir, "HEAD"))
-	if err != nil {
-		return "missing"
-	}
-	return strings.TrimSpace(string(data))
-}
-
-func resolveGitDir(dir string) string {
-	dotGit := filepath.Join(dir, ".git")
-	if data, err := os.ReadFile(dotGit); err == nil {
-		if target, ok := strings.CutPrefix(strings.TrimSpace(string(data)), "gitdir:"); ok {
-			target = strings.TrimSpace(target)
-			if !filepath.IsAbs(target) {
-				target = filepath.Join(dir, target)
-			}
-			return target
-		}
-	}
-	return dotGit
 }
