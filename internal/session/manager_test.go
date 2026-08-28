@@ -223,3 +223,76 @@ func TestBuildSessionContext(t *testing.T) {
 		assert.Equal(t, "msg3", ctx[2].GetID())
 	})
 }
+
+func TestReplaySnapshotEmpty(t *testing.T) {
+	m := NewManager(t.TempDir())
+
+	snap := ReplaySnapshot(m.BuildContext())
+
+	assert.Empty(t, snap.Messages)
+	assert.Empty(t, snap.Tools)
+	assert.False(t, snap.Compacting)
+}
+
+func TestReplaySnapshotMessages(t *testing.T) {
+	m := NewManager(t.TempDir())
+
+	userID, err := m.Append(llm.Message{
+		Role:    llm.RoleUser,
+		Content: "hello",
+		Images:  []llm.Image{{Data: "aW1n", MimeType: "image/png"}},
+	})
+	require.NoError(t, err)
+
+	asstID, err := m.Append(llm.Message{
+		Role:             llm.RoleAssistant,
+		Content:          "hi there",
+		ReasoningContent: "thought about it",
+	})
+	require.NoError(t, err)
+
+	snap := ReplaySnapshot(m.BuildContext())
+	require.Len(t, snap.Messages, 2)
+
+	user := snap.Messages[0]
+	assert.Equal(t, userID, user.ID)
+	assert.Equal(t, RoleUser, user.Role)
+	assert.Equal(t, "hello", user.Text)
+	assert.Equal(t, []llm.Image{{Data: "aW1n", MimeType: "image/png"}}, user.Images)
+
+	asst := snap.Messages[1]
+	assert.Equal(t, asstID, asst.ID)
+	assert.Equal(t, RoleAssistant, asst.Role)
+	assert.Equal(t, StateComplete, asst.State)
+	assert.Equal(t, "hi there", asst.Text)
+	assert.Equal(t, []ContentBlock{
+		{Type: BlockThinking, Text: "thought about it"},
+		{Type: BlockText, Text: "hi there"},
+	}, asst.Content)
+}
+
+func TestReplaySnapshotCompactionDropsOldMessages(t *testing.T) {
+	m := NewManager(t.TempDir())
+
+	_, err := m.Append(llm.Message{Role: llm.RoleUser, Content: "old question"})
+	require.NoError(t, err)
+	_, err = m.Append(llm.Message{Role: llm.RoleAssistant, Content: "old answer"})
+	require.NoError(t, err)
+	keptID, err := m.Append(llm.Message{Role: llm.RoleUser, Content: "still here"})
+	require.NoError(t, err)
+	compactionID, err := m.AppendCompaction(Compaction{
+		Summary:          "summary of the past",
+		FirstKeptEntryID: keptID,
+	})
+	require.NoError(t, err)
+
+	snap := ReplaySnapshot(m.BuildContext())
+	require.Len(t, snap.Messages, 2)
+
+	assert.Equal(t, compactionID, snap.Messages[0].ID)
+	assert.Equal(t, RoleCompaction, snap.Messages[0].Role)
+
+	assert.Equal(t, keptID, snap.Messages[1].ID)
+	assert.Equal(t, RoleUser, snap.Messages[1].Role)
+	assert.Equal(t, "still here", snap.Messages[1].Text)
+}

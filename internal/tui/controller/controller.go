@@ -546,46 +546,10 @@ func (c *EngineController) Clear() error {
 // ReplaySnapshot builds a UI transcript snapshot from the engine session
 // (user/assistant text; tool rows simplified away).
 func (c *EngineController) ReplaySnapshot() session.Snapshot {
-	var snap session.Snapshot
 	if c.engine == nil || c.engine.Session() == nil {
-		return snap
+		return session.Snapshot{}
 	}
-	for _, entry := range c.engine.Session().PathEntries() {
-		switch entry.GetType() {
-		case session.EntryCompaction:
-			snap = session.Apply(snap, session.CompactionComplete{ID: entry.GetID()})
-		case session.EntryMessage:
-			msg := entry.(session.SessionMessageEntry).Message
-			switch msg.Role {
-			case llm.RoleUser:
-				images := make([]llm.Image, 0, len(msg.Images))
-				snap = session.Apply(snap, session.UserAppend{
-					ID:     entry.GetID(),
-					Text:   msg.Content,
-					Images: append(images, msg.Images...),
-				})
-			case llm.RoleAssistant:
-				text := msg.Content
-				var blocks []session.ContentBlock
-				if strings.TrimSpace(msg.ReasoningContent) != "" {
-					blocks = append(
-						blocks,
-						session.ContentBlock{Type: session.BlockThinking, Text: msg.ReasoningContent},
-					)
-				}
-				if text != "" {
-					blocks = append(blocks, session.ContentBlock{Type: session.BlockText, Text: text})
-				}
-				snap = session.Apply(snap, session.AssistantMessageUpdate{Message: session.Message{
-					ID:      entry.GetID(),
-					State:   session.StateComplete,
-					Text:    text,
-					Content: blocks,
-				}})
-			}
-		}
-	}
-	return snap
+	return session.ReplaySnapshot(c.engine.Session().PathEntries())
 }
 
 // StartPrompt cancels any in-flight stream and starts a new agent loop.
