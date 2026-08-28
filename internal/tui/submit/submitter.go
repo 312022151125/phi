@@ -23,7 +23,7 @@ type Submitter struct {
 	bash       *BashRunner
 
 	commandContext func() commands.CommandContext
-	publish        func(controller.Msg)
+	bus            *controller.Bus
 
 	permissionActive  func() bool
 	continueActive    func() bool
@@ -32,7 +32,7 @@ type Submitter struct {
 }
 
 // NewSubmitter builds a Submitter from explicit collaborators (no *Editor back-pointer).
-// BashRunner is composed internally from transcript/composer/publish.
+// BashRunner is composed internally from transcript/composer/bus.
 func NewSubmitter(
 	ctrl *controller.EngineController,
 	commands *commands.CommandRegistry,
@@ -40,7 +40,7 @@ func NewSubmitter(
 	activity *controller.ActivityHandler,
 	composer composer.Input,
 	commandContext func() commands.CommandContext,
-	publish func(controller.Msg),
+	bus *controller.Bus,
 	permissionActive func() bool,
 	continueActive func() bool,
 	resolvePermission func(controller.AskReply),
@@ -52,9 +52,9 @@ func NewSubmitter(
 		transcript:        transcript,
 		activity:          activity,
 		composer:          composer,
-		bash:              newBashRunner(transcript, composer, publish),
+		bash:              newBashRunner(transcript, composer, bus),
 		commandContext:    commandContext,
-		publish:           publish,
+		bus:               bus,
 		permissionActive:  permissionActive,
 		continueActive:    continueActive,
 		resolvePermission: resolvePermission,
@@ -163,11 +163,9 @@ func (s *Submitter) Cancel() {
 	s.transcript.ApplySession(session.CancelStreaming{})
 	s.transcript.Sync()
 	s.activity.Apply(controller.ActivityCancelled)
-	if s.publish != nil {
-		time.AfterFunc(1200*time.Millisecond, func() {
-			s.publish(controller.ClearIfActivityMsg{If: controller.ActivityCancelled})
-		})
-	}
+	time.AfterFunc(1200*time.Millisecond, func() {
+		s.bus.Publish(controller.ClearIfActivityMsg{If: controller.ActivityCancelled})
+	})
 }
 
 // RunningBash reports whether a local "!cmd" is in flight.

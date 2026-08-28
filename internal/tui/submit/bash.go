@@ -20,7 +20,7 @@ import (
 type BashRunner struct {
 	transcript *transcript.TranscriptPane
 	composer   composer.Input
-	publish    func(controller.Msg)
+	bus        *controller.Bus
 
 	running atomic.Bool
 	mu      sync.Mutex
@@ -30,12 +30,12 @@ type BashRunner struct {
 func newBashRunner(
 	transcript *transcript.TranscriptPane,
 	composer composer.Input,
-	publish func(controller.Msg),
+	bus *controller.Bus,
 ) *BashRunner {
 	return &BashRunner{
 		transcript: transcript,
 		composer:   composer,
-		publish:    publish,
+		bus:        bus,
 	}
 }
 
@@ -143,17 +143,17 @@ func (b *BashRunner) run(id, command string) {
 }
 
 func (b *BashRunner) publishSession(ev session.Event) {
-	if b == nil || b.publish == nil {
+	if b == nil {
 		return
 	}
-	b.publish(controller.SessionEventMsg{Event: ev})
+	b.bus.Publish(controller.SessionEventMsg{Event: ev})
 }
 
 func (b *BashRunner) showToast(msg string, kind toast.ToastKind, d time.Duration) {
-	if b == nil || b.publish == nil {
+	if b == nil {
 		return
 	}
-	b.publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
+	b.bus.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
 }
 
 // Cancel aborts a running user "!cmd". Returns true if one was cancelled.

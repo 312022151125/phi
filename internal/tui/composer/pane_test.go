@@ -19,18 +19,14 @@ const png1x1Base64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42m
 
 func TestTryAttachClipboardImageBlockedWithoutModelSupport(t *testing.T) {
 	c := NewComposerPane(components.DefaultTheme(), "m", "/tmp")
-	var got string
-	c.publish = func(m controller.Msg) {
-		if tm, ok := m.(controller.ToastMsg); ok {
-			got = tm.Message
-		}
-	}
+	bus := controller.NewBus(nil)
+	c.bus = bus
 	c.imageEnabled = func() bool { return false }
 
 	ctx := &components.EventContext{}
 	require.True(t, c.tryAttachClipboardImage(ctx))
 	assert.True(t, ctx.Consume)
-	assert.Contains(t, got, "does not support images")
+	assert.Contains(t, drainToast(t, bus), "does not support images")
 }
 
 func TestTryAttachClipboardImageFallsThroughWhenSupported(t *testing.T) {
@@ -58,21 +54,29 @@ func TestAcceptMentionImageBlockedWithoutModelSupport(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, png, 0o644))
 
 	c := NewComposerPane(components.DefaultTheme(), "m", dir)
-	var got string
-	c.publish = func(m controller.Msg) {
-		if tm, ok := m.(controller.ToastMsg); ok {
-			got = tm.Message
-		}
-	}
+	bus := controller.NewBus(nil)
+	c.bus = bus
 	c.imageEnabled = func() bool { return false }
 	c.Chat.Value = "@pixel.png"
 	c.Chat.Cursor = len(c.Chat.Value)
 
 	c.acceptMention(mention.Item{Path: "pixel.png"})
 
-	assert.Contains(t, got, "does not support images")
+	assert.Contains(t, drainToast(t, bus), "does not support images")
 	assert.Empty(t, c.Chat.PendingImages)
 	assert.Equal(t, "@pixel.png ", c.Chat.Value)
+}
+
+// drainToast returns the message of the last queued ToastMsg and empties the bus.
+func drainToast(t *testing.T, bus *controller.Bus) string {
+	t.Helper()
+	var msg string
+	for _, m := range bus.Drain() {
+		if tm, ok := m.(controller.ToastMsg); ok {
+			msg = tm.Message
+		}
+	}
+	return msg
 }
 
 func TestAcceptMentionImageAttachesWhenSupported(t *testing.T) {

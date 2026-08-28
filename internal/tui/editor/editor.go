@@ -113,7 +113,7 @@ func NewEditor(
 		func(text string) bool {
 			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
 		},
-		e.Publish,
+		e.bus,
 	)
 	e.hookCmds = &commands.HookCommands{
 		Registry: e.commands,
@@ -121,13 +121,13 @@ func NewEditor(
 		CWD:      e.cwd,
 		Composer: e.composer,
 		Footer:   e.footer,
-		Publish:  e.Publish,
+		Bus:      e.bus,
 	}
 	e.sessions = commands.NewSessionCommands(
 		e.ctrl,
 		e.transcript,
 		e.footer,
-		e.Publish,
+		e.bus,
 		e.hookCmds.Sync,
 	)
 
@@ -144,7 +144,7 @@ func NewEditor(
 			}
 			return bridge.context()
 		},
-		e.Publish,
+		e.bus,
 		e.overlays.PermissionActive,
 		e.overlays.ContinueActive,
 		e.overlays.ResolvePermission,
@@ -152,7 +152,7 @@ func NewEditor(
 	)
 	e.hookCmds.Submitter = e.submitter
 	bridge = newCommandBridge(
-		e.Publish,
+		e.bus,
 		e.composer,
 		e.transcript,
 		e.ctrl,
@@ -175,7 +175,7 @@ func NewEditor(
 		e.submitter,
 		e.commands,
 		e.cwd,
-		e.Publish,
+		e.bus,
 		e.drainBus,
 		func() {
 			if e.vx != nil {

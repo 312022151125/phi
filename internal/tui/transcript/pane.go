@@ -51,7 +51,7 @@ type TranscriptPane struct {
 
 	onUsage func(session.TokenUsage)
 	copyFn  func(text string) bool
-	publish func(controller.Msg)
+	bus     *controller.Bus
 }
 
 // NewTranscriptPane builds an empty transcript view.
@@ -85,16 +85,16 @@ func (t *TranscriptPane) SetUsageCallback(fn func(session.TokenUsage)) {
 	}
 }
 
-// SetCopyHandlers wires clipboard copy; feedback toasts go through publish.
+// SetCopyHandlers wires clipboard copy; feedback toasts go through the bus.
 func (t *TranscriptPane) SetCopyHandlers(
 	copyFn func(text string) bool,
-	publish func(controller.Msg),
+	bus *controller.Bus,
 ) {
 	if t == nil {
 		return
 	}
 	t.copyFn = copyFn
-	t.publish = publish
+	t.bus = bus
 }
 
 // Snapshot returns the current session model (read-only use on UI goroutine).
@@ -416,13 +416,10 @@ func (t *TranscriptPane) copyResult(text, okMsg, failMsg string) {
 		return
 	}
 	ok := t.copyFn != nil && t.copyFn(text)
-	if t.publish == nil {
-		return
-	}
 	if ok {
-		t.publish(controller.ToastMsg{Message: okMsg, Kind: toast.ToastSuccess, Duration: 2 * time.Second})
+		t.bus.Publish(controller.ToastMsg{Message: okMsg, Kind: toast.ToastSuccess, Duration: 2 * time.Second})
 	} else {
-		t.publish(controller.ToastMsg{Message: failMsg, Kind: toast.ToastError, Duration: 2 * time.Second})
+		t.bus.Publish(controller.ToastMsg{Message: failMsg, Kind: toast.ToastError, Duration: 2 * time.Second})
 	}
 }
 

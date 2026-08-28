@@ -1,7 +1,6 @@
 package composer
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -40,16 +39,8 @@ func TestScheduleMentionSearchCancelsPrevious(t *testing.T) {
 // one between the generation check and the update.
 func TestSupersededSearchDoesNotPublish(t *testing.T) {
 	c := NewComposerPane(components.DefaultTheme(), "m", t.TempDir())
-
-	var mu sync.Mutex
-	var queries []string
-	c.publish = func(m controller.Msg) {
-		if res, ok := m.(controller.MentionResultsMsg); ok {
-			mu.Lock()
-			queries = append(queries, res.Query)
-			mu.Unlock()
-		}
-	}
+	bus := controller.NewBus(nil)
+	c.bus = bus
 
 	// Cancelled well inside the 100ms debounce, so no work should start.
 	c.scheduleMentionSearch("first")
@@ -57,8 +48,12 @@ func TestSupersededSearchDoesNotPublish(t *testing.T) {
 
 	time.Sleep(500 * time.Millisecond)
 
-	mu.Lock()
-	defer mu.Unlock()
+	var queries []string
+	for _, m := range bus.Drain() {
+		if res, ok := m.(controller.MentionResultsMsg); ok {
+			queries = append(queries, res.Query)
+		}
+	}
 	assert.NotContains(t, queries, "first", "a cancelled search must stay quiet")
 }
 

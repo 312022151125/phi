@@ -45,7 +45,7 @@ type ComposerPane struct {
 	transcript *transcript.TranscriptPane
 	submitter  BusyChecker
 
-	publish  func(controller.Msg)
+	bus      *controller.Bus
 	drainBus func()
 	onRedraw func()
 
@@ -88,7 +88,7 @@ func (c *ComposerPane) Wire(
 	submitter BusyChecker,
 	commands *commands.CommandRegistry,
 	cwd string,
-	publish func(controller.Msg),
+	bus *controller.Bus,
 	drainBus func(),
 	onRedraw func(),
 	imageEnabled func() bool,
@@ -107,7 +107,7 @@ func (c *ComposerPane) Wire(
 	c.commands = commands
 	c.transcript = transcript
 	c.submitter = submitter
-	c.publish = publish
+	c.bus = bus
 	c.drainBus = drainBus
 	c.onRedraw = onRedraw
 	c.imageEnabled = imageEnabled
@@ -121,9 +121,7 @@ func (c *ComposerPane) Wire(
 
 	c.palette.FocusReturn = &c.Chat
 	c.Chat.OnSubmit = func(text string) {
-		if c.publish != nil {
-			c.publish(controller.SubmitMsg{Text: text})
-		}
+		c.bus.Publish(controller.SubmitMsg{Text: text})
 		if c.drainBus != nil {
 			c.drainBus()
 		}
@@ -570,9 +568,7 @@ func (c *ComposerPane) handleEscape(ctx *components.EventContext) bool {
 		return true
 	}
 	if c.submitter != nil && (c.submitter.RunningBash() || c.submitter.IsBusy()) {
-		if c.publish != nil {
-			c.publish(controller.CancelStreamMsg{})
-		}
+		c.bus.Publish(controller.CancelStreamMsg{})
 		if c.drainBus != nil {
 			c.drainBus()
 		}
@@ -686,7 +682,7 @@ func (c *ComposerPane) scheduleMentionSearch(query string) {
 	c.abandonMentionSearch()
 	gen := c.mentionGen
 	cwd := c.cwd
-	publish := c.publish
+	bus := c.bus
 
 	ctx, cancel := context.WithCancel(context.Background())
 	c.mentionCancel = cancel
@@ -717,9 +713,7 @@ func (c *ComposerPane) scheduleMentionSearch(query string) {
 				msg.ErrText = err.Error()
 			}
 		}
-		if publish != nil {
-			publish(msg)
-		}
+		bus.Publish(msg)
 	}()
 }
 
@@ -771,10 +765,10 @@ func (c *ComposerPane) warnImagesDisabled() {
 }
 
 func (c *ComposerPane) showToast(msg string, kind toast.ToastKind, d time.Duration) {
-	if c == nil || c.publish == nil {
+	if c == nil {
 		return
 	}
-	c.publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
+	c.bus.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
 }
 
 func (c *ComposerPane) tryAttachClipboardImage(ctx *components.EventContext) bool {
@@ -842,9 +836,7 @@ func (c *ComposerPane) acceptSlash(item mention.Item) {
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
 	if !strings.HasSuffix(insert, " ") {
-		if c.publish != nil {
-			c.publish(controller.SubmitMsg{Text: strings.TrimSpace(insert)})
-		}
+		c.bus.Publish(controller.SubmitMsg{Text: strings.TrimSpace(insert)})
 		if c.drainBus != nil {
 			c.drainBus()
 		}
