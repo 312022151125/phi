@@ -21,6 +21,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- `/resume` and `/clear` now replay tool executions (with their styled rows) instead of dropping them.
+
 ### Security
 
 <!-- Released section -->
