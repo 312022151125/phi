@@ -48,7 +48,7 @@ func TestBranchState(t *testing.T) {
 func TestWatchBranchFiresOnChange(t *testing.T) {
 	dir := t.TempDir()
 	// PathWithBranch shells out to real git, so the fixture must be a real repo.
-	require.NoError(t, exec.Command("git", "-C", dir, "init", "-q").Run())
+	require.NoError(t, exec.CommandContext(t.Context(), "git", "-C", dir, "init", "-q").Run())
 	gitDir := filepath.Join(dir, ".git")
 
 	labels := make(chan string, 1)
