@@ -180,17 +180,16 @@ func (f *FooterChrome) Draw(ctx components.DrawContext, width int) components.Su
 	}
 	footer := components.NewSurface(width, 1, nil)
 	dim := f.theme.Muted
+	var parts []string
+	if hs := strings.TrimSpace(f.hookStatus); hs != "" {
+		parts = append(parts, hs)
+	}
 	var snap session.Snapshot
 	if f.labelContext != nil {
 		snap = f.labelContext()
 	}
-	msg := f.activity.Label(snap)
-	if hs := strings.TrimSpace(f.hookStatus); hs != "" {
-		if msg == "" {
-			msg = hs
-		} else {
-			msg = hs + " · " + msg
-		}
+	if a := f.activity.Label(snap); a != "" {
+		parts = append(parts, a)
 	}
 	if f.liveJobs != nil {
 		if n := f.liveJobs(); n > 0 {
@@ -198,13 +197,10 @@ func (f *FooterChrome) Draw(ctx components.DrawContext, width int) components.Su
 			if n != 1 {
 				jobBit += "s"
 			}
-			if msg == "" {
-				msg = jobBit
-			} else {
-				msg = msg + " · " + jobBit
-			}
+			parts = append(parts, jobBit)
 		}
 	}
+	msg := strings.Join(parts, " · ")
 
 	x := 1
 	if msg != "" {
