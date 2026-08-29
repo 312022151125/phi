@@ -37,7 +37,6 @@ func TestPrepareCompact_AlreadyCompacted_ReturnsEmptyPreparation(t *testing.T) {
 	assert.NotNil(t, prep)
 	assert.Empty(t, prep.FirstKeptEntryId)
 	assert.Nil(t, prep.MessagesToSummarize)
-	assert.Nil(t, prep.RecentMessages)
 }
 
 func TestPrepareCompact_SessionNeedsMigration_ReturnsError(t *testing.T) {
@@ -76,8 +75,6 @@ func TestPrepareCompact_NoPreviousCompaction_SplitsByKeepRecentTokens(t *testing
 	assert.Len(t, prep.MessagesToSummarize, 2)
 	assert.Equal(t, llm.RoleUser, prep.MessagesToSummarize[0].Role)
 	assert.Equal(t, llm.RoleAssistant, prep.MessagesToSummarize[1].Role)
-	assert.Len(t, prep.RecentMessages, 1)
-	assert.Equal(t, llm.RoleUser, prep.RecentMessages[0].Role)
 	assert.Equal(t, 20, prep.TokensBefore)
 	assert.Empty(t, prep.PreviousSummary)
 	assert.Nil(t, prep.PreviousPreserveData)
@@ -96,7 +93,6 @@ func TestPrepareCompact_KeepAll_WhenUnderTokenLimit(t *testing.T) {
 	assert.NotNil(t, prep)
 	assert.Equal(t, "e1", prep.FirstKeptEntryId)
 	assert.Empty(t, prep.MessagesToSummarize)
-	assert.Len(t, prep.RecentMessages, 2)
 	assert.Equal(t, 20, prep.TokensBefore)
 }
 
@@ -122,5 +118,4 @@ func TestPrepareCompact_WithPreviousCompaction_SetsSummaryAndPreserveData(t *tes
 	assert.Equal(t, map[string]any{"k": "v"}, prep.PreviousPreserveData)
 	assert.Equal(t, "e1", prep.FirstKeptEntryId)
 	assert.Empty(t, prep.MessagesToSummarize)
-	assert.Len(t, prep.RecentMessages, 2)
 }

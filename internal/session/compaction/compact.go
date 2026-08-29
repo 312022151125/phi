@@ -12,16 +12,17 @@ import (
 )
 
 // CompactionPreparation holds everything Compact needs: the entries to
-// summarize, the recent messages kept, and the file operations captured
-// from the summarized history.
+// summarize and the file operations captured from the summarized history.
+// Recent messages stay in the session tree via FirstKeptEntryId.
 type CompactionPreparation struct {
-	FirstKeptEntryId     string
-	MessagesToSummarize  []llm.Message
-	TurnPrefixMessages   []llm.Message
-	RecentMessages       []llm.Message
-	IsSplitTurn          bool
-	TokensBefore         int
-	PreviousSummary      string
+	FirstKeptEntryId    string
+	MessagesToSummarize []llm.Message
+	TurnPrefixMessages  []llm.Message
+	IsSplitTurn         bool
+	TokensBefore        int
+	PreviousSummary     string
+	// TODO: wire into Compact / AppendCompaction so hook preserveData
+	// survives across compaction rounds (currently collected but unused).
 	PreviousPreserveData map[string]any
 	FileOps              FileOperation
 }
@@ -84,14 +85,6 @@ func PrepareCompact(
 		}
 	}
 
-	var recentMessages []llm.Message
-	for i := cutPoint.firstKeptEntryIndex; i < end; i++ {
-		msg := getMessageFromEntry(pathEntries[i])
-		if msg != nil {
-			recentMessages = append(recentMessages, *msg)
-		}
-	}
-
 	previousSummary := ""
 	var previousPreserveData map[string]any
 	if preCompactionIndex >= 0 {
@@ -109,7 +102,6 @@ func PrepareCompact(
 		FirstKeptEntryId:     firstKeptEntryID,
 		MessagesToSummarize:  messagesToSummarize,
 		TurnPrefixMessages:   turnPrefixMessages,
-		RecentMessages:       recentMessages,
 		TokensBefore:         tokenBefore,
 		PreviousSummary:      previousSummary,
 		PreviousPreserveData: previousPreserveData,
@@ -137,68 +129,17 @@ func Compact(
 	preparation CompactionPreparation,
 	llm llm.Compactor,
 ) (CompactionResult, error) {
-	var summary string
+	var (
+		summary string
+		err     error
+	)
 	if preparation.IsSplitTurn && len(preparation.TurnPrefixMessages) > 0 {
-		var (
-			historySummary       string
-			turnPrefixSummary    string
-			historySummaryErr    error
-			turnPrefixSummaryErr error
-		)
-
-		var wg sync.WaitGroup
-		wg.Add(2)
-
-		go func() {
-			defer wg.Done()
-			if len(preparation.MessagesToSummarize) == 0 {
-				historySummary = "No prior history."
-				return
-			}
-
-			historySummary, historySummaryErr = generateSummary(
-				ctx,
-				llm,
-				preparation.MessagesToSummarize,
-				preparation.PreviousSummary,
-			)
-		}()
-
-		go func() {
-			defer wg.Done()
-			turnPrefixSummary, turnPrefixSummaryErr = generateTurnPrefixSummary(
-				ctx,
-				llm,
-				preparation.TurnPrefixMessages,
-			)
-		}()
-
-		wg.Wait()
-
-		if historySummaryErr != nil {
-			return CompactionResult{}, historySummaryErr
-		}
-		if turnPrefixSummaryErr != nil {
-			return CompactionResult{}, turnPrefixSummaryErr
-		}
-
-		summary = historySummary + "\n\n---\n\n**Turn Context (split turn):**\n\n" + turnPrefixSummary
+		summary, err = summarizeSplitTurn(ctx, preparation, llm)
 	} else {
-		// Just generate history summary
-		if len(preparation.MessagesToSummarize) == 0 {
-			summary = "No prior history."
-		} else {
-			var err error
-			summary, err = generateSummary(
-				ctx,
-				llm,
-				preparation.MessagesToSummarize,
-				preparation.PreviousSummary,
-			)
-			if err != nil {
-				return CompactionResult{}, err
-			}
-		}
+		summary, err = summarizeHistory(ctx, preparation, llm)
+	}
+	if err != nil {
+		return CompactionResult{}, err
 	}
 
 	readFiles, modifiedFiles := computeFileLists(&preparation.FileOps)
@@ -213,6 +154,75 @@ func Compact(
 		TokensBefore:     preparation.TokensBefore,
 		Details:          CompactionDetails{ReadFiles: readFiles, ModifiedFiles: modifiedFiles},
 	}, nil
+}
+
+// summarizeSplitTurn runs history and turn-prefix summaries in parallel,
+// then joins them for a cut that splits a turn.
+func summarizeSplitTurn(
+	ctx context.Context,
+	preparation CompactionPreparation,
+	llm llm.Compactor,
+) (string, error) {
+	var (
+		historySummary       string
+		turnPrefixSummary    string
+		historySummaryErr    error
+		turnPrefixSummaryErr error
+	)
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		if len(preparation.MessagesToSummarize) == 0 {
+			historySummary = "No prior history."
+			return
+		}
+		historySummary, historySummaryErr = generateSummary(
+			ctx,
+			llm,
+			preparation.MessagesToSummarize,
+			preparation.PreviousSummary,
+		)
+	}()
+
+	go func() {
+		defer wg.Done()
+		turnPrefixSummary, turnPrefixSummaryErr = generateTurnPrefixSummary(
+			ctx,
+			llm,
+			preparation.TurnPrefixMessages,
+		)
+	}()
+
+	wg.Wait()
+
+	if historySummaryErr != nil {
+		return "", historySummaryErr
+	}
+	if turnPrefixSummaryErr != nil {
+		return "", turnPrefixSummaryErr
+	}
+
+	return historySummary + "\n\n---\n\n**Turn Context (split turn):**\n\n" + turnPrefixSummary, nil
+}
+
+// summarizeHistory generates a single summary over MessagesToSummarize.
+func summarizeHistory(
+	ctx context.Context,
+	preparation CompactionPreparation,
+	llm llm.Compactor,
+) (string, error) {
+	if len(preparation.MessagesToSummarize) == 0 {
+		return "No prior history.", nil
+	}
+	return generateSummary(
+		ctx,
+		llm,
+		preparation.MessagesToSummarize,
+		preparation.PreviousSummary,
+	)
 }
 
 // CompactionDetails lists the files read and modified in the summarized
