@@ -6,68 +6,58 @@ import (
 )
 
 // CutPointResult identifies where to cut the session history: the index of
-// the first entry to keep and, when the cut splits a turn, that turn's
+// the first entry to keep and, when the cut falls mid-turn, that turn's
 // starting index.
 type CutPointResult struct {
-	/** Index of first entry to keep */
+	// firstKeptEntryIndex is the index of the first entry to keep.
 	firstKeptEntryIndex int
-	/** Index of user message that starts the turn being split, or -1 if not splitting */
+	// turnStartIndex is the user message that opens the turn containing the
+	// cut, or -1 when the cut is at a turn boundary.
 	turnStartIndex int
-	/** Whether this cut splits a turn (cut point is not a user message) */
-	isSplitTurn bool
+	// isMidTurnCut is true when firstKept is not a user message, so the
+	// orphaned start of that turn needs a turn-prefix summary.
+	isMidTurnCut bool
 }
 
 func findCutPoint(
-	entirs []session.MessageEntry,
+	messageEntries []session.MessageEntry,
 	startIndex int,
 	endIndex int,
 	keepRecentTokens int,
 ) CutPointResult {
-	cutpoint := findValidCutPoints(entirs, startIndex, endIndex)
-	if len(cutpoint) == 0 {
+	cutPoints := collectCutPoints(messageEntries, startIndex, endIndex)
+	if len(cutPoints) == 0 {
 		return CutPointResult{
 			firstKeptEntryIndex: startIndex,
 			turnStartIndex:      -1,
-			isSplitTurn:         false,
+			isMidTurnCut:        false,
 		}
 	}
 
 	cutIndex := findCutIndex(
-		entirs,
+		messageEntries,
 		startIndex,
 		endIndex,
 		keepRecentTokens,
-		cutpoint,
+		cutPoints,
 	)
 
-	// find the first compaction entry before the cut index
-	for cutIndex > startIndex {
-		entry := entirs[cutIndex-1]
-		if entry.GetType() == session.EntryCompaction {
-			break
-		}
-		if entry.GetType() == session.EntryMessage {
-			break
-		}
-		cutIndex--
-	}
-
 	// Entry at the cut point;
-	// used to tell if we cut at a user message (cutting there does not split a turn).
-	cutEntry := entirs[cutIndex]
+	// used to tell if we cut at a user message (a turn boundary).
+	cutEntry := messageEntries[cutIndex]
 	isUserMessage := cutEntry.GetType() == session.EntryMessage &&
 		cutEntry.(session.SessionMessageEntry).Message.Role == llm.RoleUser
 
-	// [userMessage, cutIndex) is the turn
+	// [userMessage, cutIndex) is the orphaned turn prefix when cutting mid-turn.
 	turnStartIndex := -1
 	if !isUserMessage {
-		turnStartIndex = findTurnStartIndex(entirs, cutIndex, startIndex)
+		turnStartIndex = findTurnStartIndex(messageEntries, cutIndex, startIndex)
 	}
 
 	return CutPointResult{
 		firstKeptEntryIndex: cutIndex,
 		turnStartIndex:      turnStartIndex,
-		isSplitTurn:         !isUserMessage && turnStartIndex != -1,
+		isMidTurnCut:        !isUserMessage && turnStartIndex != -1,
 	}
 }
 
@@ -93,16 +83,12 @@ func findCutIndex(
 		}
 
 		msgEntry := entry.(session.SessionMessageEntry)
-		messageToken := msgEntry.Message.Usage.TotalTokens
-		accumulatedTokens += messageToken
+		accumulatedTokens += msgEntry.Message.Usage.TotalTokens
 
-		// [startIndex, endIndex] find first cut point i
-		// we need to find the first valid cut point
 		if accumulatedTokens > keepRecentTokens {
-			// find the first valid cut point
-			for c := range cutPoints {
-				if cutPoints[c] >= i {
-					cutIndex = cutPoints[c]
+			for _, point := range cutPoints {
+				if point >= i {
+					cutIndex = point
 					break
 				}
 			}
@@ -113,44 +99,32 @@ func findCutIndex(
 	return cutIndex
 }
 
-// findValidCutPoints scans the history to find valid cut points for compaction.
-// Rules:
-// - Any user/assistant message is a candidate cut point;
-// - Any branch summary (EntryBranchSummary) is also a candidate cut point.
-// It returns the indices of all candidate entries in chronological order.
-func findValidCutPoints(entries []session.MessageEntry, startIndex, endIndex int) []int {
+// collectCutPoints returns the indices of every user/assistant message
+// entry in [startIndex, endIndex), in chronological order: the positions
+// where a compaction cut may land. Picking among them is findCutIndex's job.
+func collectCutPoints(entries []session.MessageEntry, startIndex, endIndex int) []int {
 	var cutPoints []int
 
 	for i := startIndex; i < endIndex; i++ {
 		e := entries[i]
-		ty := e.GetType()
-
-		switch ty {
-		case session.EntryMessage:
-			msgEntry := e.(session.SessionMessageEntry)
-			role := msgEntry.Message.Role
-			if role == llm.RoleUser || role == llm.RoleAssistant {
-				cutPoints = append(cutPoints, i)
-			}
-		case session.EntryBranchSummary:
-			cutPoints = append(cutPoints, i)
-		default:
+		if e.GetType() != session.EntryMessage {
 			continue
+		}
+		msgEntry := e.(session.SessionMessageEntry)
+		role := msgEntry.Message.Role
+		if role == llm.RoleUser || role == llm.RoleAssistant {
+			cutPoints = append(cutPoints, i)
 		}
 	}
 	return cutPoints
 }
 
-// findTurnStartIndex walks backward from entryIndex to find the summary or user message
+// findTurnStartIndex walks backward from entryIndex to find the user message
 // that starts the current turn.
 func findTurnStartIndex(entries []session.MessageEntry, entryIndex, startIndex int) int {
 	for i := entryIndex; i >= startIndex; i-- {
 		entry := entries[i]
 		ty := entry.GetType()
-
-		if ty == session.EntryBranchSummary {
-			return i
-		}
 
 		if ty == session.EntryMessage {
 			msgEntry := entry.(session.SessionMessageEntry)
