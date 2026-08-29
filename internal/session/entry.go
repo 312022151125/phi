@@ -19,10 +19,9 @@ type EntryType string
 
 // EntryType values stored in the JSON "type" discriminant.
 const (
-	EntrySession       = "EntrySession"
-	EntryMessage       = "EntryMessage"
-	EntryBranchSummary = "EntryBranchSummary"
-	EntryCompaction    = "EntryCompaction"
+	EntrySession    = "EntrySession"
+	EntryMessage    = "EntryMessage"
+	EntryCompaction = "EntryCompaction"
 )
 
 // SessionHeader is the root entry of a session file.
@@ -75,29 +74,6 @@ func (s SessionMessageEntry) GetID() string { return s.ID }
 
 // GetParent implements MessageEntry.
 func (s SessionMessageEntry) GetParent() *string { return s.ParentID }
-
-// BranchSummary records the summary of a forked branch.
-type BranchSummary struct {
-	FromID        string `json:"fromId"`
-	Summary       string `json:"summary"`
-	Details       string `json:"details"`
-	FromExecution bool   `json:"fromExecution"`
-}
-
-// BranchSummaryEntry is a branch summary node in the session tree.
-type BranchSummaryEntry struct {
-	SessionBaseEntry
-	BranchSummary BranchSummary `json:"branchSummary"`
-}
-
-// GetType implements MessageEntry.
-func (BranchSummaryEntry) GetType() string { return "branch_summary" }
-
-// GetID implements MessageEntry.
-func (b BranchSummaryEntry) GetID() string { return b.ID }
-
-// GetParent implements MessageEntry.
-func (b BranchSummaryEntry) GetParent() *string { return b.ParentID }
 
 // Compaction is the data attached to a compaction entry.
 type Compaction struct {

@@ -283,12 +283,6 @@ func decodeEntryLine(raw []byte, lineNo int) (MessageEntry, error) {
 			return nil, fmt.Errorf("session: line %d compaction: %w", lineNo, err)
 		}
 		return c, nil
-	case EntryBranchSummary, "branch_summary":
-		var b BranchSummaryEntry
-		if err := json.Unmarshal(raw, &b); err != nil {
-			return nil, fmt.Errorf("session: line %d branch_summary: %w", lineNo, err)
-		}
-		return b, nil
 	default:
 		return nil, fmt.Errorf("session: line %d: unknown type %q", lineNo, probe.Type)
 	}

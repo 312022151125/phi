@@ -17,7 +17,7 @@ func TestFindCutIndex_ExceedsTokensChoosesNearestCutPoint(t *testing.T) {
 		session.SessionMessageEntry{
 			Message: llm.Message{Usage: llm.Usage{TotalTokens: 20}},
 		},
-		session.BranchSummaryEntry{}, // non-message, should be skipped for token accumulation
+		session.CompactionEntry{}, // non-message, should be skipped for token accumulation
 		session.SessionMessageEntry{
 			Message: llm.Message{Usage: llm.Usage{TotalTokens: 30}},
 		},

@@ -51,12 +51,7 @@ func PrepareCompact(
 	// [preCompactionIndex + 1, end)
 	start := preCompactionIndex + 1
 	end := len(pathEntries)
-
-	lastUsage := getLastAssistantUsage(pathEntries)
-	tokenBefore := lastUsage.TotalTokens
-	keepRecentTokens := settings.keepRecentTokens
-
-	cutPoint := findCutPoint(pathEntries, start, end, keepRecentTokens)
+	cutPoint := findCutPoint(pathEntries, start, end, settings.keepRecentTokens)
 
 	firstKeptEntry := pathEntries[cutPoint.firstKeptEntryIndex]
 	if firstKeptEntry.GetID() == "" {
@@ -106,6 +101,9 @@ func PrepareCompact(
 	}
 
 	fileOps := extractFileOperations(messagesToSummarize, pathEntries, preCompactionIndex)
+
+	lastUsage := getLastAssistantUsage(pathEntries)
+	tokenBefore := lastUsage.TotalTokens
 
 	return &CompactionPreparation{
 		FirstKeptEntryId:     firstKeptEntryID,
