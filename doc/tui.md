@@ -18,7 +18,7 @@ cmd/main.go
 
 | Owner | Composes (lifecycle) | Aggregates (injected) |
 | ----- | -------------------- | --------------------- |
-| `Editor` | all panes, `Submitter`, `toast` | `Bus`, `App`, `vx` |
+| `Editor` | all panes, `Submitter`, `toast`, `CommandRegistry` | `Bus`, `App`, `vx` |
 | `TranscriptPane` | `MessageList`, `Mapper`, `SubagentStore`, `welcome`, `textSel` | `theme`, `spinner` ref from footer |
 | `ComposerPane` | `ChatInput`, pickers, `palette` | callbacks `onSubmit`, `onCancel`, `onRedraw` |
 | `FooterChrome` | `ActivityHandler`, `Spinner` | `labelContext()`, `liveJobs()` closures |
@@ -70,15 +70,14 @@ vx, theme, cwd
 redraw := controller.NewRedrawRelay()
 bus    := controller.NewBus(redraw.Fire)
 ctrl   := controller.NewController(bus, proj, cwd)
-cmds   := commands.NewBuiltinRegistry()
-ui     := editor.NewEditor(app, bus, ctrl, cmds, vx, theme, cwd, model, skillPath, contextWindow, modelNames)
+ui     := editor.NewEditor(app, bus, ctrl, vx, theme, cwd, model, skillPath, contextWindow, modelNames)
 redraw.Bind(ui.RequestRedraw)
 ui.StartUpdateCheck(...)
 ui.StartBranchWatch()
 app.Run(ui)
 ```
 
-Inside `NewEditor`, panes are built in dependency order:
+Inside `NewEditor`, the `CommandRegistry` (builtins) is built first, then panes in dependency order:
 
 1. `FooterChrome` — spinner + activity (needs `contextWindow`)
 2. `TranscriptPane` — shares footer spinner; usage callback → footer tokens

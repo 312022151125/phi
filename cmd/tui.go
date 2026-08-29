@@ -12,7 +12,6 @@ import (
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/app"
 	"github.com/pulseaiclub/phi/internal/project"
-	"github.com/pulseaiclub/phi/internal/tui/commands"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
 	"github.com/pulseaiclub/phi/internal/tui/editor"
 )
@@ -80,12 +79,10 @@ func runTUI() error {
 		fmt.Fprintln(os.Stderr, "phi:", err)
 		return exitCode(ExitError)
 	}
-	cmds := commands.NewBuiltinRegistry()
 	ui := editor.NewEditor(
 		application,
 		bus,
 		ctrl,
-		cmds,
 		vx,
 		th,
 		cwd,

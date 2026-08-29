@@ -28,8 +28,9 @@ import (
 // Draw drains and Update applies. Agent lifecycle lives in controller.EngineController;
 // session→widget projection lives in TranscriptPane (Mapper/SubagentStore).
 //
-// Construction: cmd assembles App, controller.Bus, controller.EngineController, CommandRegistry and passes
-// them into NewEditor. Editor does not create controller.EngineController or fetch the project singleton.
+// Construction: cmd assembles App, controller.Bus, controller.EngineController and passes
+// them into NewEditor, which builds the CommandRegistry (commands.NewBuiltinRegistry).
+// Editor does not create controller.EngineController or fetch the project singleton.
 type Editor struct {
 	vx    *xui.XUI
 	App   *app.App
@@ -55,21 +56,18 @@ type Editor struct {
 }
 
 // NewEditor builds the TUI panes and wires injected collaborators.
-// application, bus, and ctrl must be non-nil. registry may be nil (builtins used).
+// application, bus, and ctrl must be non-nil.
 func NewEditor(
 	application *app.App,
 	bus *controller.Bus,
 	ctrl *controller.EngineController,
-	registry *commands.CommandRegistry,
 	vx *xui.XUI,
 	theme components.Theme,
 	cwd, model, skillPath string,
 	contextWindow int,
 	modelNames []string,
 ) *Editor {
-	if registry == nil {
-		registry = commands.NewBuiltinRegistry()
-	}
+	registry := commands.NewBuiltinRegistry()
 	e := &Editor{
 		vx:         vx,
 		App:        application,
