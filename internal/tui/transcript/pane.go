@@ -87,8 +87,8 @@ func (t *TranscriptPane) SetUsageCallback(fn func(session.TokenUsage)) {
 
 // SetCopyHandlers wires clipboard copy; feedback toasts go through the bus.
 func (t *TranscriptPane) SetCopyHandlers(
-	copyFn func(text string) bool,
 	bus *controller.Bus,
+	copyFn func(text string) bool,
 ) {
 	if t == nil {
 		return
