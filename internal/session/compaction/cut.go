@@ -6,15 +6,17 @@ import (
 )
 
 // CutPointResult identifies where to cut the session history: the index of
-// the first entry to keep and, when the cut splits a turn, that turn's
+// the first entry to keep and, when the cut falls mid-turn, that turn's
 // starting index.
 type CutPointResult struct {
-	/** Index of first entry to keep */
+	// firstKeptEntryIndex is the index of the first entry to keep.
 	firstKeptEntryIndex int
-	/** Index of user message that starts the turn being split, or -1 if not splitting */
+	// turnStartIndex is the user message that opens the turn containing the
+	// cut, or -1 when the cut is at a turn boundary.
 	turnStartIndex int
-	/** Whether this cut splits a turn (cut point is not a user message) */
-	isSplitTurn bool
+	// isMidTurnCut is true when firstKept is not a user message, so the
+	// orphaned start of that turn needs a turn-prefix summary.
+	isMidTurnCut bool
 }
 
 func findCutPoint(
@@ -28,7 +30,7 @@ func findCutPoint(
 		return CutPointResult{
 			firstKeptEntryIndex: startIndex,
 			turnStartIndex:      -1,
-			isSplitTurn:         false,
+			isMidTurnCut:        false,
 		}
 	}
 
@@ -41,12 +43,12 @@ func findCutPoint(
 	)
 
 	// Entry at the cut point;
-	// used to tell if we cut at a user message (cutting there does not split a turn).
+	// used to tell if we cut at a user message (a turn boundary).
 	cutEntry := messageEntries[cutIndex]
 	isUserMessage := cutEntry.GetType() == session.EntryMessage &&
 		cutEntry.(session.SessionMessageEntry).Message.Role == llm.RoleUser
 
-	// [userMessage, cutIndex) is the turn
+	// [userMessage, cutIndex) is the orphaned turn prefix when cutting mid-turn.
 	turnStartIndex := -1
 	if !isUserMessage {
 		turnStartIndex = findTurnStartIndex(messageEntries, cutIndex, startIndex)
@@ -55,7 +57,7 @@ func findCutPoint(
 	return CutPointResult{
 		firstKeptEntryIndex: cutIndex,
 		turnStartIndex:      turnStartIndex,
-		isSplitTurn:         !isUserMessage && turnStartIndex != -1,
+		isMidTurnCut:        !isUserMessage && turnStartIndex != -1,
 	}
 }
 

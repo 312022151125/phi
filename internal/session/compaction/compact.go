@@ -18,7 +18,7 @@ type CompactionPreparation struct {
 	FirstKeptEntryId    string
 	MessagesToSummarize []llm.Message
 	TurnPrefixMessages  []llm.Message
-	IsSplitTurn         bool
+	IsMidTurnCut        bool
 	TokensBefore        int
 	PreviousSummary     string
 	// TODO: wire into Compact / AppendCompaction so hook preserveData
@@ -62,7 +62,7 @@ func PrepareCompact(
 	firstKeptEntryID := firstKeptEntry.GetID()
 
 	historyEnd := cutPoint.firstKeptEntryIndex
-	if cutPoint.isSplitTurn {
+	if cutPoint.isMidTurnCut {
 		historyEnd = cutPoint.turnStartIndex
 	}
 
@@ -76,7 +76,7 @@ func PrepareCompact(
 
 	// Messages for turn prefix summary (if splitting a turn)
 	var turnPrefixMessages []llm.Message
-	if cutPoint.isSplitTurn {
+	if cutPoint.isMidTurnCut {
 		for i := cutPoint.turnStartIndex; i < cutPoint.firstKeptEntryIndex; i++ {
 			msg := getMessageFromEntry(pathEntries[i])
 			if msg != nil {
@@ -106,7 +106,7 @@ func PrepareCompact(
 		PreviousSummary:      previousSummary,
 		PreviousPreserveData: previousPreserveData,
 		FileOps:              *fileOps,
-		IsSplitTurn:          cutPoint.isSplitTurn,
+		IsMidTurnCut:         cutPoint.isMidTurnCut,
 	}, nil
 }
 
@@ -133,8 +133,8 @@ func Compact(
 		summary string
 		err     error
 	)
-	if preparation.IsSplitTurn && len(preparation.TurnPrefixMessages) > 0 {
-		summary, err = summarizeSplitTurn(ctx, preparation, llm)
+	if preparation.IsMidTurnCut && len(preparation.TurnPrefixMessages) > 0 {
+		summary, err = summarizeMidTurnCut(ctx, preparation, llm)
 	} else {
 		summary, err = summarizeHistory(ctx, preparation, llm)
 	}
@@ -156,9 +156,9 @@ func Compact(
 	}, nil
 }
 
-// summarizeSplitTurn runs history and turn-prefix summaries in parallel,
-// then joins them for a cut that splits a turn.
-func summarizeSplitTurn(
+// summarizeMidTurnCut runs history and turn-prefix summaries in parallel,
+// then joins them when the cut falls inside a turn.
+func summarizeMidTurnCut(
 	ctx context.Context,
 	preparation CompactionPreparation,
 	llm llm.Compactor,
@@ -205,7 +205,7 @@ func summarizeSplitTurn(
 		return "", turnPrefixSummaryErr
 	}
 
-	return historySummary + "\n\n---\n\n**Turn Context (split turn):**\n\n" + turnPrefixSummary, nil
+	return historySummary + "\n\n---\n\n**Turn Context (mid-turn cut):**\n\n" + turnPrefixSummary, nil
 }
 
 // summarizeHistory generates a single summary over MessagesToSummarize.

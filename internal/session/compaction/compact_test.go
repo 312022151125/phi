@@ -71,7 +71,7 @@ func TestPrepareCompact_NoPreviousCompaction_SplitsByKeepRecentTokens(t *testing
 	assert.NoError(t, err)
 	assert.NotNil(t, prep)
 	assert.Equal(t, "e3", prep.FirstKeptEntryId)
-	assert.False(t, prep.IsSplitTurn)
+	assert.False(t, prep.IsMidTurnCut)
 	assert.Len(t, prep.MessagesToSummarize, 2)
 	assert.Equal(t, llm.RoleUser, prep.MessagesToSummarize[0].Role)
 	assert.Equal(t, llm.RoleAssistant, prep.MessagesToSummarize[1].Role)
