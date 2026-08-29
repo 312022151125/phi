@@ -40,6 +40,8 @@ func newCommandBridge(
 	ctrl *controller.EngineController,
 	submitter *submit.Submitter,
 	sessions *commands.SessionCommands,
+	modelNames []string,
+	skillPath string,
 	reloadHooks func(),
 	listHooks func() []palette.PaletteCommand,
 	setModel func(string),
@@ -48,8 +50,6 @@ func newCommandBridge(
 	setAgents func(bool),
 	addSkill func(string),
 	copyLastMessage func(),
-	modelNames []string,
-	skillPath string,
 ) *commandBridge {
 	return &commandBridge{
 		bus:             bus,

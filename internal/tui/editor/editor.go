@@ -108,10 +108,10 @@ func NewEditor(
 		},
 	)
 	e.transcript.SetCopyHandlers(
+		e.bus,
 		func(text string) bool {
 			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
 		},
-		e.bus,
 	)
 	e.hookCmds = &commands.HookCommands{
 		Registry: e.commands,
@@ -136,13 +136,13 @@ func NewEditor(
 		e.transcript,
 		e.footer.Activity(),
 		e.composer,
+		e.bus,
 		func() commands.CommandContext {
 			if bridge == nil {
 				return commands.CommandContext{}
 			}
 			return bridge.context()
 		},
-		e.bus,
 		e.overlays.PermissionActive,
 		e.overlays.ContinueActive,
 		e.overlays.ResolvePermission,
@@ -156,6 +156,8 @@ func NewEditor(
 		e.ctrl,
 		e.submitter,
 		e.sessions,
+		e.modelNames,
+		e.skillPath,
 		e.reloadHooks,
 		e.listHooks,
 		e.setModel,
@@ -164,8 +166,6 @@ func NewEditor(
 		e.setAgents,
 		e.addPendingSkill,
 		e.copyLastMessage,
-		e.modelNames,
-		e.skillPath,
 	)
 	e.hookCmds.CommandCtx = bridge.context
 	e.composer.Wire(
