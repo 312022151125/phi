@@ -11,6 +11,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Added
 
 - **Yaegi extensions:** Go extensions under `~/.phi/extensions` and `<cwd>/.phi/extensions` (`*.go` / `*/index.go`). Public API `ext`, runtime `internal/extension`. Supports `On` events, `RegisterTool`, `RegisterCommand`, session/tool lifecycle. See [doc/extensions.md](doc/extensions.md). Palette: **extensions → list/reload**. Disable with `PHI_EXTENSIONS=off`.
+- `phi plugin install <github-repo[@tag]>`: shallow-clone a GitHub repo into `~/.phi/extensions/<repo>/` (`index.go` or a single root `*.go`). No registry.
 
 ### Changed
 

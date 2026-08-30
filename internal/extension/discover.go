@@ -48,6 +48,7 @@ func ExtensionsDisabled() bool {
 //
 //	<dir>/*.go
 //	<dir>/*/index.go
+//	<dir>/*/<sole>.go  (exactly one non-test *.go when index.go is absent)
 func Discover(userDir, projectDir string) ([]Discovered, []Warning, error) {
 	if ExtensionsDisabled() {
 		return nil, nil, nil
@@ -120,18 +121,15 @@ func scanDir(dir, source string) ([]Discovered, []Warning, error) {
 		}
 		full := filepath.Join(dir, name)
 		if ent.IsDir() {
-			index := filepath.Join(full, "index.go")
-			st, err := os.Stat(index)
+			entry, err := dirEntryFile(full)
 			if err != nil {
-				if !os.IsNotExist(err) {
-					warnings = append(warnings, Warning{Path: index, Message: err.Error()})
-				}
+				warnings = append(warnings, Warning{Path: full, Message: err.Error()})
 				continue
 			}
-			if st.IsDir() {
+			if entry == "" {
 				continue
 			}
-			add(name, index)
+			add(name, entry)
 			continue
 		}
 		if filepath.Ext(name) != ".go" {
@@ -144,6 +142,44 @@ func scanDir(dir, source string) ([]Discovered, []Warning, error) {
 		add(id, full)
 	}
 	return out, warnings, nil
+}
+
+// dirEntryFile returns the extension entry under a plugin subdirectory:
+// index.go if present, otherwise the sole non-test *.go at that directory's root.
+func dirEntryFile(dir string) (string, error) {
+	index := filepath.Join(dir, "index.go")
+	st, err := os.Stat(index)
+	if err == nil && !st.IsDir() {
+		return index, nil
+	}
+	if err != nil && !os.IsNotExist(err) {
+		return "", err
+	}
+	return soleRootGoFile(dir)
+}
+
+// soleRootGoFile returns the only non-test *.go file in dir, or ("", nil) if
+// there is not exactly one.
+func soleRootGoFile(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	var found string
+	for _, ent := range entries {
+		if ent.IsDir() {
+			continue
+		}
+		name := ent.Name()
+		if filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		if found != "" {
+			return "", nil
+		}
+		found = filepath.Join(dir, name)
+	}
+	return found, nil
 }
 
 // FormatDiscovered returns a one-line status for palette / logs.
