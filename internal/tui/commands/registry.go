@@ -25,14 +25,14 @@ type CommandContext struct {
 	ResumeSession func(id string)
 	ClearSession  func() // may toast internally if busy
 
-	SetModel        func(name string)
-	ApplyTheme      func(name string)
-	SetPermissions  func(bypass bool)
-	SetAgents       func(enabled bool)
-	ReloadHooks     func()
-	ListHooks       func() []palette.PaletteCommand
-	AddSkill        func(name string)
-	CopyLastMessage func()
+	SetModel         func(name string)
+	ApplyTheme       func(name string)
+	SetPermissions   func(bypass bool)
+	SetAgents        func(enabled bool)
+	ReloadExtensions func()
+	ListExtensions   func() []palette.PaletteCommand
+	AddSkill         func(name string)
+	CopyLastMessage  func()
 
 	ModelNames []string
 	SkillPath  string
@@ -57,7 +57,7 @@ type Command struct {
 	// PaletteRoot builds a Ctrl+K root row when non-nil.
 	PaletteRoot func(ctx CommandContext) palette.PaletteCommand
 
-	fromHook bool // dropped on hooks reload; cannot replace builtins
+	fromExt bool // dropped on extensions reload; cannot replace builtins
 }
 
 // CommandRegistry is the single catalog for composer `/` and Ctrl+K palette.
@@ -96,15 +96,15 @@ func (r *CommandRegistry) Register(cmd Command) {
 	r.cmds = append(r.cmds, cmd)
 }
 
-// registerHook adds a slash command from a Command hook.
+// registerExt adds a slash command from an extension.
 // Returns false if name is empty or already taken by a builtin.
-func (r *CommandRegistry) registerHook(cmd Command) bool {
+func (r *CommandRegistry) registerExt(cmd Command) bool {
 	name := strings.ToLower(strings.TrimSpace(cmd.Name))
 	if name == "" {
 		return false
 	}
 	cmd.Name = strings.TrimSpace(cmd.Name)
-	cmd.fromHook = true
+	cmd.fromExt = true
 	if cmd.Slash && cmd.Insert == "" {
 		cmd.Insert = "/" + cmd.Name
 	}
@@ -115,7 +115,7 @@ func (r *CommandRegistry) registerHook(cmd Command) bool {
 		r.by = make(map[string]int)
 	}
 	if i, ok := r.by[name]; ok {
-		if !r.cmds[i].fromHook {
+		if !r.cmds[i].fromExt {
 			return false
 		}
 		r.cmds[i] = cmd
@@ -126,14 +126,14 @@ func (r *CommandRegistry) registerHook(cmd Command) bool {
 	return true
 }
 
-// clearHookCommands removes every command registered via registerHook.
-func (r *CommandRegistry) clearHookCommands() {
+// clearExtCommands removes every command registered via registerExt.
+func (r *CommandRegistry) clearExtCommands() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	kept := make([]Command, 0, len(r.cmds))
 	r.by = make(map[string]int, len(r.cmds))
 	for _, c := range r.cmds {
-		if c.fromHook {
+		if c.fromExt {
 			continue
 		}
 		r.by[strings.ToLower(c.Name)] = len(kept)

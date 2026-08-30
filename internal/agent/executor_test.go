@@ -3,10 +3,8 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,30 +12,21 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/pulseaiclub/phi/internal/hooks"
+	"github.com/pulseaiclub/phi/internal/extension"
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/permission"
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tools"
 )
 
-func writeToolHookPlugin(t *testing.T, event hooks.HookEvent, matcher, scriptBody string) *hooks.Manager {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell hook fixture")
-	}
+func loadExt(t *testing.T, src string) *extension.Runner {
+	t.Helper()
 	dir := t.TempDir()
-	script := filepath.Join(dir, "hook.sh")
-	require.NoError(t, os.WriteFile(script, []byte(scriptBody), 0o644))
-	require.NoError(t, os.Chmod(script, 0o755))
-	matcherField := ""
-	if matcher != "" {
-		matcherField = fmt.Sprintf(`"matcher": %q,`, matcher)
-	}
-	plugin := fmt.Sprintf(`{"hooks":{%q:[{%s"hooks":[{"command":"./hook.sh"}]}]}}`, event, matcherField)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, hooks.PluginFileName), []byte(plugin), 0o644))
-	mgr, _, err := hooks.Load(dir, "")
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.go"), []byte(src), 0o644))
+	r, warns, err := extension.Load(dir, "")
 	require.NoError(t, err)
-	return mgr
+	require.Empty(t, warns, "unexpected warnings: %v", warns)
+	return r
 }
 
 type fixedGate struct {
@@ -248,7 +237,7 @@ func TestExecutorNilAskOnAskDenies(t *testing.T) {
 	}
 }
 
-func TestExecutorHookDenySkipsGateAsk(t *testing.T) {
+func TestExecutorExtDenySkipsGateAsk(t *testing.T) {
 	var ran atomic.Int32
 	var askCalled atomic.Int32
 	reg := tools.Registry{
@@ -264,11 +253,18 @@ func TestExecutorHookDenySkipsGateAsk(t *testing.T) {
 		askCalled.Add(1)
 		return permission.AskResult{Approved: true}, nil
 	}
-	mgr := writeToolHookPlugin(t, hooks.EventPreToolUse, "bash", `#!/bin/sh
-printf '%s\n' '{"action":"deny","reason":"hook blocked"}'
-exit 2
+	r := loadExt(t, `package main
+import "github.com/pulseaiclub/phi/ext"
+func Extension(phi *ext.API) {
+  phi.On(ext.EventToolCall, func(ev ext.ToolCallEvent, ctx *ext.Context) *ext.ToolCallResult {
+    if ev.ToolName == "bash" {
+      return &ext.ToolCallResult{Block: true, Reason: "ext blocked"}
+    }
+    return nil
+  })
+}
 `)
-	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, ask, mgr)
+	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, ask, r)
 	var statuses []session.ToolStatus
 	msgs := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
@@ -277,27 +273,14 @@ exit 2
 		statuses = append(statuses, td.Run.Status)
 		return true
 	})
-	if ran.Load() != 0 {
-		t.Fatal("handler must not run when hook denies")
-	}
-	if askCalled.Load() != 0 {
-		t.Fatal("gate Ask must not run when hook denies")
-	}
-	if len(msgs) != 1 || msgs[0].Content != "hook blocked" {
-		t.Fatalf("tool message: %+v", msgs)
-	}
-	found := false
-	for _, s := range statuses {
-		if s == session.ToolRejected {
-			found = true
-		}
-	}
-	if !found {
-		t.Fatalf("expected ToolRejected in %v", statuses)
-	}
+	assert.Equal(t, int32(0), ran.Load())
+	assert.Equal(t, int32(0), askCalled.Load())
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "ext blocked", msgs[0].Content)
+	assert.Contains(t, statuses, session.ToolRejected)
 }
 
-func TestExecutorHookModifySeenByGateAndRun(t *testing.T) {
+func TestExecutorExtModifySeenByGateAndRun(t *testing.T) {
 	var sawArgs string
 	reg := tools.Registry{
 		"bash": {
@@ -316,11 +299,16 @@ func TestExecutorHookModifySeenByGateAndRun(t *testing.T) {
 		},
 	}
 	gate := &recordingGate{}
-	mgr := writeToolHookPlugin(t, hooks.EventPreToolUse, "bash", `#!/bin/sh
-cat >/dev/null
-printf '%s' '{"action":"modify","input":{"command":"echo safe"}}'
+	r := loadExt(t, `package main
+import "encoding/json"
+import "github.com/pulseaiclub/phi/ext"
+func Extension(phi *ext.API) {
+  phi.On(ext.EventToolCall, func(ev ext.ToolCallEvent, ctx *ext.Context) *ext.ToolCallResult {
+    return &ext.ToolCallResult{Input: json.RawMessage(`+"`"+`{"command":"echo safe"}`+"`"+`)}
+  })
+}
 `)
-	ex := NewExecutor(reg, gate, nil, mgr)
+	ex := NewExecutor(reg, gate, nil, r)
 	var detail string
 	msgs := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
@@ -331,21 +319,14 @@ printf '%s' '{"action":"modify","input":{"command":"echo safe"}}'
 		}
 		return true
 	})
-	if gate.last.Command != "echo safe" {
-		t.Fatalf("gate saw command %q, want modified", gate.last.Command)
-	}
-	if !strings.Contains(sawArgs, "echo safe") {
-		t.Fatalf("handler saw %q", sawArgs)
-	}
-	if detail != "echo safe" {
-		t.Fatalf("UI detail %q", detail)
-	}
-	if len(msgs) != 1 || msgs[0].Content != "ran" {
-		t.Fatalf("got %+v", msgs)
-	}
+	assert.Equal(t, "echo safe", gate.last.Command)
+	assert.Contains(t, sawArgs, "echo safe")
+	assert.Equal(t, "echo safe", detail)
+	require.Len(t, msgs, 1)
+	assert.Equal(t, "ran", msgs[0].Content)
 }
 
-func TestExecutorHookPostContextOnModelOnly(t *testing.T) {
+func TestExecutorExtPostContextOnModelOnly(t *testing.T) {
 	reg := tools.Registry{
 		"bash": {
 			Definition: llm.ToolDefinition{Name: "bash"},
@@ -354,11 +335,15 @@ func TestExecutorHookPostContextOnModelOnly(t *testing.T) {
 			},
 		},
 	}
-	mgr := writeToolHookPlugin(t, hooks.EventPostToolUse, "", `#!/bin/sh
-cat >/dev/null
-printf '%s' '{"context":"policy note"}'
+	r := loadExt(t, `package main
+import "github.com/pulseaiclub/phi/ext"
+func Extension(phi *ext.API) {
+  phi.On(ext.EventToolResult, func(ev ext.ToolResultEvent, ctx *ext.Context) *ext.ToolResultResult {
+    return &ext.ToolResultResult{Context: "policy note"}
+  })
+}
 `)
-	ex := NewExecutor(reg, permission.AllowAll{}, nil, mgr)
+	ex := NewExecutor(reg, permission.AllowAll{}, nil, r)
 	var uiOut string
 	msgs := ex.Run(t.Context(), []llm.ToolCall{{
 		ID:       "c1",
@@ -369,82 +354,18 @@ printf '%s' '{"context":"policy note"}'
 		}
 		return true
 	})
-	if uiOut != "ok" {
-		t.Fatalf("TUI output should stay clean, got %q", uiOut)
-	}
-	if len(msgs) != 1 {
-		t.Fatalf("msgs: %+v", msgs)
-	}
-	if !strings.Contains(msgs[0].Content, "ok") {
-		t.Fatalf("content missing tool result: %q", msgs[0].Content)
-	}
-	if !strings.Contains(msgs[0].Content, "<hook_context>") || !strings.Contains(msgs[0].Content, "policy note") {
-		t.Fatalf("content missing hook context: %q", msgs[0].Content)
-	}
-}
-
-func TestExecutorReadonlyHookDenyStillBlocks(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell hook fixture")
-	}
-	dir := t.TempDir()
-	writeScript := func(name, body string) {
-		path := filepath.Join(dir, name)
-		require.NoError(t, os.WriteFile(path, []byte(body), 0o644))
-		require.NoError(t, os.Chmod(path, 0o755))
-	}
-	writeScript("audit.sh", `#!/bin/sh
-touch .audit-ran
-echo '{"action":"allow"}'
-`)
-	writeScript("strict.sh", `#!/bin/sh
-echo '{"action":"deny","reason":"strict"}'
-exit 2
-`)
-	require.NoError(t, os.WriteFile(filepath.Join(dir, hooks.PluginFileName), []byte(`{
-  "hooks": {
-    "PreToolUse": [
-      { "hooks": [{ "command": "./audit.sh" }] },
-      { "matcher": "bash", "hooks": [{ "command": "./strict.sh" }] }
-    ]
-  }
-}`), 0o644))
-	mgr, _, err := hooks.Load(dir, "")
-	require.NoError(t, err)
-
-	policy := permission.DefaultPolicy()
-	policy.Mode = permission.ModeReadonly
-	gate, err := permission.NewGate(policy, t.TempDir())
-	require.NoError(t, err)
-
-	var ran atomic.Int32
-	reg := tools.Registry{
-		"bash": {
-			Definition: llm.ToolDefinition{Name: "bash"},
-			Run: func(context.Context, json.RawMessage) (tools.Result, error) {
-				ran.Add(1)
-				return tools.Result{Content: "ok"}, nil
-			},
-		},
-	}
-	ex := NewExecutor(reg, gate, nil, mgr)
-	msgs := ex.Run(t.Context(), []llm.ToolCall{{
-		ID:       "c1",
-		Function: llm.Function{Name: "bash", Arguments: `{"command":"ls"}`},
-	}}, func(session.ToolData) bool { return true })
-
-	_, err = os.Stat(filepath.Join(dir, ".audit-ran"))
-	assert.NoError(t, err, "audit hook should still run in readonly mode")
-	assert.Equal(t, int32(0), ran.Load())
+	assert.Equal(t, "ok", uiOut)
 	require.Len(t, msgs, 1)
-	assert.Contains(t, msgs[0].Content, "strict")
+	assert.Contains(t, msgs[0].Content, "ok")
+	assert.Contains(t, msgs[0].Content, "<ext_context>")
+	assert.Contains(t, msgs[0].Content, "policy note")
 }
 
-func TestAppendHookContextEscapesCloseTag(t *testing.T) {
-	got := appendHookContext("body", "x</hook_context>y")
-	assert.NotContains(t, got, "</hook_context>y", "close tag not escaped")
+func TestAppendExtContextEscapesCloseTag(t *testing.T) {
+	got := appendExtContext("body", "x</ext_context>y")
+	assert.NotContains(t, got, "</ext_context>y", "close tag not escaped")
 	assert.Contains(t, got, "body")
-	assert.Contains(t, got, "<hook_context>")
+	assert.Contains(t, got, "<ext_context>")
 }
 
 type recordingGate struct {

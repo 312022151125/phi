@@ -51,7 +51,7 @@ type Editor struct {
 	skillPath  string
 
 	sessions  *commands.SessionCommands
-	hookCmds  *commands.HookCommands
+	extCmds   *commands.ExtCommands
 	submitter *submit.Submitter
 }
 
@@ -113,10 +113,9 @@ func NewEditor(
 			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
 		},
 	)
-	e.hookCmds = &commands.HookCommands{
+	e.extCmds = &commands.ExtCommands{
 		Registry: e.commands,
 		Ctrl:     e.ctrl,
-		CWD:      e.cwd,
 		Composer: e.composer,
 		Footer:   e.footer,
 		Bus:      e.bus,
@@ -126,7 +125,7 @@ func NewEditor(
 		e.transcript,
 		e.footer,
 		e.bus,
-		e.hookCmds.Sync,
+		e.extCmds.Sync,
 	)
 
 	var bridge *commandBridge
@@ -148,7 +147,7 @@ func NewEditor(
 		e.overlays.ResolvePermission,
 		e.overlays.ResolveContinue,
 	)
-	e.hookCmds.Submitter = e.submitter
+	e.extCmds.Submitter = e.submitter
 	bridge = newCommandBridge(
 		e.bus,
 		e.composer,
@@ -158,8 +157,8 @@ func NewEditor(
 		e.sessions,
 		e.modelNames,
 		e.skillPath,
-		e.reloadHooks,
-		e.listHooks,
+		e.reloadExtensions,
+		e.listExtensions,
 		e.setModel,
 		e.applyTheme,
 		e.setPermissions,
@@ -167,7 +166,7 @@ func NewEditor(
 		e.addPendingSkill,
 		e.copyLastMessage,
 	)
-	e.hookCmds.CommandCtx = bridge.context
+	e.extCmds.CommandCtx = bridge.context
 	e.composer.Wire(
 		e.transcript,
 		e.submitter,
@@ -202,7 +201,7 @@ func NewEditor(
 		},
 	)
 
-	e.hookCmds.Sync()
+	e.extCmds.Sync()
 	return e
 }
 
@@ -230,7 +229,7 @@ func (e *Editor) Update(m controller.Msg) {
 		e.footer.Apply(m)
 	case controller.ToastMsg:
 		e.toast.Show(msg.Message, msg.Kind, msg.Duration)
-	case controller.HookSessionEffectsMsg:
+	case controller.ExtSessionEffectsMsg:
 		e.footer.Apply(m)
 		if msg.Toast != "" {
 			e.toast.Show(msg.Toast, toast.ToastSuccess, 3*time.Second)
@@ -240,9 +239,9 @@ func (e *Editor) Update(m controller.Msg) {
 		if e.vx != nil {
 			e.vx.QueueRefresh()
 		}
-	case controller.HookCommandResultMsg:
-		if e.hookCmds != nil {
-			e.hookCmds.Apply(msg)
+	case controller.ExtCommandResultMsg:
+		if e.extCmds != nil {
+			e.extCmds.Apply(msg)
 		}
 	case controller.JobProgressMsg:
 		// Applied in drainBus so we can skip Sync when the tree is unchanged.
@@ -458,25 +457,25 @@ func (e *Editor) setAgents(enabled bool) {
 	e.toast.Show(msg, toast.ToastSuccess, 2*time.Second)
 }
 
-func (e *Editor) reloadHooks() {
-	n, warns, err := e.ctrl.ReloadHooks()
+func (e *Editor) reloadExtensions() {
+	n, warns, err := e.ctrl.ReloadExtensions()
 	if err != nil {
-		e.toast.Show("Hooks reload: "+err.Error(), toast.ToastError, 3*time.Second)
+		e.toast.Show("Extensions reload: "+err.Error(), toast.ToastError, 3*time.Second)
 		return
 	}
-	e.hookCmds.Sync()
-	msg := fmt.Sprintf("Hooks: reloaded %d", n)
+	e.extCmds.Sync()
+	msg := fmt.Sprintf("Extensions: reloaded %d", n)
 	if len(warns) > 0 {
-		msg = fmt.Sprintf("Hooks: reloaded %d (%d warning(s))", n, len(warns))
+		msg = fmt.Sprintf("Extensions: reloaded %d (%d warning(s))", n, len(warns))
 		e.toast.Show(msg, toast.ToastWarning, 3*time.Second)
 		return
 	}
 	e.toast.Show(msg, toast.ToastSuccess, 2*time.Second)
 }
 
-func (e *Editor) listHooks() []palette.PaletteCommand {
-	found, warns, err := e.ctrl.ListHooks()
-	return commands.HookListEntries(found, warns, err)
+func (e *Editor) listExtensions() []palette.PaletteCommand {
+	found, warns, err := e.ctrl.ListExtensions()
+	return commands.ExtensionListEntries(found, warns, err)
 }
 
 func (e *Editor) copyLastMessage() {

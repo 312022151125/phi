@@ -13,7 +13,7 @@ import (
 
 func TestDrawCombinesParts(t *testing.T) {
 	f := NewFooterChrome(components.DefaultTheme(), 0)
-	f.SetHookStatus(" review ")
+	f.SetExtensionStatus(" review ")
 	f.SetLiveJobs(func() int { return 2 })
 	f.Activity().Apply(controller.ActivityCancelled)
 

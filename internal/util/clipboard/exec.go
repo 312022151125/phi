@@ -11,7 +11,7 @@ import (
 const (
 	defaultListTimeout = time.Second
 	defaultReadTimeout = 3 * time.Second
-	defaultMaxBytes    = 50 << 20 // match pi clipboard read cap before image.MaxBytes trim
+	defaultMaxBytes    = 50 << 20 // clipboard read cap before image.MaxBytes trim
 )
 
 func lookPath(name string) bool {

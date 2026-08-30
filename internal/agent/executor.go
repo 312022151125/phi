@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/pulseaiclub/phi/internal/hooks"
+	"github.com/pulseaiclub/phi/internal/extension"
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/permission"
 	"github.com/pulseaiclub/phi/internal/session"
@@ -18,8 +18,8 @@ import (
 const ToolCanceledResult = "User cancelled the tool call."
 
 const (
-	hookContextOpen  = "<hook_context>"
-	hookContextClose = "</hook_context>"
+	extContextOpen  = "<ext_context>"
+	extContextClose = "</ext_context>"
 )
 
 // Executor runs model tool_calls against a tool registry and emits ToolData for the UI.
@@ -27,39 +27,41 @@ type Executor struct {
 	registry  tools.Registry
 	gate      permission.Gate
 	ask       permission.AskFunc
-	hooks     *hooks.Manager // nil = no hooks (behavior identical to pre-hooks)
+	ext       *extension.Runner // nil = no extensions
 	sessionID string
 	cwd       string
 }
 
-// NewExecutor builds an executor. hookMgr may be nil.
+// NewExecutor builds an executor. extRunner may be nil.
 func NewExecutor(
 	registry tools.Registry,
 	gate permission.Gate,
 	ask permission.AskFunc,
-	hookMgr *hooks.Manager,
+	extRunner *extension.Runner,
 ) *Executor {
 	if gate == nil {
 		gate = permission.AllowAll{}
 	}
-	e := &Executor{registry: registry, gate: gate, ask: ask, hooks: hookMgr}
-	return e
+	return &Executor{registry: registry, gate: gate, ask: ask, ext: extRunner}
 }
 
-// SetMeta attaches session identity used in hook Event payloads.
+// SetMeta attaches session identity used in extension Event payloads.
 func (e *Executor) SetMeta(sessionID, cwd string) {
 	if e == nil {
 		return
 	}
 	e.sessionID = sessionID
 	e.cwd = cwd
+	if e.ext != nil {
+		e.ext.SetMeta(sessionID, cwd)
+	}
 }
 
-func (e *Executor) activeHooks() *hooks.Manager {
-	if e == nil || e.hooks == nil {
+func (e *Executor) activeExt() *extension.Runner {
+	if e == nil {
 		return nil
 	}
-	return e.hooks
+	return e.ext
 }
 
 // Run executes tool calls in order, yielding ToolData updates via emit.
@@ -101,35 +103,43 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 		return e.toolMessage(call.ID, errText)
 	}
 
-	// Pre → Gate → Run → Post. Pre runs before permission Ask so org policy
-	// can deny without prompting the user.
-	pre := e.activeHooks().PreTool(ctx, hooks.Event{
-		SessionID: e.sessionID,
-		Cwd:       e.cwd,
-		Tool:      call.Function.Name,
-		ToolUseID: call.ID,
-		Input:     args,
-	})
-	if pre.Denied {
-		reason := pre.Reason
-		if reason == "" {
-			reason = "tool execution denied by hook"
-		}
-		reason = appendHookContext(reason, pre.Context)
-		return e.rejectResult(call, detail, reason, emit)
+	extRunner := e.activeExt()
+	if extRunner != nil {
+		extRunner.EmitToolExecutionStart(call.Function.Name, call.ID, args)
 	}
-	if len(pre.Input) > 0 {
-		args = pre.Input
-		if tool.DetailFromArgs != nil {
-			if d := tool.DetailFromArgs(args); d != "" {
-				detail = d
+
+	// ExtensionPre → Gate → Run → ExtensionPost. Pre runs before permission Ask
+	// so org policy can deny without prompting the user.
+	var preContext string
+	if extRunner != nil {
+		newArgs, blocked, reason, ctxText := extRunner.PreTool(ctx, call.Function.Name, call.ID, args)
+		preContext = ctxText
+		if blocked {
+			if reason == "" {
+				reason = "tool execution denied by extension"
 			}
-		} else {
-			detail = string(args)
+			reason = appendExtContext(reason, preContext)
+			if extRunner != nil {
+				extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
+			}
+			return e.rejectResult(call, detail, reason, emit)
+		}
+		if len(newArgs) > 0 {
+			args = newArgs
+			if tool.DetailFromArgs != nil {
+				if d := tool.DetailFromArgs(args); d != "" {
+					detail = d
+				}
+			} else {
+				detail = string(args)
+			}
 		}
 	}
 
 	if msg, rejected := e.checkPermission(ctx, call, args, detail, emit); rejected {
+		if extRunner != nil {
+			extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
+		}
 		return msg
 	}
 
@@ -142,6 +152,9 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 	)
 	if err != nil {
 		if ctx.Err() != nil {
+			if extRunner != nil {
+				extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
+			}
 			return e.cancelResult(call, emit)
 		}
 		errText = err.Error()
@@ -157,23 +170,26 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 		}
 	}
 
-	post := e.activeHooks().PostTool(ctx, hooks.Event{
-		SessionID: e.sessionID,
-		Cwd:       e.cwd,
-		Tool:      call.Function.Name,
-		ToolUseID: call.ID,
-		Input:     args,
-		Output:    output,
-		Err:       errText,
-	})
-
-	if post.Output != "" {
-		content = post.Output
-		output = post.Output
+	var postContext string
+	if extRunner != nil {
+		newContent, ctxText, _, _ := extRunner.PostTool(
+			ctx,
+			call.Function.Name,
+			call.ID,
+			args,
+			content,
+			err != nil,
+			errText,
+		)
+		postContext = ctxText
+		if newContent != "" {
+			content = newContent
+			output = newContent
+		}
+		extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, err != nil)
 	}
 
-	// post.Stop is ignored until a later slice wires it into the agent loop.
-	modelContent := appendHookContext(content, joinHookContexts(pre.Context, post.Context))
+	modelContent := appendExtContext(content, joinExtContexts(preContext, postContext))
 
 	if err != nil {
 		_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, errText, output)})
@@ -275,7 +291,7 @@ func (*Executor) toolMessage(id, content string) llm.Message {
 	}
 }
 
-func joinHookContexts(parts ...string) string {
+func joinExtContexts(parts ...string) string {
 	var nonempty []string
 	for _, p := range parts {
 		if p != "" {
@@ -285,14 +301,13 @@ func joinHookContexts(parts ...string) string {
 	return strings.Join(nonempty, "\n\n")
 }
 
-// appendHookContext adds model-facing hook notes. TUI Detail/Output stay clean.
-// Closing tags inside ctx are escaped so the model cannot break out of the block.
-func appendHookContext(content, ctx string) string {
+// appendExtContext adds model-facing extension notes. TUI Detail/Output stay clean.
+func appendExtContext(content, ctx string) string {
 	if ctx == "" {
 		return content
 	}
-	escaped := util.ReplaceAll(ctx, hookContextClose, "</hook_context\u200b>")
-	block := hookContextOpen + "\n" + escaped + "\n" + hookContextClose
+	escaped := util.ReplaceAll(ctx, extContextClose, "</ext_context\u200b>")
+	block := extContextOpen + "\n" + escaped + "\n" + extContextClose
 	if content == "" {
 		return block
 	}

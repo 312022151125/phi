@@ -7,6 +7,7 @@ require (
 	github.com/pulseaiclub/pli v0.1.0
 	github.com/pulseaiclub/xui v0.1.5
 	github.com/stretchr/testify v1.12.1
+	github.com/traefik/yaegi v0.0.0-20260209085605-fcb76d1ece0c
 	github.com/yuin/goldmark v1.8.5
 	gopkg.in/yaml.v3 v3.0.1
 )

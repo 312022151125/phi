@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/components/palette"
-	"github.com/pulseaiclub/phi/internal/hooks"
+	"github.com/pulseaiclub/phi/internal/extension"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
 )
 
@@ -57,14 +57,14 @@ func TestAgentsCommand_Toggle(t *testing.T) {
 	assert.False(t, *enabled)
 }
 
-func TestHooksCommand_ListAndReload(t *testing.T) {
+func TestExtensionsCommand_ListAndReload(t *testing.T) {
 	var reloaded bool
 	var pushedTitle string
 	var pushed []palette.PaletteCommand
-	cmd := HooksCommand(func() []palette.PaletteCommand {
+	cmd := ExtensionsCommand(func() []palette.PaletteCommand {
 		return []palette.PaletteCommand{{
-			ID:       "hook-demo",
-			Verb:     "demo  pre_tool  match=bash  [project]",
+			ID:       "ext-demo",
+			Verb:     "demo  [project]",
 			Disabled: true,
 		}}
 	}, func() { reloaded = true }, func(title string, cmds []palette.PaletteCommand) {
@@ -72,26 +72,26 @@ func TestHooksCommand_ListAndReload(t *testing.T) {
 		pushed = cmds
 	})
 
-	assert.Equal(t, "hooks", cmd.Noun)
+	assert.Equal(t, "extensions", cmd.Noun)
 	assert.Equal(t, "manage", cmd.Verb)
 	require.Len(t, cmd.Submenu, 2)
 
 	cmd.Submenu[0].Run() // list → PushSubmenu
-	assert.Equal(t, "Hooks on disk", pushedTitle)
+	assert.Equal(t, "Extensions on disk", pushedTitle)
 	require.NotEmpty(t, pushed)
-	assert.Equal(t, "hook-demo", pushed[0].ID)
+	assert.Equal(t, "ext-demo", pushed[0].ID)
 
 	cmd.Submenu[1].Run() // reload
 	assert.True(t, reloaded)
 }
 
-func TestHookListEntries(t *testing.T) {
-	entries := HookListEntries(nil, nil, nil)
+func TestExtensionListEntries(t *testing.T) {
+	entries := ExtensionListEntries(nil, nil, nil)
 	require.Len(t, entries, 1)
 	assert.True(t, entries[0].Disabled)
-	assert.Contains(t, entries[0].Verb, "No hooks")
+	assert.Contains(t, entries[0].Verb, "No extensions")
 
-	entries = HookListEntries(nil, []hooks.Warning{{Path: "x", Message: "bad"}}, nil)
+	entries = ExtensionListEntries(nil, []extension.Warning{{Path: "x", Message: "bad"}}, nil)
 	require.Len(t, entries, 1)
 	assert.Contains(t, entries[0].Verb, "warn:")
 }
@@ -186,8 +186,8 @@ func TestCommandRegistry_BuildPalette(t *testing.T) {
 		PushSubmenu: func(string, []palette.PaletteCommand) {
 			pushed = true
 		},
-		ListHooks: func() []palette.PaletteCommand {
-			return []palette.PaletteCommand{{ID: "hook-x", Verb: "x", Disabled: true}}
+		ListExtensions: func() []palette.PaletteCommand {
+			return []palette.PaletteCommand{{ID: "ext-x", Verb: "x", Disabled: true}}
 		},
 	})
 	require.GreaterOrEqual(t, len(cmds), 6)
@@ -197,16 +197,16 @@ func TestCommandRegistry_BuildPalette(t *testing.T) {
 	cmds[0].Submenu[0].Run()
 	assert.Equal(t, "gpt", model)
 
-	// hooks → list uses PushSubmenu, not *palette
-	var hooksCmd palette.PaletteCommand
+	// extensions → list uses PushSubmenu
+	var extCmd palette.PaletteCommand
 	for _, c := range cmds {
-		if c.ID == "hooks" {
-			hooksCmd = c
+		if c.ID == "extensions" {
+			extCmd = c
 			break
 		}
 	}
-	require.Equal(t, "hooks", hooksCmd.ID)
-	hooksCmd.Submenu[0].Run()
+	require.Equal(t, "extensions", extCmd.ID)
+	extCmd.Submenu[0].Run()
 	assert.True(t, pushed)
 }
 
@@ -228,14 +228,14 @@ func TestCommandRegistry_RegisterReplace(t *testing.T) {
 	assert.Equal(t, "replaced", r.SlashCommands()[0].Description)
 }
 
-func TestCommandRegistry_HookCommandsDoNotReplaceBuiltins(t *testing.T) {
+func TestCommandRegistry_ExtCommandsDoNotReplaceBuiltins(t *testing.T) {
 	r := NewBuiltinRegistry()
-	assert.False(t, r.registerHook(Command{Name: "clear", Slash: true, Insert: "/hijack"}))
+	assert.False(t, r.registerExt(Command{Name: "clear", Slash: true, Insert: "/hijack"}))
 	assert.Equal(t, "/clear", r.LookupInsert("clear"))
 
-	assert.True(t, r.registerHook(Command{Name: "review", Slash: true, Insert: "/review"}))
+	assert.True(t, r.registerExt(Command{Name: "review", Slash: true, Insert: "/review"}))
 	assert.Equal(t, "/review", r.LookupInsert("review"))
-	r.clearHookCommands()
+	r.clearExtCommands()
 	assert.Empty(t, r.LookupInsert("review"))
 	assert.Equal(t, "/clear", r.LookupInsert("clear"))
 }

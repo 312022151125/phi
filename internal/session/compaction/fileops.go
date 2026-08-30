@@ -61,7 +61,7 @@ func extractFileOperations(
 	prevCompactionIndex int,
 ) *FileOperation {
 	fileOps := &FileOperation{}
-	// Collect from previous compaction's details (if pi-generated)
+	// Collect from previous compaction's details (if extension-generated)
 	if prevCompactionIndex >= 0 {
 		comp := entries[prevCompactionIndex].(session.CompactionEntry)
 		if comp.Compaction.FromExtension != nil {

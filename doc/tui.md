@@ -9,7 +9,7 @@ cmd/main.go
   └─ editor.NewEditor(app, bus, ctrl, …)
        ├─ TranscriptPane   snap, list, mapper, subagents, welcome, text selection
        ├─ ComposerPane     chat, @/slash pickers, palette (input only)
-       ├─ FooterChrome     activity, spinner, tokens, update hint, hook status
+       ├─ FooterChrome     activity, spinner, tokens, update hint, extension status
        ├─ Overlays         permission ask, continue ask
        └─ Submitter        submit / cancel / slash / bash → Controller
 ```
@@ -40,7 +40,7 @@ internal/tui/
 ├── footer/                 # FooterChrome, token label helpers
 ├── overlays/               # permission + continue ask
 ├── submit/                 # Submitter, BashRunner
-├── commands/               # registry, builtins, SessionCommands, HookCommands
+├── commands/               # registry, builtins, SessionCommands, ExtCommands
 └── pathutil/               # short path + git branch labels
 ```
 
@@ -50,10 +50,10 @@ internal/tui/
 | `controller` | `Controller` runs `agent.Engine`; publishes `Msg` to the bus only |
 | `transcript` | Projects `session.Event` → message list; sub-agent rows; copy selection |
 | `composer` | Keyboard routing for chat, `/` slash, `@` mention, Ctrl+K palette |
-| `footer` | Spinner, activity line, token/context labels, update hint, hook status |
+| `footer` | Spinner, activity line, token/context labels, update hint, extension status |
 | `overlays` | Modal permission / continue-ask panels; replaces composer when active |
 | `submit` | User submit path: agent prompt, slash commands, `!bash`, cancel |
-| `commands` | Slash/palette registry; session load/clear; hook command bridge |
+| `commands` | Slash/palette registry; session load/clear; extension command bridge |
 | `pathutil` | Cwd shortening and git branch labels for composer chrome |
 
 Dumb rendering widgets stay in `internal/components/` (chat, input, palette, mention, transcript blocks, …).
@@ -83,7 +83,7 @@ Inside `NewEditor`, the `CommandRegistry` (builtins) is built first, then panes 
 2. `TranscriptPane` — shares footer spinner; usage callback → footer tokens
 3. `ComposerPane` — chat chrome; footer binds composer for labels
 4. `Overlays` — permission/continue UI; uses footer activity + composer focus
-5. `SessionCommands`, `HookCommands`, `Submitter` (owns `BashRunner`) — explicit deps, no `*Editor` fields
+5. `SessionCommands`, `ExtCommands`, `Submitter` (owns `BashRunner`) — explicit deps, no `*Editor` fields
 6. `ComposerPane.Wire(...)` — connects composer keyboard path to submitter, overlays, bus
 
 `Editor` does **not** call `project.GetDefaultProject` or construct `Controller`.
@@ -112,7 +112,7 @@ app frame
 
 ## Bus: publish and drain
 
-**Publish** (any goroutine): widgets, `Controller`, background tasks (`StartBranchWatch`, `StartUpdateCheck`), hook commands.
+**Publish** (any goroutine): widgets, `Controller`, background tasks (`StartBranchWatch`, `StartUpdateCheck`), extension commands.
 
 **Drain** (UI goroutine only, at start of `Draw`):
 
@@ -128,10 +128,10 @@ app frame
 | `SessionEventMsg`, `JobProgressMsg` | `TranscriptPane` (in `drainBus`) |
 | `SubmitMsg`, `CancelStreamMsg` | `Submitter` |
 | `PermissionAskMsg`, `PermissionDismissMsg`, `ContinueAskMsg`, `ContinueDismissMsg` | `Overlays` |
-| `SetActivityMsg`, `ClearIfActivityMsg`, `UpdateAvailableMsg`, `HookSessionEffectsMsg` | `FooterChrome` |
+| `SetActivityMsg`, `ClearIfActivityMsg`, `UpdateAvailableMsg`, `ExtSessionEffectsMsg` | `FooterChrome` |
 | `MentionResultsMsg`, `BranchLabelMsg` | `ComposerPane` |
 | `ToastMsg` | `Editor` toast overlay |
-| `HookCommandResultMsg` | `HookCommands` |
+| `ExtCommandResultMsg` | `ExtCommands` |
 | `RedrawMsg` | no-op (redraw already scheduled) |
 
 ---
@@ -145,7 +145,7 @@ User Enter in composer
   → ComposerPane publishes SubmitMsg{text}
   → drainBus → Submitter.Submit
        ├─ "!cmd" prefix  → BashRunner (local shell, SessionEventMsg for output)
-       ├─ "/slash"       → CommandRegistry / SessionCommands / HookCommands
+       ├─ "/slash"       → CommandRegistry / SessionCommands / ExtCommands
        └─ plain text     → Controller.Submit → agent.Engine.Loop (background)
                               └─ SessionEventMsg, SetActivityMsg, PermissionAskMsg, …
 ```
@@ -187,14 +187,14 @@ Engine needs approval
 
 Composer input is blocked while an overlay is active (`OverlayBlocksComposer`).
 
-### 5. Slash / palette / hooks
+### 5. Slash / palette / extensions
 
 ```text
 /something or Ctrl+K
   → ComposerPane local UI OR SubmitMsg with slash text
   → Submitter.dispatchSlash → CommandRegistry
   → SessionCommands (/clear, /resume, …) or builtins
-  → HookCommands (async) → HookCommandResultMsg → palette push / toast
+  → ExtCommands (async) → ExtCommandResultMsg → palette push / toast
 ```
 
 `commandBridge` in `editor` builds `commands.CommandContext` for builtins (model switch, theme, permissions, copy last message, …).
@@ -205,7 +205,7 @@ Composer input is blocked while an overlay is active (`OverlayBlocksComposer`).
 | ------ | --- | ------ |
 | `StartBranchWatch` | `BranchLabelMsg` | composer bottom-right label |
 | `StartUpdateCheck` | `UpdateAvailableMsg` | footer update hint |
-| Hook session lifecycle | `HookSessionEffectsMsg` | footer status + toast |
+| Extension session lifecycle | `ExtSessionEffectsMsg` | footer status + toast |
 
 ---
 
@@ -215,7 +215,7 @@ Composer input is blocked while an overlay is active (`OverlayBlocksComposer`).
 | ----- | -------------- |
 | `internal/components/*` | Draw/handle only; no bus, no engine |
 | `internal/tui/*` | State, routing, session projection, submit |
-| `internal/tui/controller` | Agent engine, jobs, permission gate, hooks/MCP |
+| `internal/tui/controller` | Agent engine, jobs, permission gate, extensions/MCP |
 | `cmd` | Config, xui, bus/controller construction, `NewEditor` |
 
 Reference implementation patterns: panda `interactive.go` (assembly), `message.go` (transcript), `submit.go` (submit/cancel/bash).

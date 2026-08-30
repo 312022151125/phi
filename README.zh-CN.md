@@ -193,7 +193,7 @@ Anthropic Messages API；其余走 OpenAI 兼容的 `/chat/completions` 路径�
 ├── config.yaml   # 全局配置
 ├── bin/          # 下载的搜索工具（fd、ripgrep）
 ├── skills/       # SKILL.md 技能目录
-├── hooks/        # plugin.json + hook 脚本
+├── extensions/   # yaegi Go 扩展（*.go）
 ├── jobs/         # 子代理任务产物（meta、logs、result.md）
 └── session/      # 持久化会话，每个工作目录一个目录
     └── <encoded-cwd>/
@@ -335,34 +335,25 @@ Instructions the agent should follow when this skill is relevant.
 在 TUI 中，审批对话框会替换编辑器，提供批准、带反馈地拒绝、或对本次会话 /
 所有会话全部允许等选项。面板的 设置 → 权限 条目可切换会话级绕过。
 
-## Hooks（钩子）
+## Extensions（扩展）
 
-Hooks 在每个工具调用周围运行自定义逻辑——权限门控之前、执行之后。用于组织
-策略、审计或改写工具输入，无需改动 phi 二进制或 `config.yaml`。
+扩展是用 yaegi 加载的 Go 源文件：订阅工具/会话事件、注册 LLM 工具、添加斜杠命令，无需重编 phi。
 
-每个插件是 `hooks/` 下的一个目录，`plugin.json` 与脚本放在一起（事件表）：
+```go
+package main
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "bash",
-        "hooks": [
-          { "type": "command", "command": "./guard.sh", "timeout": 5 }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [{ "type": "command", "command": "./stamp.sh" }]
-      }
-    ]
-  }
+import "github.com/pulseaiclub/phi/ext"
+
+func Extension(phi *ext.API) {
+	phi.On(ext.EventToolCall, func(ev ext.ToolCallEvent, ctx *ext.Context) *ext.ToolCallResult {
+		// return &ext.ToolCallResult{Block: true, Reason: "..."}
+		return nil
+	})
 }
 ```
 
-Hooks 从 `~/.phi/hooks/` 和 `<cwd>/.phi/hooks/` 加载；同名插件 id（目录名）的项目配置会覆盖用户配置。命令经 shell 执行，stdin/stdout 为 CC 形态 JSON。TUI 中 `Ctrl+K` → hooks 列出或重新加载。完整指南见 [doc/hooks.md](doc/hooks.md)。
+从 `~/.phi/extensions/` 与 `<cwd>/.phi/extensions/` 加载（`*.go` 或 `*/index.go`）。
+TUI：`Ctrl+K` → **extensions**。禁用：`PHI_EXTENSIONS=off`。完整指南见 [doc/extensions.md](doc/extensions.md)。
 
 ## MCP
 
