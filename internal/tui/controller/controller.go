@@ -10,9 +10,11 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/pulseaiclub/phi/ext"
 	"github.com/pulseaiclub/phi/internal/agent"
+	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/debuglog"
-	"github.com/pulseaiclub/phi/internal/hooks"
+	"github.com/pulseaiclub/phi/internal/extension"
 	"github.com/pulseaiclub/phi/internal/job"
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/mcp"
@@ -33,7 +35,6 @@ type EngineController struct {
 	streamMu     sync.Mutex
 	streamCancel context.CancelFunc
 	streamGen    int
-	lastUsage    hooks.SessionUsage // usage of the last completed turn (streamMu)
 
 	bus *Bus
 
@@ -47,7 +48,7 @@ type EngineController struct {
 	askTimeoutSec int
 	allowAll      atomic.Bool // session-wide allow-all for this process
 	agentsEnabled atomic.Bool // when false, agent_* tools are not registered
-	hooksManager  atomic.Pointer[hooks.Manager]
+	extRunner     atomic.Pointer[extension.Runner]
 	mcpPool       *mcp.Pool
 
 	// lastJobProgress dedupes identical Progress publishes (key → signature).
@@ -92,12 +93,13 @@ func NewController(bus *Bus, proj *project.Project, cwd string) (*EngineControll
 	c.initGate(config.Permissions)
 	c.agentsEnabled.Store(config.Agents.Enabled)
 
-	hooksManager := loadHooksManager(proj)
-	c.hooksManager.Store(hooksManager)
+	extRunner := loadExtensions(proj)
+	c.extRunner.Store(extRunner)
+	c.bindExtensionHost(extRunner)
 
 	jobs, err := agent.NewJobManager(proj.JobsDir(), c.modelCfg, func() llm.ModelConfig {
 		return c.modelCfg
-	}, c.Hooks)
+	}, c.Extensions)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +122,7 @@ func NewController(bus *Bus, proj *project.Project, cwd string) (*EngineControll
 		Ask:         c.askPermission,
 		ContinueAsk: c.askContinue,
 		Jobs:        c.engineJobs(),
-		Hooks:       hooksManager,
+		Extensions:  extRunner,
 		MCP:         c.mcpPool,
 	})
 	if err != nil {
@@ -228,17 +230,17 @@ func (c *EngineController) engineJobs() *job.Manager {
 	return c.jobs
 }
 
-// Hooks returns the currently loaded hooks manager (may be nil).
-func (c *EngineController) Hooks() *hooks.Manager {
+// Extensions returns the currently loaded extension runner (may be nil).
+func (c *EngineController) Extensions() *extension.Runner {
 	if c == nil {
 		return nil
 	}
-	return c.hooksManager.Load()
+	return c.extRunner.Load()
 }
 
-// ReloadHooks re-discovers hooks from disk and swaps the manager on the engine
-// (and on future sub-agents via Hooks()).
-func (c *EngineController) ReloadHooks() (loaded int, warns []hooks.Warning, err error) {
+// ReloadExtensions re-discovers extensions from disk and swaps the runner on the
+// engine (and on future sub-agents via Extensions()).
+func (c *EngineController) ReloadExtensions() (loaded int, warns []extension.Warning, err error) {
 	if c == nil {
 		return 0, nil, errors.New("controller not initialized")
 	}
@@ -246,21 +248,24 @@ func (c *EngineController) ReloadHooks() (loaded int, warns []hooks.Warning, err
 	if proj == nil {
 		return 0, nil, errors.New("project not available")
 	}
-	found, warns, err := hooks.Discover(proj.Global().HooksDir(), proj.HooksDir())
+	r, warns, err := extension.Load(proj.Global().ExtensionsDir(), proj.ExtensionsDir())
 	if err != nil {
 		return 0, warns, err
 	}
-	mgr := hooks.NewManager(found...)
-	hooks.LogWarnings(warns)
-	c.hooksManager.Store(mgr)
+	logExtensionWarnings(warns)
+	c.bindExtensionHost(r)
+	c.extRunner.Store(r)
 	if c.engine != nil {
-		c.engine.SetHooks(mgr)
+		c.engine.SetExtensions(r)
 	}
-	return len(found), warns, nil
+	if r == nil {
+		return 0, warns, nil
+	}
+	return len(r.Loaded()), warns, nil
 }
 
-// ListHooks returns the current on-disk discovery (does not swap the manager).
-func (c *EngineController) ListHooks() ([]hooks.Discovered, []hooks.Warning, error) {
+// ListExtensions returns the current on-disk discovery (does not swap the runner).
+func (c *EngineController) ListExtensions() ([]extension.Discovered, []extension.Warning, error) {
 	if c == nil {
 		return nil, nil, errors.New("controller not initialized")
 	}
@@ -268,22 +273,71 @@ func (c *EngineController) ListHooks() ([]hooks.Discovered, []hooks.Warning, err
 	if proj == nil {
 		return nil, nil, errors.New("project not available")
 	}
-	return hooks.Discover(proj.Global().HooksDir(), proj.HooksDir())
+	return extension.Discover(proj.Global().ExtensionsDir(), proj.ExtensionsDir())
 }
 
-// loadHooksManager discovers ~/.phi/hooks and <cwd>/.phi/hooks.
-// Load errors are non-fatal (fail-open: no hooks). Child engines stay nil until spawn.
-func loadHooksManager(proj *project.Project) *hooks.Manager {
+// loadExtensions discovers ~/.phi/extensions and <cwd>/.phi/extensions.
+// Load errors are non-fatal (fail-open: no extensions). Child engines stay nil until spawn.
+func loadExtensions(proj *project.Project) *extension.Runner {
 	if proj == nil {
 		return nil
 	}
-	mgr, warns, err := hooks.Load(proj.Global().HooksDir(), proj.HooksDir())
+	r, warns, err := extension.Load(proj.Global().ExtensionsDir(), proj.ExtensionsDir())
 	if err != nil {
-		debuglog.Logf("hooks: load failed: %v", err)
+		debuglog.Logf("extension: load failed: %v", err)
 		return nil
 	}
-	hooks.LogWarnings(warns)
-	return mgr
+	logExtensionWarnings(warns)
+	return r
+}
+
+func logExtensionWarnings(warns []extension.Warning) {
+	for _, w := range warns {
+		debuglog.Logf("extension: %s", w.String())
+	}
+	if n := len(warns); n > 0 {
+		debuglog.Logf("extension: %d warning(s) while loading", n)
+	}
+}
+
+func (c *EngineController) bindExtensionHost(r *extension.Runner) {
+	if c == nil || r == nil {
+		return
+	}
+	cwd := ""
+	sessionID := ""
+	if c.engine != nil {
+		cwd = c.engine.SessionCwd()
+		sessionID = c.engine.SessionID()
+	} else if c.proj != nil {
+		cwd = c.proj.Root()
+	}
+	ui := extension.BusUI{
+		NotifyFn: func(message, kind string) {
+			toastKind := toast.ToastSuccess
+			switch strings.ToLower(kind) {
+			case "warning":
+				toastKind = toast.ToastWarning
+			case "error":
+				toastKind = toast.ToastError
+			}
+			c.publish(ToastMsg{Message: message, Kind: toastKind, Duration: 3 * time.Second})
+		},
+		SetStatusFn: func(_, text string) {
+			c.publish(ExtSessionEffectsMsg{Status: text, StatusSet: true})
+		},
+	}
+	r.Bind(ext.HostOpts{
+		UI:        ui,
+		Cwd:       cwd,
+		SessionID: sessionID,
+		HasUI:     true,
+		RefreshTools: func() {
+			if c.engine != nil {
+				c.engine.SetExtensions(r)
+			}
+		},
+	})
 }
 
 // askPermission blocks until the confirmation UI answers.
@@ -376,8 +430,8 @@ func (c *EngineController) SetModel(name string) error {
 	c.engine.SetPermission(c.gate, c.askPermission)
 	c.engine.SetContinueAsk(c.askContinue)
 	c.engine.SetJobs(c.engineJobs())
-	if _, _, err := c.ReloadHooks(); err != nil {
-		debuglog.Logf("hooks: reload on SetModel: %v", err)
+	if _, _, err := c.ReloadExtensions(); err != nil {
+		debuglog.Logf("extension: reload on SetModel: %v", err)
 	}
 	if err := c.engine.SetModel(cfg); err != nil {
 		return err
@@ -440,7 +494,7 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 		c.publishSessionEffects(out)
 		reason := out.Reason
 		if reason == "" {
-			reason = "session switch denied by hook"
+			reason = "session switch denied by extension"
 		}
 		return "", errors.New(reason)
 	}
@@ -459,8 +513,8 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 		cfg = c.proj.Config().Model()
 	}
 
-	hooksManager := loadHooksManager(c.proj)
-	c.hooksManager.Store(hooksManager)
+	extRunner := loadExtensions(c.proj)
+	c.extRunner.Store(extRunner)
 	eng, err := agent.NewEngine(agent.EngineOpts{
 		Model: cfg,
 		SessionOpts: agent.SessionOpts{
@@ -473,7 +527,7 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 		Ask:         c.askPermission,
 		ContinueAsk: c.askContinue,
 		Jobs:        c.engineJobs(),
-		Hooks:       hooksManager,
+		Extensions:  extRunner,
 		MCP:         c.mcpPool,
 	})
 	if err != nil {
@@ -484,7 +538,6 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 	}
 	c.engine = eng
 	c.modelCfg = cfg
-	c.resetUsage()
 	c.emitSessionStart("resume", eng.SessionID(), prevID)
 	return cwdWarning, nil
 }
@@ -501,7 +554,7 @@ func (c *EngineController) Clear() error {
 		c.publishSessionEffects(out)
 		reason := out.Reason
 		if reason == "" {
-			reason = "session switch denied by hook"
+			reason = "session switch denied by extension"
 		}
 		return errors.New(reason)
 	}
@@ -518,7 +571,7 @@ func (c *EngineController) Clear() error {
 		cfg = c.proj.Config().Model()
 	}
 
-	hooksMgr := c.Hooks()
+	extRunner := c.Extensions()
 	engine, err := agent.NewEngine(agent.EngineOpts{
 		Model: cfg,
 		SessionOpts: agent.SessionOpts{
@@ -530,7 +583,7 @@ func (c *EngineController) Clear() error {
 		Ask:         c.askPermission,
 		ContinueAsk: c.askContinue,
 		Jobs:        c.engineJobs(),
-		Hooks:       hooksMgr,
+		Extensions:  extRunner,
 		MCP:         c.mcpPool,
 	})
 	if err != nil {
@@ -538,7 +591,6 @@ func (c *EngineController) Clear() error {
 	}
 	c.engine = engine
 	c.modelCfg = cfg
-	c.resetUsage()
 	c.emitSessionStart("new", engine.SessionID(), prevID)
 	return nil
 }
@@ -595,97 +647,57 @@ func (c *EngineController) Close() {
 	}
 }
 
-func (c *EngineController) sessionBeforeSwitch(reason, fromID, targetID string) hooks.SessionOutcome {
-	mgr := c.Hooks()
-	if mgr == nil {
-		return hooks.SessionOutcome{}
+func (c *EngineController) sessionBeforeSwitch(reason, fromID, targetID string) ext.SessionEffects {
+	r := c.Extensions()
+	if r == nil {
+		return ext.SessionEffects{}
 	}
-	return mgr.SessionBeforeSwitch(context.Background(), hooks.SessionEvent{
-		SessionID:       fromID,
-		Cwd:             c.cwd,
+	r.SetMeta(fromID, c.cwd)
+	return r.EmitSessionBeforeSwitch(ext.SessionBeforeSwitchEvent{
 		Reason:          reason,
 		TargetSessionID: targetID,
-		Usage:           c.sessionUsage(),
 	})
 }
 
 func (c *EngineController) sessionShutdown(reason, sessionID string) {
-	mgr := c.Hooks()
-	if mgr == nil {
+	r := c.Extensions()
+	if r == nil {
 		return
 	}
-	out := mgr.SessionShutdown(context.Background(), hooks.SessionEvent{
-		SessionID: sessionID,
-		Cwd:       c.cwd,
-		Reason:    reason,
-		Usage:     c.sessionUsage(),
+	r.SetMeta(sessionID, c.cwd)
+	out := r.EmitSessionShutdown(ext.SessionShutdownEvent{
+		Reason: reason,
 	})
 	c.publishSessionEffects(out)
 }
 
 func (c *EngineController) emitSessionStart(reason, sessionID, previousID string) {
-	mgr := c.Hooks()
-	if mgr == nil {
+	r := c.Extensions()
+	if r == nil {
 		return
 	}
-	out := mgr.SessionStart(context.Background(), hooks.SessionEvent{
-		SessionID:         sessionID,
-		Cwd:               c.cwd,
+	r.SetMeta(sessionID, c.cwd)
+	out := r.EmitSessionStart(ext.SessionStartEvent{
 		Reason:            reason,
 		PreviousSessionID: previousID,
-		Usage:             c.sessionUsage(),
 	})
 	c.publishSessionEffects(out)
 }
 
-// sessionUsage returns the token usage of the last completed turn observed by
-// this controller's run loop; zero when no turn has completed (or the provider
-// never reported usage). Usage comes from the stream, not the session store, so
-// a resumed session reports zero until its first turn finishes.
-func (c *EngineController) sessionUsage() hooks.SessionUsage {
-	c.streamMu.Lock()
-	defer c.streamMu.Unlock()
-	return c.lastUsage
-}
-
-// recordUsage snapshots the completed turn's usage for session lifecycle hooks
-// and fires post_turn audit hooks (cache metrics, etc.).
-func (c *EngineController) recordUsage(m session.Message) {
-	usage := hooks.SessionUsage{
-		PromptTokens:     m.Usage.PromptTokens,
-		CompletionTokens: m.Usage.CompletionTokens,
-		CachedTokens:     m.Usage.CachedTokens,
-		TotalTokens:      m.Usage.TotalTokens,
-	}
-	c.streamMu.Lock()
-	c.lastUsage = usage
-	c.streamMu.Unlock()
-
-	mgr := c.Hooks()
-	if mgr == nil {
+// recordTurnEnd fires turn_end after a completed assistant turn (PostTurn replacement).
+func (c *EngineController) recordTurnEnd() {
+	r := c.Extensions()
+	if r == nil {
 		return
 	}
-	mgr.PostTurn(context.Background(), hooks.SessionEvent{
-		SessionID: c.SessionID(),
-		Cwd:       c.cwd,
-		MessageID: m.ID,
-		Usage:     usage,
-	})
+	r.EmitTurnEnd(0)
 }
 
-// resetUsage clears captured usage when switching sessions so a new or resumed
-// session does not inherit the previous one's counts.
-func (c *EngineController) resetUsage() {
-	c.streamMu.Lock()
-	c.lastUsage = hooks.SessionUsage{}
-	c.streamMu.Unlock()
-}
-
-func (c *EngineController) publishSessionEffects(out hooks.SessionOutcome) {
+func (c *EngineController) publishSessionEffects(out ext.SessionEffects) {
 	if out.Toast == "" && !out.StatusSet {
 		return
 	}
-	c.publish(HookSessionEffectsMsg{
+	c.publish(ExtSessionEffectsMsg{
 		Toast:     out.Toast,
 		Status:    out.Status,
 		StatusSet: out.StatusSet,
@@ -764,9 +776,8 @@ func (c *EngineController) runLoop(
 		}
 		if ev != nil {
 			c.publish(SessionEventMsg{Event: ev})
-			if up, ok := ev.(session.AssistantMessageUpdate); ok && up.Message.State == session.StateComplete &&
-				up.Message.Usage.Reported() {
-				c.recordUsage(up.Message)
+			if up, ok := ev.(session.AssistantMessageUpdate); ok && up.Message.State == session.StateComplete {
+				c.recordTurnEnd()
 			}
 		}
 	}

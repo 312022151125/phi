@@ -20,14 +20,14 @@ type commandBridge struct {
 	submitter  *submit.Submitter
 	sessions   *commands.SessionCommands
 
-	reloadHooks     func()
-	listHooks       func() []palette.PaletteCommand
-	setModel        func(string)
-	applyTheme      func(string)
-	setPermissions  func(bool)
-	setAgents       func(bool)
-	addSkill        func(string)
-	copyLastMessage func()
+	reloadExtensions func()
+	listExtensions   func() []palette.PaletteCommand
+	setModel         func(string)
+	applyTheme       func(string)
+	setPermissions   func(bool)
+	setAgents        func(bool)
+	addSkill         func(string)
+	copyLastMessage  func()
 
 	modelNames []string
 	skillPath  string
@@ -42,8 +42,8 @@ func newCommandBridge(
 	sessions *commands.SessionCommands,
 	modelNames []string,
 	skillPath string,
-	reloadHooks func(),
-	listHooks func() []palette.PaletteCommand,
+	reloadExtensions func(),
+	listExtensions func() []palette.PaletteCommand,
 	setModel func(string),
 	applyTheme func(string),
 	setPermissions func(bool),
@@ -52,22 +52,22 @@ func newCommandBridge(
 	copyLastMessage func(),
 ) *commandBridge {
 	return &commandBridge{
-		bus:             bus,
-		composer:        composer,
-		transcript:      transcript,
-		ctrl:            ctrl,
-		submitter:       submitter,
-		sessions:        sessions,
-		reloadHooks:     reloadHooks,
-		listHooks:       listHooks,
-		setModel:        setModel,
-		applyTheme:      applyTheme,
-		setPermissions:  setPermissions,
-		setAgents:       setAgents,
-		addSkill:        addSkill,
-		copyLastMessage: copyLastMessage,
-		modelNames:      append([]string(nil), modelNames...),
-		skillPath:       skillPath,
+		bus:              bus,
+		composer:         composer,
+		transcript:       transcript,
+		ctrl:             ctrl,
+		submitter:        submitter,
+		sessions:         sessions,
+		reloadExtensions: reloadExtensions,
+		listExtensions:   listExtensions,
+		setModel:         setModel,
+		applyTheme:       applyTheme,
+		setPermissions:   setPermissions,
+		setAgents:        setAgents,
+		addSkill:         addSkill,
+		copyLastMessage:  copyLastMessage,
+		modelNames:       append([]string(nil), modelNames...),
+		skillPath:        skillPath,
 	}
 }
 
@@ -93,15 +93,15 @@ func (b *commandBridge) context() commands.CommandContext {
 			}
 			b.sessions.Clear()
 		},
-		SetModel:        b.setModel,
-		ApplyTheme:      b.applyTheme,
-		SetPermissions:  b.setPermissions,
-		SetAgents:       b.setAgents,
-		ReloadHooks:     b.reloadHooks,
-		ListHooks:       b.listHooks,
-		AddSkill:        b.addSkill,
-		CopyLastMessage: b.copyLastMessage,
-		ModelNames:      b.modelNames,
-		SkillPath:       b.skillPath,
+		SetModel:         b.setModel,
+		ApplyTheme:       b.applyTheme,
+		SetPermissions:   b.setPermissions,
+		SetAgents:        b.setAgents,
+		ReloadExtensions: b.reloadExtensions,
+		ListExtensions:   b.listExtensions,
+		AddSkill:         b.addSkill,
+		CopyLastMessage:  b.copyLastMessage,
+		ModelNames:       b.modelNames,
+		SkillPath:        b.skillPath,
 	}
 }

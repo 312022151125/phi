@@ -37,8 +37,8 @@ func (g GlobalLayout) LookBin(name string) (string, error) {
 // SkillsDir returns the directory for SKILL.md files.
 func (g GlobalLayout) SkillsDir() string { return filepath.Join(g.root, "skills") }
 
-// HooksDir returns the directory for hook plugins (plugin.json).
-func (g GlobalLayout) HooksDir() string { return filepath.Join(g.root, "hooks") }
+// ExtensionsDir returns the directory for Go extension plugins (~/.phi/extensions).
+func (g GlobalLayout) ExtensionsDir() string { return filepath.Join(g.root, "extensions") }
 
 // SessionBase returns the root directory for persisted sessions.
 func (g GlobalLayout) SessionBase() string { return filepath.Join(g.root, "session") }
@@ -57,10 +57,10 @@ func (p *Project) JobsDir() string {
 	return p.global.JobsDir()
 }
 
-// HooksDir returns <root>/.phi/hooks, the per-project hooks directory
-// (user hooks live under Global().HooksDir()).
-func (p *Project) HooksDir() string {
-	return filepath.Join(p.root, ".phi", "hooks")
+// ExtensionsDir returns <root>/.phi/extensions, the per-project extensions
+// directory (user extensions live under Global().ExtensionsDir()).
+func (p *Project) ExtensionsDir() string {
+	return filepath.Join(p.root, ".phi", "extensions")
 }
 
 // MCPConfigFile returns <root>/.phi/mcp.json, the per-project MCP config
@@ -98,13 +98,13 @@ func (p *Project) LoadConfig() error {
 }
 
 // ensureGlobalDirs creates the global phi home directories. It is what makes
-// ~/.phi/{bin,skills,hooks,session,jobs} exist from the very first startup.
+// ~/.phi/{bin,skills,extensions,session,jobs} exist from the very first startup.
 func ensureGlobalDirs(global GlobalLayout) error {
 	dirs := []string{
 		global.Root(),
 		global.BinDir(),
 		global.SkillsDir(),
-		global.HooksDir(),
+		global.ExtensionsDir(),
 		global.SessionBase(),
 		global.JobsDir(),
 	}

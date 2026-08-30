@@ -144,8 +144,8 @@ func (f *FooterChrome) ClearTokenDisplay() {
 	}
 }
 
-// SetHookStatus overrides the footer activity label prefix.
-func (f *FooterChrome) SetHookStatus(status string) {
+// SetExtensionStatus overrides the footer activity label prefix.
+func (f *FooterChrome) SetExtensionStatus(status string) {
 	if f != nil {
 		f.hookStatus = status
 	}
@@ -166,7 +166,7 @@ func (f *FooterChrome) Apply(m controller.Msg) {
 	case controller.UpdateAvailableMsg:
 		latest := strings.TrimPrefix(msg.Latest, "v")
 		f.updateHint = latest + " available · phi update"
-	case controller.HookSessionEffectsMsg:
+	case controller.ExtSessionEffectsMsg:
 		if msg.StatusSet {
 			f.hookStatus = msg.Status
 		}

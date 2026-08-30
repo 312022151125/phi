@@ -4,7 +4,6 @@ import (
 	"time"
 
 	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/hooks"
 	"github.com/pulseaiclub/phi/internal/job"
 	"github.com/pulseaiclub/phi/internal/permission"
 	"github.com/pulseaiclub/phi/internal/session"
@@ -107,27 +106,26 @@ type UpdateAvailableMsg struct {
 
 func (UpdateAvailableMsg) isMsg() {}
 
-// HookCommandResultMsg delivers the result of a Command hook slash command.
-type HookCommandResultMsg struct {
+// ExtCommandResultMsg delivers the result of an extension slash command.
+type ExtCommandResultMsg struct {
 	Gen       uint64
 	Submit    string
 	Toast     string
 	Status    string
 	StatusSet bool
-	List      *hooks.CommandList
 	Err       string
 }
 
-func (HookCommandResultMsg) isMsg() {}
+func (ExtCommandResultMsg) isMsg() {}
 
-// HookSessionEffectsMsg applies toast/status from session lifecycle hooks.
-type HookSessionEffectsMsg struct {
+// ExtSessionEffectsMsg applies toast/status from session lifecycle extensions.
+type ExtSessionEffectsMsg struct {
 	Toast     string
 	Status    string
 	StatusSet bool
 }
 
-func (HookSessionEffectsMsg) isMsg() {}
+func (ExtSessionEffectsMsg) isMsg() {}
 
 // JobProgressMsg carries a live sub-agent tool update for the nested tree UI.
 type JobProgressMsg struct {

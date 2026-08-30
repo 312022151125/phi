@@ -128,11 +128,11 @@ func (o *Sphere) Draw(ctx components.DrawContext) components.Surface {
 				continue
 			}
 			gi := int(math.Min(float64(nChars-1), math.Floor(g*float64(nChars))))
-			pi := int(math.Min(float64(nPal-1), math.Floor(g*float64(nPal))))
+			ci := int(math.Min(float64(nPal-1), math.Floor(g*float64(nPal))))
 			s.SetCell(col, row, xui.Cell{
 				Char:  string(chars[gi]),
 				Width: 1,
-				Style: xui.Style{Fg: o.palette[pi]},
+				Style: xui.Style{Fg: o.palette[ci]},
 			})
 		}
 	}

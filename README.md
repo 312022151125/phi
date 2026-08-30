@@ -184,7 +184,7 @@ OpenAI-compatible `/chat/completions` path.
 ├── config.yaml   # global configuration
 ├── bin/          # downloaded search tools (fd, ripgrep)
 ├── skills/       # SKILL.md skill directories
-├── hooks/        # plugin.json + hook scripts
+├── extensions/   # yaegi Go extensions (*.go)
 ├── jobs/         # sub-agent job artifacts (meta, logs, result.md)
 └── session/      # persisted sessions, one dir per working directory
     └── <encoded-cwd>/
@@ -336,39 +336,27 @@ In the TUI, an approval dialog replaces the editor with options to approve,
 deny with feedback, or allow all for the session / for every session. The
 palette's settings → permissions entry toggles session-wide bypass.
 
-## Hooks
+## Extensions
 
-Hooks run custom logic around each tool call — before the permission gate and
-after execution. Use them for organization policy, audit trails, or rewriting
-tool input, without changing phi's binary or `config.yaml`.
+Extensions are Go files loaded with yaegi. They subscribe to tool/session
+events, register LLM tools, and add slash commands — without rebuilding phi.
 
-Each plugin is a directory under `hooks/` with `plugin.json` next to its
-scripts (event map):
+```go
+package main
 
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "bash",
-        "hooks": [
-          { "type": "command", "command": "./guard.sh", "timeout": 5 }
-        ]
-      }
-    ],
-    "PostToolUse": [
-      {
-        "hooks": [{ "type": "command", "command": "./stamp.sh" }]
-      }
-    ]
-  }
+import "github.com/pulseaiclub/phi/ext"
+
+func Extension(phi *ext.API) {
+	phi.On(ext.EventToolCall, func(ev ext.ToolCallEvent, ctx *ext.Context) *ext.ToolCallResult {
+		// return &ext.ToolCallResult{Block: true, Reason: "..."}
+		return nil
+	})
 }
 ```
 
-Hooks load from `~/.phi/hooks/` and `<cwd>/.phi/hooks/`; a project plugin with
-the same id (directory name) replaces the user plugin. Commands run through the
-shell with CC-shaped stdin/stdout JSON. In the TUI, list or reload via
-`Ctrl+K` → hooks. Full guide: [doc/hooks.md](doc/hooks.md).
+Load from `~/.phi/extensions/` and `<cwd>/.phi/extensions/` (`*.go` or
+`*/index.go`). In the TUI: `Ctrl+K` → **extensions**. Disable with
+`PHI_EXTENSIONS=off`. Full guide: [doc/extensions.md](doc/extensions.md).
 
 ## MCP
 

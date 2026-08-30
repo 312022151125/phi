@@ -8,7 +8,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
-	"github.com/pulseaiclub/phi/internal/hooks"
+	"github.com/pulseaiclub/phi/internal/extension"
 	"github.com/pulseaiclub/phi/internal/llm/skills"
 )
 
@@ -86,9 +86,9 @@ func registerBuiltinCommands(r *CommandRegistry) {
 		},
 	})
 	r.Register(Command{
-		Name: "hooks",
+		Name: "extensions",
 		PaletteRoot: func(ctx CommandContext) palette.PaletteCommand {
-			return HooksCommand(ctx.ListHooks, ctx.ReloadHooks, ctx.PushSubmenu)
+			return ExtensionsCommand(ctx.ListExtensions, ctx.ReloadExtensions, ctx.PushSubmenu)
 		},
 	})
 	r.Register(Command{
@@ -233,28 +233,27 @@ func AgentsCommand(set func(enabled bool)) palette.PaletteCommand {
 	}
 }
 
-// HooksCommand returns hooks → list / reload for the command palette.
-// push opens a nested list page (shell owns *CommandPalette; commands do not).
-func HooksCommand(
+// ExtensionsCommand returns extensions → list / reload for the command palette.
+func ExtensionsCommand(
 	listFn func() []palette.PaletteCommand,
 	reload func(),
 	push func(title string, cmds []palette.PaletteCommand),
 ) palette.PaletteCommand {
 	return palette.PaletteCommand{
-		ID:           "hooks",
-		Noun:         "hooks",
+		ID:           "extensions",
+		Noun:         "extensions",
 		Verb:         "manage",
-		Keywords:     []string{"hook", "plugin", "policy", "reload", "list"},
-		SubmenuTitle: "Hooks",
+		Keywords:     []string{"extension", "plugin", "yaegi", "reload", "list"},
+		SubmenuTitle: "Extensions",
 		Submenu: []palette.PaletteCommand{
 			{
-				ID:       "hooks-list",
+				ID:       "extensions-list",
 				Verb:     "list",
 				Keywords: []string{"show", "status", "loaded"},
 				Run: func() {
 					cmds := []palette.PaletteCommand{{
-						ID:       "hooks-list-empty",
-						Verb:     "No hooks found",
+						ID:       "extensions-list-empty",
+						Verb:     "No extensions found",
 						Disabled: true,
 					}}
 					if listFn != nil {
@@ -263,12 +262,12 @@ func HooksCommand(
 						}
 					}
 					if push != nil {
-						push("Hooks on disk", cmds)
+						push("Extensions on disk", cmds)
 					}
 				},
 			},
 			{
-				ID:       "hooks-reload",
+				ID:       "extensions-reload",
 				Verb:     "reload",
 				Keywords: []string{"refresh", "rescan", "discover"},
 				Run: func() {
@@ -281,11 +280,11 @@ func HooksCommand(
 	}
 }
 
-// HookListEntries builds disabled palette rows from discovery results + warnings.
-func HookListEntries(found []hooks.Discovered, warns []hooks.Warning, err error) []palette.PaletteCommand {
+// ExtensionListEntries builds disabled palette rows from discovery results + warnings.
+func ExtensionListEntries(found []extension.Discovered, warns []extension.Warning, err error) []palette.PaletteCommand {
 	if err != nil {
 		return []palette.PaletteCommand{{
-			ID:       "hooks-list-err",
+			ID:       "extensions-list-err",
 			Verb:     "error: " + err.Error(),
 			Disabled: true,
 		}}
@@ -293,28 +292,23 @@ func HookListEntries(found []hooks.Discovered, warns []hooks.Warning, err error)
 	out := make([]palette.PaletteCommand, 0, len(found)+len(warns)+1)
 	if len(found) == 0 && len(warns) == 0 {
 		out = append(out, palette.PaletteCommand{
-			ID:       "hooks-list-empty",
-			Verb:     "No hooks found",
+			ID:       "extensions-list-empty",
+			Verb:     "No extensions found",
 			Disabled: true,
 		})
 		return out
 	}
 	for _, d := range found {
-		name := d.Plugin
-		events := make([]string, 0, len(d.Hooks))
-		for _, h := range d.Hooks {
-			events = append(events, string(h.Event))
-		}
 		out = append(out, palette.PaletteCommand{
-			ID:       "hook-" + name,
-			Verb:     hooks.FormatDiscovered(d),
-			Keywords: []string{name, strings.Join(events, ","), d.Source},
+			ID:       "ext-" + d.ID,
+			Verb:     extension.FormatDiscovered(d),
+			Keywords: []string{d.ID, d.Source},
 			Disabled: true,
 		})
 	}
 	for i, w := range warns {
 		out = append(out, palette.PaletteCommand{
-			ID:       fmt.Sprintf("hooks-warn-%d", i),
+			ID:       fmt.Sprintf("extensions-warn-%d", i),
 			Verb:     "warn: " + w.String(),
 			Keywords: []string{"warning", "error"},
 			Disabled: true,

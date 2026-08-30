@@ -29,7 +29,7 @@ func TestDiscoverCreatesGlobalDirs(t *testing.T) {
 		p.Global().Root(),
 		p.Global().BinDir(),
 		p.Global().SkillsDir(),
-		p.Global().HooksDir(),
+		p.Global().ExtensionsDir(),
 		p.Global().SessionBase(),
 		p.Global().JobsDir(),
 	} {
@@ -41,9 +41,9 @@ func TestDiscoverCreatesGlobalDirs(t *testing.T) {
 	}
 }
 
-func TestHooksDirPath(t *testing.T) {
+func TestExtensionsDirPath(t *testing.T) {
 	p := discoverInTempHome(t)
-	assert.Equal(t, filepath.Join(p.Global().Root(), "hooks"), p.Global().HooksDir())
+	assert.Equal(t, filepath.Join(p.Global().Root(), "extensions"), p.Global().ExtensionsDir())
 }
 
 func TestLookBinPrefersBinDir(t *testing.T) {
@@ -68,7 +68,7 @@ func TestLookBinFallsBackToPATH(t *testing.T) {
 
 func TestProjectDirs(t *testing.T) {
 	p := discoverInTempHome(t)
-	assert.Equal(t, filepath.Join(p.Root(), ".phi", "hooks"), p.HooksDir())
+	assert.Equal(t, filepath.Join(p.Root(), ".phi", "extensions"), p.ExtensionsDir())
 	assert.Equal(t, filepath.Join(p.Root(), ".phi", "mcp.json"), p.MCPConfigFile())
 }
 
