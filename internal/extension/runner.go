@@ -556,7 +556,7 @@ func callViaReflect[T any](h, payload any, ctx *ext.Context) *T {
 	if len(outs) == 0 || !outs[0].IsValid() || outs[0].IsNil() {
 		return nil
 	}
-	if res, ok := outs[0].Interface().(*T); ok {
+	if res, ok := reflect.TypeAssert[*T](outs[0]); ok {
 		return res
 	}
 	return nil

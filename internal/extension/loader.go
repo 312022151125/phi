@@ -39,7 +39,7 @@ func LoadFile(path string, api *ext.API) error {
 		return fmt.Errorf("extension: %s: %w", path, err)
 	}
 
-	fn, ok := v.Interface().(func(*ext.API))
+	fn, ok := reflect.TypeAssert[func(*ext.API)](v)
 	if !ok {
 		// yaegi may wrap as func(*ext.API) under a different concrete type; try Call.
 		if v.Kind() != reflect.Func {
