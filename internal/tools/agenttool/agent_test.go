@@ -47,12 +47,14 @@ func TestAgentToolsSpawnWaitForcesDepthAndParent(t *testing.T) {
 		JobID string `json:"job_id"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(spawnRes.Content), &spawned))
+	assert.Equal(t, "explore · "+spawned.JobID, spawnRes.Detail)
 
 	waitArgs, _ := json.Marshal(map[string]any{"job_id": spawned.JobID})
 	waitRes, err := reg["agent_wait"].Run(t.Context(), waitArgs)
 	require.NoError(t, err)
 	assert.Contains(t, waitRes.Content, "summary-ok")
 	assert.Contains(t, waitRes.Content, `"status": "completed"`)
+	assert.Equal(t, "explore · completed", waitRes.Detail)
 }
 
 func TestAgentToolsSpawnRoleWorker(t *testing.T) {
@@ -75,6 +77,8 @@ func TestAgentToolsSpawnRoleWorker(t *testing.T) {
 		"prompt": "implement x",
 		"role":   "worker",
 	})
+	assert.Equal(t, "worker · implement x", reg["agent_spawn"].DetailFromArgs(raw))
+
 	res, err := reg["agent_spawn"].Run(t.Context(), raw)
 	require.NoError(t, err)
 	assert.Contains(t, res.Content, `"role": "worker"`)
@@ -83,10 +87,35 @@ func TestAgentToolsSpawnRoleWorker(t *testing.T) {
 		JobID string `json:"job_id"`
 	}
 	require.NoError(t, json.Unmarshal([]byte(res.Content), &spawned))
+	assert.Equal(t, "worker · "+spawned.JobID, res.Detail)
 	waitArgs, _ := json.Marshal(map[string]any{"job_id": spawned.JobID})
 	waitRes, err := reg["agent_wait"].Run(t.Context(), waitArgs)
 	require.NoError(t, err)
 	assert.Contains(t, waitRes.Content, `"status": "completed"`)
+	assert.Equal(t, "worker · completed", waitRes.Detail)
+}
+
+func TestAgentSpawnDetailAlwaysIncludesRole(t *testing.T) {
+	mgr, err := job.New(job.Options{
+		Root: t.TempDir(),
+		Runner: job.RunnerFunc(func(_ context.Context, _ job.RunEnv) (string, error) {
+			return "x", nil
+		}),
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = mgr.Close(t.Context()) })
+
+	reg := tools.NewRegistry(tools.AgentTools(tools.AgentDeps{
+		Manager:  mgr,
+		ParentID: func() string { return "p" },
+		WorkDir:  func() string { return t.TempDir() },
+	}))
+	detail := reg["agent_spawn"].DetailFromArgs
+	require.NotNil(t, detail)
+
+	assert.Equal(t, "explore · find auth", detail([]byte(`{"prompt":"p","description":"find auth"}`)))
+	assert.Equal(t, "explore · do the thing", detail([]byte(`{"prompt":"do the thing"}`)))
+	assert.Equal(t, "review · check diff", detail([]byte(`{"prompt":"p","description":"check diff","role":"review"}`)))
 }
 
 func TestAgentToolsSpawnBadRole(t *testing.T) {
