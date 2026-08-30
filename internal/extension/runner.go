@@ -3,6 +3,7 @@ package extension
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"reflect"
 	"strings"
@@ -259,7 +260,7 @@ func (r *Runner) CommandEntries() []ext.CommandEntry {
 // RunCommand invokes a registered slash command.
 func (r *Runner) RunCommand(name, args string) error {
 	if r == nil {
-		return fmt.Errorf("extension: no runner")
+		return errors.New("extension: no runner")
 	}
 	r.mu.Lock()
 	apis := append([]*ext.API(nil), r.apis...)
@@ -515,7 +516,7 @@ func callBeforeAgentStart(h any, ev ext.BeforeAgentStartEvent, ctx *ext.Context)
 	}
 }
 
-func callNotify(h any, payload any, ctx *ext.Context) {
+func callNotify(h, payload any, ctx *ext.Context) {
 	v := reflect.ValueOf(h)
 	if v.Kind() != reflect.Func {
 		return
@@ -541,7 +542,7 @@ func callNotify(h any, payload any, ctx *ext.Context) {
 	v.Call(args)
 }
 
-func callViaReflect[T any](h any, payload any, ctx *ext.Context) *T {
+func callViaReflect[T any](h, payload any, ctx *ext.Context) *T {
 	v := reflect.ValueOf(h)
 	if v.Kind() != reflect.Func {
 		return nil

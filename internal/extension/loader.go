@@ -1,6 +1,7 @@
 package extension
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"reflect"
@@ -14,7 +15,7 @@ import (
 // LoadFile evaluates a single extension .go file and invokes Extension(phi).
 func LoadFile(path string, api *ext.API) error {
 	if api == nil {
-		return fmt.Errorf("extension: nil API")
+		return errors.New("extension: nil API")
 	}
 	src, err := os.ReadFile(path)
 	if err != nil {
@@ -42,7 +43,7 @@ func LoadFile(path string, api *ext.API) error {
 	if !ok {
 		// yaegi may wrap as func(*ext.API) under a different concrete type; try Call.
 		if v.Kind() != reflect.Func {
-			return fmt.Errorf("extension: Extension is not a function")
+			return errors.New("extension: Extension is not a function")
 		}
 		results := v.Call([]reflect.Value{reflect.ValueOf(api)})
 		_ = results
@@ -73,16 +74,16 @@ func lookupExtension(i *interp.Interpreter) (reflect.Value, error) {
 	}
 	if lastErr != nil {
 		return reflect.Value{}, fmt.Errorf(
-			"Extension symbol not found (export func Extension in package main): %w",
+			"extension symbol not found (export func Extension in package main): %w",
 			lastErr,
 		)
 	}
-	return reflect.Value{}, fmt.Errorf("Extension symbol not found (export func Extension in package main)")
+	return reflect.Value{}, errors.New("extension symbol not found (export func Extension in package main)")
 }
 
 func isNilValue(v reflect.Value) bool {
 	switch v.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Ptr, reflect.Slice:
+	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
 		return v.IsNil()
 	default:
 		return false

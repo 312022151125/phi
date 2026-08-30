@@ -2,7 +2,8 @@ package ext
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"maps"
 	"sync"
 )
 
@@ -105,11 +106,7 @@ func (a *API) Commands() map[string]CommandDef {
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	out := make(map[string]CommandDef, len(a.commands))
-	for k, v := range a.commands {
-		out[k] = v
-	}
-	return out
+	return maps.Clone(a.commands)
 }
 
 // CommandEntries lists registered command names.
@@ -200,7 +197,7 @@ func (a *API) GetAllTools() []ToolInfo {
 // Exec runs a command via the host shell helper.
 func (a *API) Exec(ctx context.Context, command string, args []string) (ExecResult, error) {
 	if a == nil || a.execFn == nil {
-		return ExecResult{}, fmt.Errorf("ext: Exec not bound")
+		return ExecResult{}, errors.New("ext: Exec not bound")
 	}
 	return a.execFn(ctx, command, args)
 }

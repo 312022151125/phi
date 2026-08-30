@@ -1,7 +1,6 @@
 package extension_test
 
 import (
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -74,11 +73,11 @@ func Extension(phi *ext.API) {
 	require.Len(t, r.Loaded(), 1)
 
 	input := json.RawMessage(`{"command":"echo phi-deny"}`)
-	_, blocked, reason, _ := r.PreTool(context.Background(), "bash", "1", input)
+	_, blocked, reason, _ := r.PreTool(t.Context(), "bash", "1", input)
 	assert.True(t, blocked)
 	assert.Equal(t, "blocked by extension", reason)
 
-	_, blocked, _, _ = r.PreTool(context.Background(), "bash", "2", json.RawMessage(`{"command":"echo ok"}`))
+	_, blocked, _, _ = r.PreTool(t.Context(), "bash", "2", json.RawMessage(`{"command":"echo ok"}`))
 	assert.False(t, blocked)
 }
 
@@ -121,7 +120,7 @@ func Extension(phi *ext.API) {
 	require.Len(t, tools, 1)
 	assert.Equal(t, "greet", tools[0].Definition.Name)
 
-	res, err := tools[0].Run(context.Background(), json.RawMessage(`{"name":"phi"}`))
+	res, err := tools[0].Run(t.Context(), json.RawMessage(`{"name":"phi"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Hello, phi!", res.Content)
 }
