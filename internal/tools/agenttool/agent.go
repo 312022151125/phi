@@ -137,7 +137,7 @@ Concurrency cap: at most %d sub-agents run concurrently; spawning more fails (jo
 				"dir":         info.Dir,
 				"result_path": info.ResultPath,
 			})
-			return tooldef.Result{Content: body, Detail: info.ID, Output: body}, nil
+			return tooldef.Result{Content: body, Detail: roleDetail(string(info.Role), info.ID), Output: body}, nil
 		},
 	}
 }
@@ -165,14 +165,21 @@ func spawnDetail(input json.RawMessage) string {
 		Role        string `json:"role"`
 	}
 	_ = json.Unmarshal(input, &in)
-	label := in.Description
+	label := strings.TrimSpace(in.Description)
 	if label == "" {
 		label = truncateRunes(in.Prompt, 80)
 	}
-	if r := strings.TrimSpace(in.Role); r != "" && r != "explore" {
-		return r + ": " + label
+	return roleDetail(in.Role, label)
+}
+
+// roleDetail is the one-line TUI suffix: "explore · find auth".
+func roleDetail(role, rest string) string {
+	r := string(job.NormalizeRole(role))
+	rest = strings.TrimSpace(rest)
+	if rest == "" {
+		return r
 	}
-	return label
+	return r + " · " + rest
 }
 
 func agentListTool(deps AgentDeps) tooldef.Tool {
@@ -250,7 +257,11 @@ Use agent_cancel to stop a running job.`,
 				"result_path": res.Info.ResultPath,
 				"summary":     summary,
 			})
-			return tooldef.Result{Content: body, Detail: string(res.Info.Status), Output: body}, nil
+			return tooldef.Result{
+				Content: body,
+				Detail:  roleDetail(string(res.Info.Role), string(res.Info.Status)),
+				Output:  body,
+			}, nil
 		},
 	}
 }

@@ -12,6 +12,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- TUI: `agent_spawn` / `agent_wait` tool rows show role in the detail line (`explore · …`).
+
 ### Deprecated
 
 ### Removed
