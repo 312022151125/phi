@@ -63,31 +63,22 @@ func runHeadless(opts runOptions) error {
 		resumeID = opts.session
 	}
 
-	engineOpts := agent.EngineOpts{
-		Model: bs.Config.Model(),
-		SessionOpts: agent.SessionOpts{
-			Cwd:        bs.Cwd,
-			SessionDir: bs.SessionDir,
-			Persist:    true,
-			ResumeID:   resumeID,
-			ResumePath: resumePath,
-		},
-		Gate: bs.Gate,
-		// Ask is nil: in headless mode any Ask decision is denied, so no
-		// approval UI is ever reachable (Ask≡Deny even if the config mode
-		// does not fold Ask).
-		Ask:        nil,
-		Extensions: loadRunExtensions(bs),
-		Tools:      opts.builtinTools,
+	// Ask stays nil: in headless mode any Ask decision is denied, so no
+	// approval UI is ever reachable (Ask≡Deny even if the config mode
+	// does not fold Ask).
+	extRunner := loadRunExtensions(bs)
+	engineOpts := []agent.EngineOption{
+		agent.WithGate(bs.Gate),
+		agent.WithExtensions(extRunner),
+		agent.WithTools(opts.builtinTools),
 	}
 	if pool, err := mcp.LoadPool(bs.Proj.MCPConfigFile()); err != nil {
 		fmt.Fprintln(os.Stderr, "warning: mcp:", err)
 	} else if pool != nil {
-		engineOpts.MCP = pool
+		engineOpts = append(engineOpts, agent.WithMCP(pool))
 		defer func() { _ = pool.Close() }()
 	}
 	if bs.Config.Agents.Enabled {
-		extRunner := engineOpts.Extensions
 		jobs, jobErr := agent.NewJobManager(bs.Proj.JobsDir(), bs.Config.Model(), nil, func() *extension.Runner {
 			return extRunner
 		})
@@ -96,10 +87,26 @@ func runHeadless(opts runOptions) error {
 			return exitCode(ExitUsage)
 		}
 		defer func() { _ = jobs.Close(context.Background()) }()
-		engineOpts.Jobs = jobs
+		engineOpts = append(engineOpts, agent.WithJobs(jobs))
 	}
 
-	engine, err := agent.NewEngine(engineOpts)
+	sessionOpts := []agent.SessionOption{
+		agent.WithCwd(bs.Cwd),
+		agent.WithSessionDir(bs.SessionDir),
+		agent.WithPersist(true),
+	}
+	if resumePath != "" {
+		sessionOpts = append(sessionOpts, agent.WithResumePath(resumePath))
+	} else if resumeID != "" {
+		sessionOpts = append(sessionOpts, agent.WithResumeID(resumeID))
+	}
+	sess, err := agent.NewSession(sessionOpts...)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "phi run:", err)
+		return exitCode(ExitUsage)
+	}
+
+	engine, err := agent.NewEngine(bs.Config.Model(), sess, engineOpts...)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "phi run:", err)
 		return exitCode(ExitUsage)

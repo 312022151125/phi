@@ -147,13 +147,15 @@ func TestSelectedBuiltinToolsStillAppendExternalTools(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, jobs.Close(t.Context())) })
 
-	engine, err := agent.NewEngine(agent.EngineOpts{
-		Model:       llm.ModelConfig{Name: "test", APIKey: "x", BaseURL: "http://127.0.0.1:9"},
-		SessionOpts: agent.SessionOpts{Cwd: t.TempDir()},
-		Tools:       selected,
-		MCP:         pool,
-		Jobs:        jobs,
-	})
+	sess, err := agent.NewSession(agent.WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	engine, err := agent.NewEngine(
+		llm.ModelConfig{Name: "test", APIKey: "x", BaseURL: "http://127.0.0.1:9"},
+		sess,
+		agent.WithTools(selected),
+		agent.WithMCP(pool),
+		agent.WithJobs(jobs),
+	)
 	require.NoError(t, err)
 	assert.True(t, engine.HasTool("read"))
 	assert.False(t, engine.HasTool("bash"))
@@ -171,15 +173,17 @@ func TestRunLoopTimeoutCancelsLLMRequest(t *testing.T) {
 	defer server.Close()
 	defer close(block)
 
-	engine, err := agent.NewEngine(agent.EngineOpts{
-		Model: llm.ModelConfig{
+	sess, err := agent.NewSession(agent.WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	engine, err := agent.NewEngine(
+		llm.ModelConfig{
 			Name:    "fake",
 			BaseURL: server.URL,
 			APIKey:  "test",
 		},
-		SessionOpts: agent.SessionOpts{Cwd: t.TempDir()},
-		Gate:        permission.AllowAll{},
-	})
+		sess,
+		agent.WithGate(permission.AllowAll{}),
+	)
 	require.NoError(t, err)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)

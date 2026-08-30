@@ -88,12 +88,14 @@ func countingTool(runs *atomic.Int32) tools.Tool {
 
 func newRoundTestEngine(t *testing.T, serverURL string, runs *atomic.Int32) *Engine {
 	t.Helper()
-	engine, err := NewEngine(EngineOpts{
-		Model:       llm.ModelConfig{Name: "fake", BaseURL: serverURL, APIKey: "x"},
-		SessionOpts: SessionOpts{Cwd: t.TempDir()},
-		Gate:        permission.AllowAll{},
-		Tools:       []tools.Tool{countingTool(runs)},
-	})
+	sess, err := NewSession(WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	engine, err := NewEngine(
+		llm.ModelConfig{Name: "fake", BaseURL: serverURL, APIKey: "x"},
+		sess,
+		WithGate(permission.AllowAll{}),
+		WithTools([]tools.Tool{countingTool(runs)}),
+	)
 	require.NoError(t, err)
 	return engine
 }
@@ -160,15 +162,17 @@ func TestLoopContinueAskGrantsAnotherBudget(t *testing.T) {
 	defer server.Close()
 
 	var asks atomic.Int32
-	engine, err := NewEngine(EngineOpts{
-		Model:       llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x"},
-		SessionOpts: SessionOpts{Cwd: t.TempDir()},
-		Gate:        permission.AllowAll{},
-		ContinueAsk: func(context.Context, int) (bool, error) {
+	sess, err := NewSession(WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	engine, err := NewEngine(
+		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x"},
+		sess,
+		WithGate(permission.AllowAll{}),
+		WithContinueAsk(func(context.Context, int) (bool, error) {
 			// Approve once so the loop can start a second budget window, then stop.
 			return asks.Add(1) == 1, nil
-		},
-	})
+		}),
+	)
 	require.NoError(t, err)
 	require.NoError(t, engine.SetMaxRounds(1))
 
@@ -189,14 +193,16 @@ func TestLoopContinueAskDeclineReturnsErrMaxRounds(t *testing.T) {
 	server, _ := fakeToolSequenceServer(-1)
 	defer server.Close()
 
-	engine, err := NewEngine(EngineOpts{
-		Model:       llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x"},
-		SessionOpts: SessionOpts{Cwd: t.TempDir()},
-		Gate:        permission.AllowAll{},
-		ContinueAsk: func(context.Context, int) (bool, error) {
+	sess, err := NewSession(WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	engine, err := NewEngine(
+		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x"},
+		sess,
+		WithGate(permission.AllowAll{}),
+		WithContinueAsk(func(context.Context, int) (bool, error) {
 			return false, nil
-		},
-	})
+		}),
+	)
 	require.NoError(t, err)
 	require.NoError(t, engine.SetMaxRounds(1))
 
@@ -212,11 +218,13 @@ func TestLoopContinueAskDeclineReturnsErrMaxRounds(t *testing.T) {
 }
 
 func TestSetMaxRoundsRejectsNonPositive(t *testing.T) {
-	engine, err := NewEngine(EngineOpts{
-		Model:       llm.ModelConfig{Name: "fake", BaseURL: "http://unused", APIKey: "x"},
-		SessionOpts: SessionOpts{Cwd: t.TempDir()},
-		Gate:        permission.AllowAll{},
-	})
+	sess, err := NewSession(WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	engine, err := NewEngine(
+		llm.ModelConfig{Name: "fake", BaseURL: "http://unused", APIKey: "x"},
+		sess,
+		WithGate(permission.AllowAll{}),
+	)
 	require.NoError(t, err)
 	require.Error(t, engine.SetMaxRounds(0))
 	require.Error(t, engine.SetMaxRounds(-1))

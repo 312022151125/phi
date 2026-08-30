@@ -153,5 +153,5 @@ Logs: `~/.phi/logs/mcp/<name>.log` (override with `PHI_MCP_LOG_DIR`).
 | --- | --- |
 | `internal/mcp/` | config, Client, session, stdio/http transports, Pool |
 | `internal/tools/mcptool/` | `mcp_list` / `mcp_inspect` / `mcp_call` |
-| `internal/agent/engine.go` | `EngineOpts.MCP` wires meta-tools |
+| `internal/agent/engine.go` | `WithMCP` wires meta-tools |
 | `cmd/mcp.go` | `phi mcp` subcommand |

@@ -57,52 +57,39 @@ type Engine struct {
 	session *Session
 }
 
-// EngineOpts configures NewEngine.
-type EngineOpts struct {
-	Model              llm.ModelConfig
-	SessionOpts        SessionOpts
-	Gate               permission.Gate    // nil = allow all
-	Ask                permission.AskFunc // nil = deny on Ask
-	ContinueAsk        ContinueFunc       // nil = ErrMaxRounds on budget exhaust
-	Tools              []tools.Tool       // nil = tools.DefaultTools(); sub-agents use ChildTools()
-	MaxRounds          int                // 0 = package default
-	Jobs               *job.Manager       // if set, register agent_* tools on this engine
-	Extensions         *extension.Runner  // nil = no extensions; child engines inherit parent Runner
-	OmitExtensionTools bool               // when true, Runner events still fire but RegisterTool tools are not merged
-	MCP                *mcp.Pool          // if set, register mcp_list/inspect/call meta-tools
-}
-
-// NewEngine wires an LLM client, tool executor, and session store.
-func NewEngine(opts EngineOpts) (*Engine, error) {
-	sess, err := NewSession(opts.SessionOpts)
-	if err != nil {
-		return nil, err
+// NewEngine wires an LLM client, tool executor, and an externally created session.
+func NewEngine(model llm.ModelConfig, sess *Session, opts ...EngineOption) (*Engine, error) {
+	if sess == nil {
+		return nil, errors.New("agent: session is required")
 	}
-	cfg := opts.Model
+	var cfg engineConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	engine := &Engine{
 		maxRounds:     defaultMaxToolRounds,
-		skillPath:     cfg.SkillPath,
-		contextWindow: cfg.ContextWindow,
-		modelCfg:      cfg,
+		skillPath:     model.SkillPath,
+		contextWindow: model.ContextWindow,
+		modelCfg:      model,
 		session:       sess,
-		gate:          opts.Gate,
-		ask:           opts.Ask,
-		continueAsk:   opts.ContinueAsk,
-		jobs:          opts.Jobs,
-		extensions:    opts.Extensions,
-		omitExtTools:  opts.OmitExtensionTools,
-		mcp:           opts.MCP,
+		gate:          cfg.gate,
+		ask:           cfg.ask,
+		continueAsk:   cfg.continueAsk,
+		jobs:          cfg.jobs,
+		extensions:    cfg.extensions,
+		omitExtTools:  cfg.omitExtTools,
+		mcp:           cfg.mcp,
 	}
-	if opts.MaxRounds > 0 {
-		engine.maxRounds = opts.MaxRounds
+	if cfg.maxRounds > 0 {
+		engine.maxRounds = cfg.maxRounds
 	}
-	engine.baseTools = opts.Tools
+	engine.baseTools = cfg.tools
 	if engine.extensions != nil {
 		engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
 		engine.extensions.SetMeta(engine.SessionID(), engine.SessionCwd())
 	}
 	toolList := engine.buildToolList(engine.baseTools)
-	engine.client = llmclient.NewClient(cfg, tools.Definitions(toolList), engine.systemPrompt())
+	engine.client = llmclient.NewClient(model, tools.Definitions(toolList), engine.systemPrompt())
 	engine.bindExecutor(tools.NewRegistry(toolList))
 	return engine, nil
 }
@@ -294,10 +281,9 @@ func (engine *Engine) SessionCwd() string {
 }
 
 // ReplaceSession swaps the session store (used by /resume).
-func (engine *Engine) ReplaceSession(opts SessionOpts) error {
-	sess, err := NewSession(opts)
-	if err != nil {
-		return err
+func (engine *Engine) ReplaceSession(sess *Session) error {
+	if sess == nil {
+		return errors.New("agent: session is required")
 	}
 	engine.session = sess
 	if engine.executor != nil {
