@@ -19,30 +19,66 @@ type Session struct {
 	contextCacheValid bool
 }
 
-// SessionOpts configures how the engine binds a session store.
-type SessionOpts struct {
-	Cwd        string // written to SessionHeader.Cwd; usually process cwd
-	SessionDir string // ~/.phi/session; required when Persist is true
-	Persist    bool   // false → in-memory (tests default)
-	ResumePath string // open this jsonl; ignores "new session"
-	ResumeID   string // resolve under SessionDir (mutually exclusive with ResumePath)
-	ParentID   string // reserved for sub-agents; passed to WithParent
+// SessionOption configures NewSession.
+type SessionOption func(*sessionConfig)
+
+type sessionConfig struct {
+	cwd        string
+	sessionDir string
+	persist    bool
+	resumePath string
+	resumeID   string
+	parentID   string
+}
+
+// WithCwd sets the cwd written to SessionHeader (usually process cwd).
+func WithCwd(cwd string) SessionOption {
+	return func(c *sessionConfig) { c.cwd = cwd }
+}
+
+// WithSessionDir sets ~/.phi/session (required when Persist is true or resuming by id).
+func WithSessionDir(dir string) SessionOption {
+	return func(c *sessionConfig) { c.sessionDir = dir }
+}
+
+// WithPersist enables JSONL persistence (false → in-memory; tests default).
+func WithPersist(persist bool) SessionOption {
+	return func(c *sessionConfig) { c.persist = persist }
+}
+
+// WithResumePath opens this jsonl path (mutually exclusive with WithResumeID).
+func WithResumePath(path string) SessionOption {
+	return func(c *sessionConfig) { c.resumePath = path }
+}
+
+// WithResumeID resolves a session under SessionDir (mutually exclusive with WithResumePath).
+func WithResumeID(id string) SessionOption {
+	return func(c *sessionConfig) { c.resumeID = id }
+}
+
+// WithParentID links a new persisted session to a parent (sub-agents).
+func WithParentID(id string) SessionOption {
+	return func(c *sessionConfig) { c.parentID = id }
 }
 
 // NewSession creates a session wrapper according to opts.
-func NewSession(opts SessionOpts) (*Session, error) {
-	if opts.ResumePath != "" && opts.ResumeID != "" {
+func NewSession(opts ...SessionOption) (*Session, error) {
+	var cfg sessionConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	if cfg.resumePath != "" && cfg.resumeID != "" {
 		return nil, errors.New("agent: ResumePath and ResumeID are mutually exclusive")
 	}
 
-	if opts.ResumePath != "" || opts.ResumeID != "" {
-		path := opts.ResumePath
+	if cfg.resumePath != "" || cfg.resumeID != "" {
+		path := cfg.resumePath
 		if path == "" {
-			if opts.SessionDir == "" {
+			if cfg.sessionDir == "" {
 				return nil, errors.New("agent: SessionDir required to resume by id")
 			}
 			var err error
-			path, err = session.FindSessionFile(opts.SessionDir, opts.ResumeID)
+			path, err = session.FindSessionFile(cfg.sessionDir, cfg.resumeID)
 			if err != nil {
 				return nil, err
 			}
@@ -54,14 +90,14 @@ func NewSession(opts SessionOpts) (*Session, error) {
 		return &Session{manager: m, lastID: m.LeafID()}, nil
 	}
 
-	if opts.Persist {
-		if opts.SessionDir == "" {
+	if cfg.persist {
+		if cfg.sessionDir == "" {
 			return nil, errors.New("agent: SessionDir required when Persist is true")
 		}
-		m, err := session.NewSessionManager(opts.Cwd,
-			session.WithSessionDir(opts.SessionDir),
+		m, err := session.NewSessionManager(cfg.cwd,
+			session.WithSessionDir(cfg.sessionDir),
 			session.WithShouldFlush(true),
-			session.WithParent(opts.ParentID),
+			session.WithParent(cfg.parentID),
 		)
 		if err != nil {
 			return nil, err
@@ -69,7 +105,7 @@ func NewSession(opts SessionOpts) (*Session, error) {
 		return &Session{manager: m}, nil
 	}
 
-	return &Session{manager: session.NewManager(opts.Cwd)}, nil
+	return &Session{manager: session.NewManager(cfg.cwd)}, nil
 }
 
 // Fork creates a new Session that shares the same underlying manager state

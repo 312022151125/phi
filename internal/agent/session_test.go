@@ -13,11 +13,11 @@ import (
 
 func TestSessionPersistFlush(t *testing.T) {
 	dir := t.TempDir()
-	sess, err := NewSession(SessionOpts{
-		Cwd:        dir,
-		SessionDir: dir,
-		Persist:    true,
-	})
+	sess, err := NewSession(
+		WithCwd(dir),
+		WithSessionDir(dir),
+		WithPersist(true),
+	)
 	require.NoError(t, err)
 	assert.NotEmpty(t, sess.ID())
 	assert.NotEmpty(t, sess.File())
@@ -42,7 +42,7 @@ func TestSessionPersistFlush(t *testing.T) {
 }
 
 func TestSessionPersistFalseNoDisk(t *testing.T) {
-	sess, err := NewSession(SessionOpts{Persist: false, Cwd: t.TempDir()})
+	sess, err := NewSession(WithCwd(t.TempDir()))
 	require.NoError(t, err)
 	assert.Empty(t, sess.File())
 	require.NoError(t, sess.Append(llm.Message{Role: llm.RoleUser, Content: "a"}))
@@ -52,14 +52,16 @@ func TestSessionPersistFalseNoDisk(t *testing.T) {
 
 func TestEngineSetModelKeepsSession(t *testing.T) {
 	dir := t.TempDir()
-	eng, err := NewEngine(EngineOpts{
-		Model: llm.ModelConfig{Name: "model-a", APIKey: "k", BaseURL: "http://example"},
-		SessionOpts: SessionOpts{
-			Cwd:        dir,
-			SessionDir: dir,
-			Persist:    true,
-		},
-	})
+	sess, err := NewSession(
+		WithCwd(dir),
+		WithSessionDir(dir),
+		WithPersist(true),
+	)
+	require.NoError(t, err)
+	eng, err := NewEngine(
+		llm.ModelConfig{Name: "model-a", APIKey: "k", BaseURL: "http://example"},
+		sess,
+	)
 	require.NoError(t, err)
 
 	id := eng.SessionID()

@@ -76,21 +76,22 @@ func (r EngineRunner) Run(ctx context.Context, env job.RunEnv) (string, error) {
 	}
 
 	sessionDir := filepath.Join(env.Job.Dir, "session")
-	engine, err := NewEngine(EngineOpts{
-		Model:              model,
-		Gate:               gate,
-		Ask:                nil,
-		Tools:              toolList,
-		MaxRounds:          r.MaxRounds,
-		Extensions:         extRunner,
-		OmitExtensionTools: true,
-		SessionOpts: SessionOpts{
-			Cwd:        cwd,
-			SessionDir: sessionDir,
-			Persist:    true,
-			ParentID:   env.Job.ParentID,
-		},
-	})
+	sess, err := NewSession(
+		WithCwd(cwd),
+		WithSessionDir(sessionDir),
+		WithPersist(true),
+		WithParentID(env.Job.ParentID),
+	)
+	if err != nil {
+		return "", err
+	}
+	engine, err := NewEngine(model, sess,
+		WithGate(gate),
+		WithTools(toolList),
+		WithMaxRounds(r.MaxRounds),
+		WithExtensions(extRunner),
+		WithOmitExtensionTools(true),
+	)
 	if err != nil {
 		return "", err
 	}

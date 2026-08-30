@@ -111,20 +111,22 @@ func NewController(bus *Bus, proj *project.Project, cwd string) (*EngineControll
 		c.mcpPool = pool
 	}
 
-	eng, err := agent.NewEngine(agent.EngineOpts{
-		Model: c.modelCfg,
-		SessionOpts: agent.SessionOpts{
-			Cwd:        cwd,
-			SessionDir: c.sessionDir,
-			Persist:    true,
-		},
-		Gate:        c.gate,
-		Ask:         c.askPermission,
-		ContinueAsk: c.askContinue,
-		Jobs:        c.engineJobs(),
-		Extensions:  extRunner,
-		MCP:         c.mcpPool,
-	})
+	sess, err := agent.NewSession(
+		agent.WithCwd(cwd),
+		agent.WithSessionDir(c.sessionDir),
+		agent.WithPersist(true),
+	)
+	if err != nil {
+		return nil, err
+	}
+	eng, err := agent.NewEngine(c.modelCfg, sess,
+		agent.WithGate(c.gate),
+		agent.WithAsk(c.askPermission),
+		agent.WithContinueAsk(c.askContinue),
+		agent.WithJobs(c.engineJobs()),
+		agent.WithExtensions(extRunner),
+		agent.WithMCP(c.mcpPool),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -515,21 +517,23 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 
 	extRunner := loadExtensions(c.proj)
 	c.extRunner.Store(extRunner)
-	eng, err := agent.NewEngine(agent.EngineOpts{
-		Model: cfg,
-		SessionOpts: agent.SessionOpts{
-			Cwd:        c.cwd,
-			SessionDir: c.sessionDir,
-			Persist:    true,
-			ResumeID:   id,
-		},
-		Gate:        c.gate,
-		Ask:         c.askPermission,
-		ContinueAsk: c.askContinue,
-		Jobs:        c.engineJobs(),
-		Extensions:  extRunner,
-		MCP:         c.mcpPool,
-	})
+	sess, err := agent.NewSession(
+		agent.WithCwd(c.cwd),
+		agent.WithSessionDir(c.sessionDir),
+		agent.WithPersist(true),
+		agent.WithResumeID(id),
+	)
+	if err != nil {
+		return "", err
+	}
+	eng, err := agent.NewEngine(cfg, sess,
+		agent.WithGate(c.gate),
+		agent.WithAsk(c.askPermission),
+		agent.WithContinueAsk(c.askContinue),
+		agent.WithJobs(c.engineJobs()),
+		agent.WithExtensions(extRunner),
+		agent.WithMCP(c.mcpPool),
+	)
 	if err != nil {
 		return "", err
 	}
@@ -572,20 +576,22 @@ func (c *EngineController) Clear() error {
 	}
 
 	extRunner := c.Extensions()
-	engine, err := agent.NewEngine(agent.EngineOpts{
-		Model: cfg,
-		SessionOpts: agent.SessionOpts{
-			Cwd:        c.cwd,
-			SessionDir: c.sessionDir,
-			Persist:    true,
-		},
-		Gate:        c.gate,
-		Ask:         c.askPermission,
-		ContinueAsk: c.askContinue,
-		Jobs:        c.engineJobs(),
-		Extensions:  extRunner,
-		MCP:         c.mcpPool,
-	})
+	sess, err := agent.NewSession(
+		agent.WithCwd(c.cwd),
+		agent.WithSessionDir(c.sessionDir),
+		agent.WithPersist(true),
+	)
+	if err != nil {
+		return err
+	}
+	engine, err := agent.NewEngine(cfg, sess,
+		agent.WithGate(c.gate),
+		agent.WithAsk(c.askPermission),
+		agent.WithContinueAsk(c.askContinue),
+		agent.WithJobs(c.engineJobs()),
+		agent.WithExtensions(extRunner),
+		agent.WithMCP(c.mcpPool),
+	)
 	if err != nil {
 		return err
 	}

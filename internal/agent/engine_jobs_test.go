@@ -22,11 +22,13 @@ func TestNewEngineRegistersJobs(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = mgr.Close(t.Context()) })
 
-	eng, err := agent.NewEngine(agent.EngineOpts{
-		Model:       llm.ModelConfig{Name: "fake", BaseURL: "http://127.0.0.1:9", APIKey: "x"},
-		SessionOpts: agent.SessionOpts{Cwd: t.TempDir()},
-		Jobs:        mgr,
-	})
+	sess, err := agent.NewSession(agent.WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	eng, err := agent.NewEngine(
+		llm.ModelConfig{Name: "fake", BaseURL: "http://127.0.0.1:9", APIKey: "x"},
+		sess,
+		agent.WithJobs(mgr),
+	)
 	require.NoError(t, err)
 	assert.Same(t, mgr, eng.Jobs())
 	assert.True(t, eng.HasTool("agent_spawn"))
@@ -46,10 +48,12 @@ func TestSetJobsTogglesAgentTools(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = mgr.Close(t.Context()) })
 
-	eng, err := agent.NewEngine(agent.EngineOpts{
-		Model:       llm.ModelConfig{Name: "fake", BaseURL: "http://127.0.0.1:9", APIKey: "x"},
-		SessionOpts: agent.SessionOpts{Cwd: t.TempDir()},
-	})
+	sess, err := agent.NewSession(agent.WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	eng, err := agent.NewEngine(
+		llm.ModelConfig{Name: "fake", BaseURL: "http://127.0.0.1:9", APIKey: "x"},
+		sess,
+	)
 	require.NoError(t, err)
 	assert.False(t, eng.HasTool("agent_spawn"))
 

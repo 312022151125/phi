@@ -13,14 +13,15 @@ func TestEngineRegistersMCPMetaTools(t *testing.T) {
 		"echo": {Command: []string{"true"}},
 	})
 
-	eng, err := agent.NewEngine(agent.EngineOpts{
-		Model: llm.ModelConfig{Name: "test", APIKey: "x", BaseURL: "http://127.0.0.1:9"},
-		SessionOpts: agent.SessionOpts{
-			Cwd:     t.TempDir(),
-			Persist: false,
-		},
-		MCP: pool,
-	})
+	sess, err := agent.NewSession(agent.WithCwd(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng, err := agent.NewEngine(
+		llm.ModelConfig{Name: "test", APIKey: "x", BaseURL: "http://127.0.0.1:9"},
+		sess,
+		agent.WithMCP(pool),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,14 +32,15 @@ func TestEngineRegistersMCPMetaTools(t *testing.T) {
 	}
 
 	// Explicit child tool list without MCP → no meta tools (sub-agent path).
-	eng2, err := agent.NewEngine(agent.EngineOpts{
-		Model: llm.ModelConfig{Name: "test", APIKey: "x", BaseURL: "http://127.0.0.1:9"},
-		SessionOpts: agent.SessionOpts{
-			Cwd:     t.TempDir(),
-			Persist: false,
-		},
-		Tools: agent.ChildTools(),
-	})
+	sess2, err := agent.NewSession(agent.WithCwd(t.TempDir()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	eng2, err := agent.NewEngine(
+		llm.ModelConfig{Name: "test", APIKey: "x", BaseURL: "http://127.0.0.1:9"},
+		sess2,
+		agent.WithTools(agent.ChildTools()),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
