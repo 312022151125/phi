@@ -10,10 +10,22 @@ Extensions are Go source files loaded with [yaegi](https://github.com/pulseaiclu
 |----------|-------|
 | `~/.phi/extensions/*.go` | Global (all projects) |
 | `~/.phi/extensions/*/index.go` | Global (subdirectory) |
+| `~/.phi/extensions/*/<sole>.go` | Global (subdir with exactly one `*.go`) |
 | `<cwd>/.phi/extensions/*.go` | Project-local |
 | `<cwd>/.phi/extensions/*/index.go` | Project-local (subdirectory) |
+| `<cwd>/.phi/extensions/*/<sole>.go` | Project-local (subdir with exactly one `*.go`) |
 
 Same extension id (file stem or directory name): project replaces user. Disable all with `PHI_EXTENSIONS=off`.
+
+## Install from GitHub
+
+```bash
+phi plugin install alice/greet
+phi plugin install alice/greet@v1.2.3
+phi plugin install github.com/alice/greet@main
+```
+
+Clones into `~/.phi/extensions/<repo>/` (shallow). The repo root must have `index.go` or exactly one non-test `*.go`. Requires `git` on `PATH`. No registry — pass an explicit GitHub repo. Reload in TUI: **Ctrl+K → extensions → reload**.
 
 ## Quick start
 
@@ -113,5 +125,6 @@ Shell `plugin.json` hooks under `~/.phi/hooks` / `.phi/hooks` are **removed**. R
 | Path | Role |
 |------|------|
 | `ext/` | Public types + `API` for authors |
-| `internal/extension/` | Discover, yaegi loader, Runner |
+| `internal/extension/` | Discover, yaegi loader, Runner, `plugin install` |
+| `cmd/plugin.go` | `phi plugin install` |
 | `.phi/extensions/` | Project samples (`hello.go`, `guard_bash.go`) |
