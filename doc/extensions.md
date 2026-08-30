@@ -1,6 +1,6 @@
 # Extensions
 
-Extensions are Go source files loaded with [yaegi](https://github.com/traefik/yaegi). They replace the former shell `plugin.json` hooks system.
+Extensions are Go source files loaded with [yaegi](https://github.com/pulseaiclub/yaegi). They replace the former shell `plugin.json` hooks system.
 
 > **Security:** Extensions run with your full process permissions. Only install from sources you trust.
 

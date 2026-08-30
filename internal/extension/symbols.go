@@ -3,7 +3,7 @@ package extension
 import (
 	"reflect"
 
-	"github.com/traefik/yaegi/interp"
+	"github.com/pulseaiclub/yaegi/interp"
 
 	"github.com/pulseaiclub/phi/ext"
 )
