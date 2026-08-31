@@ -494,8 +494,9 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 	}
 
 	prevID := c.SessionID()
-	if out := c.sessionBeforeSwitch("resume", prevID, id); out.Denied {
-		c.publishSessionEffects(out)
+	out := c.sessionBeforeSwitch("resume", prevID, id)
+	c.publishSessionEffects(out)
+	if out.Denied {
 		reason := out.Reason
 		if reason == "" {
 			reason = "session switch denied by extension"
@@ -556,8 +557,9 @@ func (c *EngineController) Clear() error {
 	}
 
 	prevID := c.SessionID()
-	if out := c.sessionBeforeSwitch("new", prevID, ""); out.Denied {
-		c.publishSessionEffects(out)
+	out := c.sessionBeforeSwitch("new", prevID, "")
+	c.publishSessionEffects(out)
+	if out.Denied {
 		reason := out.Reason
 		if reason == "" {
 			reason = "session switch denied by extension"

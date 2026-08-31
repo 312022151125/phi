@@ -28,6 +28,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Extension `Notify` / status frames now reach the TUI (`Proc.onNotify` wired in `Runner.Bind`).
+- Slash-command `Submit` from PXB `CommandResponse` is delivered to the composer.
+- Extension handshake registration respects the handshake timeout (no longer only checked between blocking reads).
+- `session_before_switch` toast without cancel is published (previously only on deny).
+- SDK command handlers receive a usable `ctx.UI` (maps to `Notify` / `SetStatus`).
+
 ### Security
 
 <!-- Released section -->

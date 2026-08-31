@@ -51,6 +51,8 @@ func main() {
 		Description: "Say hi",
 		Handler: func(args string, ctx *ext.Context) error {
 			m.Notify("info", "Hello!")
+			// ctx.UI.Notify("Hello!", "info") also works
+			// m.Submit("follow-up prompt") queues an agent turn after /hello
 			return nil
 		},
 	})

@@ -129,24 +129,12 @@ func StartProc(ctx context.Context, m Manifest, dir, logDir, cwd, sessionID stri
 }
 
 func (p *Proc) handshake(ctx context.Context, cwd, sessionID string) error {
-	type result struct {
-		f   pxb.Frame
-		err error
-	}
-	ch := make(chan result, 1)
-	go func() {
-		f, err := p.rd.Read()
-		ch <- result{f: f, err: err}
-	}()
-	var f pxb.Frame
-	select {
-	case <-ctx.Done():
-		return fmt.Errorf("extension %q: hello timeout", p.Manifest.Name)
-	case r := <-ch:
-		if r.err != nil {
-			return fmt.Errorf("extension %q: read hello: %w", p.Manifest.Name, r.err)
+	f, err := p.readFrame(ctx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return fmt.Errorf("extension %q: hello timeout", p.Manifest.Name)
 		}
-		f = r.f
+		return fmt.Errorf("extension %q: read hello: %w", p.Manifest.Name, err)
 	}
 	if f.Type != pxb.TypeHello {
 		return fmt.Errorf("extension %q: first frame type %d want hello", p.Manifest.Name, f.Type)
@@ -180,13 +168,11 @@ func (p *Proc) handshake(ctx context.Context, cwd, sessionID string) error {
 	}
 
 	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("extension %q: registration timeout", p.Manifest.Name)
-		default:
-		}
-		fr, err := p.rd.Read()
+		fr, err := p.readFrame(ctx)
 		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				return fmt.Errorf("extension %q: registration timeout", p.Manifest.Name)
+			}
 			return fmt.Errorf("extension %q: registration: %w", p.Manifest.Name, err)
 		}
 		body := pxb.CloneBody(fr)
@@ -219,6 +205,25 @@ func (p *Proc) handshake(ctx context.Context, cwd, sessionID string) error {
 		default:
 			return fmt.Errorf("extension %q: unexpected frame %d before ready", p.Manifest.Name, fr.Type)
 		}
+	}
+}
+
+// readFrame reads one frame, aborting when ctx is done.
+func (p *Proc) readFrame(ctx context.Context) (pxb.Frame, error) {
+	type result struct {
+		f   pxb.Frame
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		f, err := p.rd.Read()
+		ch <- result{f: f, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return pxb.Frame{}, ctx.Err()
+	case r := <-ch:
+		return r.f, r.err
 	}
 }
 

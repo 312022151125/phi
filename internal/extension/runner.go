@@ -292,14 +292,39 @@ func (r *Runner) CommandEntries() []ext.CommandEntry {
 	return out
 }
 
+// CommandOutcome is returned from RunCommand for host UI side effects.
+type CommandOutcome struct {
+	Submit string
+}
+
 // RunCommand invokes a registered slash command.
-func (r *Runner) RunCommand(name, args string) error {
+func (r *Runner) RunCommand(name, args string) (CommandOutcome, error) {
 	if r == nil {
-		return errors.New("extension: no runner")
+		return CommandOutcome{}, errors.New("extension: no runner")
 	}
 	r.mu.Lock()
+	procs := append([]*Proc(nil), r.procs...)
 	apis := append([]*ext.API(nil), r.apis...)
 	r.mu.Unlock()
+
+	for _, p := range procs {
+		for _, c := range p.cmds {
+			if c.Name != name {
+				continue
+			}
+			resp, err := p.CallCommand(context.Background(), name, args)
+			if err != nil {
+				return CommandOutcome{}, err
+			}
+			if !resp.OK {
+				if resp.Error != "" {
+					return CommandOutcome{}, errors.New(resp.Error)
+				}
+				return CommandOutcome{}, fmt.Errorf("extension command %q failed", name)
+			}
+			return CommandOutcome{Submit: resp.Submit}, nil
+		}
+	}
 
 	for _, api := range apis {
 		cmds := api.Commands()
@@ -307,9 +332,9 @@ func (r *Runner) RunCommand(name, args string) error {
 		if !ok {
 			continue
 		}
-		return cmd.Handler(args, api.NewContext())
+		return CommandOutcome{}, cmd.Handler(args, api.NewContext())
 	}
-	return fmt.Errorf("extension: command %q not found", name)
+	return CommandOutcome{}, fmt.Errorf("extension: command %q not found", name)
 }
 
 // PreTool runs tool_call handlers serially. First block wins; input rewrites chain.

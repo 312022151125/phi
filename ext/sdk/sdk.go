@@ -32,7 +32,8 @@ type Module struct {
 	wr *pxb.Writer
 	rd *pxb.Reader
 
-	host HelloInfo
+	host          HelloInfo
+	pendingSubmit string
 }
 
 type toolReg struct {
@@ -142,6 +143,28 @@ func (m *Module) Notify(level, message string) {
 	_ = m.wr.Write(pxb.TypeNotify, 0, 0, pxb.EncodeNotify(pxb.NotifyMsg{Level: level, Message: message}))
 }
 
+// SetStatus updates the host footer extension status (empty clears).
+func (m *Module) SetStatus(text string) {
+	if m.wr == nil {
+		return
+	}
+	_ = m.wr.Write(pxb.TypeNotify, 0, 0, pxb.EncodeNotify(pxb.NotifyMsg{Status: text, StatusSet: true}))
+}
+
+// Submit queues a prompt for the host to send after the current slash command returns.
+func (m *Module) Submit(text string) {
+	m.mu.Lock()
+	m.pendingSubmit = text
+	m.mu.Unlock()
+}
+
+// moduleUI implements ext.UI over PXB Notify frames.
+type moduleUI struct{ m *Module }
+
+func (u moduleUI) Notify(message, kind string) { u.m.Notify(kind, message) }
+func (u moduleUI) SetStatus(_, text string)    { u.m.SetStatus(text) }
+func (u moduleUI) Confirm(_, _ string) bool    { return false }
+
 // Run speaks PXB on stdin/stdout until shutdown.
 func (m *Module) Run() error {
 	m.wr = pxb.NewWriter(os.Stdout)
@@ -248,7 +271,7 @@ func (m *Module) Run() error {
 			resp := pxb.CommandResponse{OK: true}
 			if cmd, ok := cmdByName[inv.Name]; ok {
 				if err := cmd.Handler(inv.Args, &ext.Context{
-					Cwd: m.host.Cwd, SessionID: m.host.SessionID, HasUI: true,
+					Cwd: m.host.Cwd, SessionID: m.host.SessionID, HasUI: true, UI: moduleUI{m: m},
 				}); err != nil {
 					resp.OK = false
 					resp.Error = err.Error()
@@ -257,6 +280,10 @@ func (m *Module) Run() error {
 				resp.OK = false
 				resp.Error = "unknown command"
 			}
+			m.mu.Lock()
+			resp.Submit = m.pendingSubmit
+			m.pendingSubmit = ""
+			m.mu.Unlock()
 			_ = m.wr.Write(pxb.TypeCommandResponse, fr.Flags, fr.ID, pxb.EncodeCommandResponse(resp))
 		case pxb.TypeToolInvoke:
 			inv, err := pxb.DecodeToolInvoke(body)
