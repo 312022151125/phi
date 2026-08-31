@@ -107,7 +107,7 @@ func (h *ExtCommands) run(name, args string) {
 		h.Bus.Publish(controller.ExtCommandResultMsg{Gen: gen, Err: "extensions are not loaded"})
 		return
 	}
-	err := h.Ctrl.Extensions().RunCommand(name, args)
+	out, err := h.Ctrl.Extensions().RunCommand(name, args)
 	if gen != h.gen.Load() {
 		return
 	}
@@ -115,7 +115,7 @@ func (h *ExtCommands) run(name, args string) {
 		h.Bus.Publish(controller.ExtCommandResultMsg{Gen: gen, Err: err.Error()})
 		return
 	}
-	h.Bus.Publish(controller.ExtCommandResultMsg{Gen: gen})
+	h.Bus.Publish(controller.ExtCommandResultMsg{Gen: gen, Submit: out.Submit})
 }
 
 // Apply delivers a finished extension command onto the UI goroutine.

@@ -1,0 +1,582 @@
+package extension
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/pulseaiclub/phi/ext"
+	"github.com/pulseaiclub/phi/ext/pxb"
+	"github.com/pulseaiclub/phi/internal/debuglog"
+	"github.com/pulseaiclub/phi/internal/version"
+)
+
+const (
+	handshakeTimeout = 5 * time.Second
+	rpcTimeout       = 30 * time.Second
+	shutdownWait     = 2 * time.Second
+)
+
+// Proc is one extension subprocess speaking PXB over stdin/stdout.
+type Proc struct {
+	Manifest Manifest
+	Dir      string
+	LogPath  string
+
+	cmd     *exec.Cmd
+	stdin   io.WriteCloser
+	stdout  io.ReadCloser
+	logFile *os.File
+
+	wr *pxb.Writer
+	rd *pxb.Reader
+
+	hello     pxb.Hello
+	cmds      []pxb.RegisterCommand
+	tools     []pxb.RegisterTool
+	events    map[uint16]struct{}
+	intercept map[uint16]struct{}
+
+	mu      sync.Mutex
+	nextID  atomic.Uint32
+	pending map[uint32]chan frameResult
+	closed  atomic.Bool
+
+	onNotify func(pxb.NotifyMsg)
+}
+
+type frameResult struct {
+	frame pxb.Frame
+	err   error
+}
+
+// StartProc launches manifest.Exec and completes the PXB handshake.
+func StartProc(ctx context.Context, m Manifest, dir, logDir, cwd, sessionID string) (*Proc, error) {
+	if m.Exec == "" {
+		return nil, errors.New("extension: empty exec")
+	}
+	execPath := m.Exec
+	if !filepath.IsAbs(execPath) {
+		execPath = filepath.Join(dir, execPath)
+	}
+	if st, err := os.Stat(execPath); err != nil {
+		return nil, fmt.Errorf("extension %q: exec %s: %w", m.Name, execPath, err)
+	} else if st.IsDir() {
+		return nil, fmt.Errorf("extension %q: exec %s is a directory", m.Name, execPath)
+	}
+
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return nil, err
+	}
+	logPath := filepath.Join(logDir, "ext-"+m.Name+".log")
+	logFile, err := os.OpenFile(logPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		return nil, err
+	}
+
+	cmd := exec.CommandContext(ctx, execPath, m.Args...)
+	cmd.Dir = dir
+	cmd.Stderr = logFile
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		_ = logFile.Close()
+		return nil, err
+	}
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		_ = stdin.Close()
+		_ = logFile.Close()
+		return nil, err
+	}
+	if err := cmd.Start(); err != nil {
+		_ = stdin.Close()
+		_ = stdout.Close()
+		_ = logFile.Close()
+		return nil, fmt.Errorf("extension %q: start: %w", m.Name, err)
+	}
+
+	p := &Proc{
+		Manifest:  m,
+		Dir:       dir,
+		LogPath:   logPath,
+		cmd:       cmd,
+		stdin:     stdin,
+		stdout:    stdout,
+		logFile:   logFile,
+		wr:        pxb.NewWriter(stdin),
+		rd:        pxb.NewReader(stdout),
+		events:    make(map[uint16]struct{}),
+		intercept: make(map[uint16]struct{}),
+		pending:   make(map[uint32]chan frameResult),
+	}
+
+	hsCtx, cancel := context.WithTimeout(ctx, handshakeTimeout)
+	defer cancel()
+	if err := p.handshake(hsCtx, cwd, sessionID); err != nil {
+		_ = p.Close()
+		return nil, err
+	}
+	go p.readLoop()
+	return p, nil
+}
+
+func (p *Proc) handshake(ctx context.Context, cwd, sessionID string) error {
+	f, err := p.readFrame(ctx)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			return fmt.Errorf("extension %q: hello timeout", p.Manifest.Name)
+		}
+		return fmt.Errorf("extension %q: read hello: %w", p.Manifest.Name, err)
+	}
+	if f.Type != pxb.TypeHello {
+		return fmt.Errorf("extension %q: first frame type %d want hello", p.Manifest.Name, f.Type)
+	}
+	hello, err := pxb.DecodeHello(pxb.CloneBody(f))
+	if err != nil {
+		return fmt.Errorf("extension %q: decode hello: %w", p.Manifest.Name, err)
+	}
+	if hello.Name != "" && hello.Name != p.Manifest.Name {
+		debuglog.Logf("extension: manifest name %q != hello name %q", p.Manifest.Name, hello.Name)
+	}
+	if hello.Protocol != 0 && hello.Protocol != pxb.ProtocolVersion {
+		return fmt.Errorf(
+			"extension %q: protocol %d unsupported (want %d)",
+			p.Manifest.Name,
+			hello.Protocol,
+			pxb.ProtocolVersion,
+		)
+	}
+	p.hello = hello
+
+	ack := pxb.EncodeHelloAck(pxb.HelloAck{
+		Protocol:     pxb.ProtocolVersion,
+		PhiVersion:   version.Version,
+		Cwd:          cwd,
+		SessionID:    sessionID,
+		ExtensionDir: p.Dir,
+	})
+	if err := p.wr.Write(pxb.TypeHelloAck, 0, 0, ack); err != nil {
+		return err
+	}
+
+	for {
+		fr, err := p.readFrame(ctx)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+				return fmt.Errorf("extension %q: registration timeout", p.Manifest.Name)
+			}
+			return fmt.Errorf("extension %q: registration: %w", p.Manifest.Name, err)
+		}
+		body := pxb.CloneBody(fr)
+		switch fr.Type {
+		case pxb.TypeRegisterCommand:
+			rc, err := pxb.DecodeRegisterCommand(body)
+			if err != nil {
+				return err
+			}
+			p.cmds = append(p.cmds, rc)
+		case pxb.TypeRegisterTool:
+			rt, err := pxb.DecodeRegisterTool(body)
+			if err != nil {
+				return err
+			}
+			p.tools = append(p.tools, rt)
+		case pxb.TypeSubscribe:
+			sub, err := pxb.DecodeSubscribe(body)
+			if err != nil {
+				return err
+			}
+			for _, e := range sub.Events {
+				p.events[e] = struct{}{}
+			}
+			for _, e := range sub.Intercept {
+				p.intercept[e] = struct{}{}
+			}
+		case pxb.TypeReady:
+			return nil
+		default:
+			return fmt.Errorf("extension %q: unexpected frame %d before ready", p.Manifest.Name, fr.Type)
+		}
+	}
+}
+
+// readFrame reads one frame, aborting when ctx is done.
+func (p *Proc) readFrame(ctx context.Context) (pxb.Frame, error) {
+	type result struct {
+		f   pxb.Frame
+		err error
+	}
+	ch := make(chan result, 1)
+	go func() {
+		f, err := p.rd.Read()
+		ch <- result{f: f, err: err}
+	}()
+	select {
+	case <-ctx.Done():
+		return pxb.Frame{}, ctx.Err()
+	case r := <-ch:
+		return r.f, r.err
+	}
+}
+
+func (p *Proc) readLoop() {
+	for {
+		f, err := p.rd.Read()
+		if err != nil {
+			p.failPending(err)
+			return
+		}
+		body := pxb.CloneBody(f)
+		f.Body = body
+		if f.Flags&pxb.FlagHasID != 0 {
+			p.mu.Lock()
+			ch, ok := p.pending[f.ID]
+			if ok {
+				delete(p.pending, f.ID)
+			}
+			p.mu.Unlock()
+			if ok {
+				ch <- frameResult{frame: f}
+				continue
+			}
+		}
+		switch f.Type {
+		case pxb.TypeNotify:
+			n, err := pxb.DecodeNotify(f.Body)
+			if err != nil {
+				debuglog.Logf("extension %q: notify decode: %v", p.Manifest.Name, err)
+				continue
+			}
+			if p.onNotify != nil {
+				p.onNotify(n)
+			}
+		case pxb.TypeShutdownAck:
+			return
+		default:
+			debuglog.Logf("extension %q: unsolicited frame type %d", p.Manifest.Name, f.Type)
+		}
+	}
+}
+
+func (p *Proc) failPending(err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for id, ch := range p.pending {
+		ch <- frameResult{err: err}
+		delete(p.pending, id)
+	}
+}
+
+func (p *Proc) rpc(ctx context.Context, typ uint16, body []byte, want uint16) (pxb.Frame, error) {
+	if p == nil || p.closed.Load() {
+		return pxb.Frame{}, errors.New("extension: process closed")
+	}
+	id := p.nextID.Add(1)
+	ch := make(chan frameResult, 1)
+	p.mu.Lock()
+	p.pending[id] = ch
+	p.mu.Unlock()
+
+	if err := p.wr.Write(typ, pxb.FlagHasID, id, body); err != nil {
+		p.mu.Lock()
+		delete(p.pending, id)
+		p.mu.Unlock()
+		return pxb.Frame{}, err
+	}
+
+	deadline := rpcTimeout
+	if d, ok := ctx.Deadline(); ok {
+		deadline = time.Until(d)
+		if deadline <= 0 {
+			deadline = time.Millisecond
+		}
+	}
+	timer := time.NewTimer(deadline)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		p.mu.Lock()
+		delete(p.pending, id)
+		p.mu.Unlock()
+		return pxb.Frame{}, ctx.Err()
+	case <-timer.C:
+		p.mu.Lock()
+		delete(p.pending, id)
+		p.mu.Unlock()
+		return pxb.Frame{}, fmt.Errorf("extension %q: rpc timeout", p.Manifest.Name)
+	case res := <-ch:
+		if res.err != nil {
+			return pxb.Frame{}, res.err
+		}
+		if want != 0 && res.frame.Type != want {
+			return pxb.Frame{}, fmt.Errorf(
+				"extension %q: rpc reply type %d want %d",
+				p.Manifest.Name,
+				res.frame.Type,
+				want,
+			)
+		}
+		return res.frame, nil
+	}
+}
+
+// CallTool invokes a registered tool.
+func (p *Proc) CallTool(ctx context.Context, name string, args json.RawMessage) (ext.ToolResult, error) {
+	body := pxb.EncodeToolInvoke(pxb.ToolInvoke{Name: name, Args: args})
+	f, err := p.rpc(ctx, pxb.TypeToolInvoke, body, pxb.TypeToolResult)
+	if err != nil {
+		return ext.ToolResult{}, err
+	}
+	tr, err := pxb.DecodeToolResult(f.Body)
+	if err != nil {
+		return ext.ToolResult{}, err
+	}
+	if tr.IsError {
+		if tr.Error == "" {
+			tr.Error = tr.Content
+		}
+		return ext.ToolResult{Content: tr.Content, Detail: tr.Detail, Output: tr.Output}, errors.New(tr.Error)
+	}
+	return ext.ToolResult{Content: tr.Content, Detail: tr.Detail, Output: tr.Output}, nil
+}
+
+// CallCommand runs a slash command.
+func (p *Proc) CallCommand(ctx context.Context, name, args string) (pxb.CommandResponse, error) {
+	body := pxb.EncodeCommandInvoked(pxb.CommandInvoked{Name: name, Args: args})
+	f, err := p.rpc(ctx, pxb.TypeCommandInvoked, body, pxb.TypeCommandResponse)
+	if err != nil {
+		return pxb.CommandResponse{}, err
+	}
+	resp, err := pxb.DecodeCommandResponse(f.Body)
+	if err != nil {
+		return pxb.CommandResponse{}, err
+	}
+	if resp.Notify != "" && p.onNotify != nil {
+		p.onNotify(pxb.NotifyMsg{Level: "info", Message: resp.Notify})
+	}
+	return resp, nil
+}
+
+// Intercept runs a request/response intercept for subscribed events.
+func (p *Proc) Intercept(ctx context.Context, req pxb.InterceptReq) (pxb.InterceptResp, error) {
+	if _, ok := p.intercept[req.Event]; !ok {
+		return pxb.InterceptResp{}, nil
+	}
+	body := pxb.EncodeInterceptReq(req)
+	f, err := p.rpc(ctx, pxb.TypeIntercept, body, pxb.TypeInterceptResponse)
+	if err != nil {
+		return pxb.InterceptResp{}, err
+	}
+	return pxb.DecodeInterceptResp(f.Body)
+}
+
+// Emit sends a fire-and-forget event when subscribed.
+func (p *Proc) Emit(ev pxb.EventNotify) {
+	if p == nil || p.closed.Load() {
+		return
+	}
+	if _, ok := p.events[ev.Event]; !ok {
+		return
+	}
+	body := pxb.EncodeEventNotify(ev)
+	if err := p.wr.Write(pxb.TypeEvent, 0, 0, body); err != nil {
+		debuglog.Logf("extension %q: emit: %v", p.Manifest.Name, err)
+	}
+}
+
+// WantsIntercept reports subscription.
+func (p *Proc) WantsIntercept(code uint16) bool {
+	_, ok := p.intercept[code]
+	return ok
+}
+
+// Close asks the child to shut down and reaps it.
+func (p *Proc) Close() error {
+	if p == nil || !p.closed.CompareAndSwap(false, true) {
+		return nil
+	}
+	_ = p.wr.Write(pxb.TypeShutdown, 0, 0, nil)
+	done := make(chan struct{})
+	go func() {
+		_ = p.cmd.Wait()
+		close(done)
+	}()
+	select {
+	case <-done:
+	case <-time.After(shutdownWait):
+		_ = p.cmd.Process.Kill()
+		<-done
+	}
+	_ = p.stdin.Close()
+	_ = p.stdout.Close()
+	if p.logFile != nil {
+		_ = p.logFile.Close()
+	}
+	p.failPending(errors.New("extension: closed"))
+	return nil
+}
+
+// BuildAPI installs shim handlers onto api from this process's registrations.
+func (p *Proc) BuildAPI(api *ext.API) {
+	if p == nil || api == nil {
+		return
+	}
+	for _, t := range p.tools {
+		name := t.Name
+		var params map[string]any
+		if len(t.SchemaJSON) > 0 {
+			_ = json.Unmarshal(t.SchemaJSON, &params)
+		}
+		api.RegisterTool(ext.ToolDef{
+			Name:        name,
+			Description: t.Description,
+			Parameters:  params,
+			Execute: func(ctx context.Context, args json.RawMessage) (ext.ToolResult, error) {
+				return p.CallTool(ctx, name, args)
+			},
+		})
+	}
+	for _, c := range p.cmds {
+		name := c.Name
+		desc := c.Description
+		api.RegisterCommand(name, ext.CommandDef{
+			Description: desc,
+			Handler: func(args string, _ *ext.Context) error {
+				resp, err := p.CallCommand(context.Background(), name, args)
+				if err != nil {
+					return err
+				}
+				if !resp.OK {
+					if resp.Error != "" {
+						return errors.New(resp.Error)
+					}
+					return fmt.Errorf("extension command %q failed", name)
+				}
+				return nil
+			},
+		})
+	}
+	if p.WantsIntercept(pxb.EvToolCall) {
+		api.On(ext.EventToolCall, func(ev ext.ToolCallEvent, _ *ext.Context) *ext.ToolCallResult {
+			resp, err := p.Intercept(context.Background(), pxb.InterceptReq{
+				Event: pxb.EvToolCall, ToolName: ev.ToolName, ToolCallID: ev.ToolCallID, Input: ev.Input,
+			})
+			if err != nil {
+				debuglog.Logf("extension %q: tool_call intercept: %v", p.Manifest.Name, err)
+				return nil
+			}
+			return &ext.ToolCallResult{Block: resp.Block, Reason: resp.Reason, Input: resp.Input, Context: resp.Context}
+		})
+	}
+	if p.WantsIntercept(pxb.EvToolResult) {
+		api.On(ext.EventToolResult, func(ev ext.ToolResultEvent, _ *ext.Context) *ext.ToolResultResult {
+			resp, err := p.Intercept(context.Background(), pxb.InterceptReq{
+				Event: pxb.EvToolResult, ToolName: ev.ToolName, ToolCallID: ev.ToolCallID,
+				Input: ev.Input, Content: ev.Content, IsError: ev.IsError, ErrText: ev.Err,
+			})
+			if err != nil {
+				debuglog.Logf("extension %q: tool_result intercept: %v", p.Manifest.Name, err)
+				return nil
+			}
+			return &ext.ToolResultResult{
+				Content: resp.Content,
+				Context: resp.Context,
+				Stop:    resp.Stop,
+				Reason:  resp.Reason,
+			}
+		})
+	}
+	if p.WantsIntercept(pxb.EvSessionBeforeSwitch) {
+		api.On(
+			ext.EventSessionBeforeSwitch,
+			func(ev ext.SessionBeforeSwitchEvent, _ *ext.Context) *ext.SessionBeforeSwitchResult {
+				resp, err := p.Intercept(context.Background(), pxb.InterceptReq{
+					Event: pxb.EvSessionBeforeSwitch, Reason: ev.Reason, TargetID: ev.TargetSessionID,
+				})
+				if err != nil {
+					return nil
+				}
+				return &ext.SessionBeforeSwitchResult{Cancel: resp.Cancel, Reason: resp.Reason, Toast: resp.Toast}
+			},
+		)
+	}
+	if p.WantsIntercept(pxb.EvBeforeAgentStart) {
+		api.On(
+			ext.EventBeforeAgentStart,
+			func(ev ext.BeforeAgentStartEvent, _ *ext.Context) *ext.BeforeAgentStartResult {
+				resp, err := p.Intercept(context.Background(), pxb.InterceptReq{
+					Event: pxb.EvBeforeAgentStart, Prompt: ev.Prompt,
+				})
+				if err != nil {
+					return nil
+				}
+				return &ext.BeforeAgentStartResult{SystemPromptAppend: resp.SystemPromptAppend}
+			},
+		)
+	}
+	// Fire-and-forget event shims.
+	if _, ok := p.events[pxb.EvSessionStart]; ok {
+		api.On(ext.EventSessionStart, func(ev ext.SessionStartEvent, _ *ext.Context) {
+			p.Emit(pxb.EventNotify{Event: pxb.EvSessionStart, Reason: ev.Reason})
+		})
+	}
+	if _, ok := p.events[pxb.EvSessionShutdown]; ok {
+		api.On(ext.EventSessionShutdown, func(ev ext.SessionShutdownEvent, _ *ext.Context) {
+			p.Emit(pxb.EventNotify{Event: pxb.EvSessionShutdown, Reason: ev.Reason})
+		})
+	}
+	if _, ok := p.events[pxb.EvAgentStart]; ok {
+		api.On(ext.EventAgentStart, func(ext.AgentStartEvent, *ext.Context) {
+			p.Emit(pxb.EventNotify{Event: pxb.EvAgentStart})
+		})
+	}
+	if _, ok := p.events[pxb.EvAgentEnd]; ok {
+		api.On(ext.EventAgentEnd, func(ext.AgentEndEvent, *ext.Context) {
+			p.Emit(pxb.EventNotify{Event: pxb.EvAgentEnd})
+		})
+	}
+	if _, ok := p.events[pxb.EvTurnStart]; ok {
+		api.On(ext.EventTurnStart, func(ev ext.TurnStartEvent, _ *ext.Context) {
+			//nolint:gosec // G115: turn index is a small session counter
+			p.Emit(pxb.EventNotify{Event: pxb.EvTurnStart, TurnIndex: uint32(ev.TurnIndex)})
+		})
+	}
+	if _, ok := p.events[pxb.EvTurnEnd]; ok {
+		api.On(ext.EventTurnEnd, func(ev ext.TurnEndEvent, _ *ext.Context) {
+			//nolint:gosec // G115: turn index is a small session counter
+			p.Emit(pxb.EventNotify{Event: pxb.EvTurnEnd, TurnIndex: uint32(ev.TurnIndex)})
+		})
+	}
+	if _, ok := p.events[pxb.EvToolExecStart]; ok {
+		api.On(ext.EventToolExecutionStart, func(ev ext.ToolExecutionStartEvent, _ *ext.Context) {
+			p.Emit(
+				pxb.EventNotify{
+					Event:      pxb.EvToolExecStart,
+					ToolName:   ev.ToolName,
+					ToolCallID: ev.ToolCallID,
+					Input:      ev.Args,
+				},
+			)
+		})
+	}
+	if _, ok := p.events[pxb.EvToolExecEnd]; ok {
+		api.On(ext.EventToolExecutionEnd, func(ev ext.ToolExecutionEndEvent, _ *ext.Context) {
+			p.Emit(
+				pxb.EventNotify{
+					Event:      pxb.EvToolExecEnd,
+					ToolName:   ev.ToolName,
+					ToolCallID: ev.ToolCallID,
+					IsError:    ev.IsError,
+				},
+			)
+		})
+	}
+}

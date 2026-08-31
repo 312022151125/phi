@@ -185,7 +185,7 @@ OpenAI-compatible `/chat/completions` path.
 ├── config.yaml   # global configuration
 ├── bin/          # downloaded search tools (fd, ripgrep)
 ├── skills/       # SKILL.md skill directories
-├── extensions/   # yaegi Go extensions (*.go)
+├── extensions/   # PXB binaries + phi.yaml
 ├── jobs/         # sub-agent job artifacts (meta, logs, result.md)
 └── session/      # persisted sessions, one dir per working directory
     └── <encoded-cwd>/
@@ -339,24 +339,30 @@ palette's settings → permissions entry toggles session-wide bypass.
 
 ## Extensions
 
-Extensions are Go files loaded with yaegi. They subscribe to tool/session
-events, register LLM tools, and add slash commands — without rebuilding phi.
+Extensions are native binaries speaking the **PXB** binary protocol over
+stdin/stdout (author SDK: `ext/sdk`). They subscribe to tool/session events,
+register LLM tools, and add slash commands.
 
 ```go
 package main
 
-import "github.com/pulseaiclub/phi/ext"
+import (
+	"github.com/pulseaiclub/phi/ext"
+	"github.com/pulseaiclub/phi/ext/sdk"
+)
 
-func Extension(phi *ext.API) {
-	phi.On(ext.EventToolCall, func(ev ext.ToolCallEvent, ctx *ext.Context) *ext.ToolCallResult {
+func main() {
+	m := sdk.New("hello", "0.1.0")
+	m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
 		// return &ext.ToolCallResult{Block: true, Reason: "..."}
 		return nil
 	})
+	_ = m.Run()
 }
 ```
 
-Load from `~/.phi/extensions/` and `<cwd>/.phi/extensions/` (`*.go` or
-`*/index.go`). In the TUI: `Ctrl+K` → **extensions**. Disable with
+Install under `~/.phi/extensions/<name>/` with a `phi.yaml` pointing at the
+binary. In the TUI: `Ctrl+K` → **extensions**. Disable with
 `PHI_EXTENSIONS=off`. Full guide: [doc/extensions.md](doc/extensions.md).
 
 ## MCP

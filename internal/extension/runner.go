@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/pulseaiclub/phi/ext"
+	"github.com/pulseaiclub/phi/ext/pxb"
 	"github.com/pulseaiclub/phi/internal/debuglog"
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/tools"
@@ -22,6 +23,7 @@ const maxContextBytes = 4 * 1024
 type Runner struct {
 	mu      sync.Mutex
 	apis    []*ext.API
+	procs   []*Proc
 	loaded  []Discovered
 	warns   []Warning
 	ui      ext.UI
@@ -32,6 +34,20 @@ type Runner struct {
 	baseTools   []tools.Tool
 	activeNames map[string]bool // nil = all active
 	host        ext.HostOpts
+}
+
+// Close shuts down every extension subprocess.
+func (r *Runner) Close() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	procs := append([]*Proc(nil), r.procs...)
+	r.procs = nil
+	r.mu.Unlock()
+	for _, p := range procs {
+		_ = p.Close()
+	}
 }
 
 // Loaded returns discovered extensions that were loaded.
@@ -93,6 +109,25 @@ func (r *Runner) Bind(opts ext.HostOpts) {
 	r.host = opts
 	for _, api := range r.apis {
 		api.BindHost(opts)
+	}
+	// Forward spontaneous Notify frames from extension processes to the host UI.
+	ui := opts.UI
+	for _, p := range r.procs {
+		p.onNotify = func(n pxb.NotifyMsg) {
+			if ui == nil {
+				return
+			}
+			if n.Message != "" {
+				kind := n.Level
+				if kind == "" {
+					kind = "info"
+				}
+				ui.Notify(n.Message, kind)
+			}
+			if n.StatusSet {
+				ui.SetStatus("", n.Status)
+			}
+		}
 	}
 }
 
@@ -257,14 +292,39 @@ func (r *Runner) CommandEntries() []ext.CommandEntry {
 	return out
 }
 
+// CommandOutcome is returned from RunCommand for host UI side effects.
+type CommandOutcome struct {
+	Submit string
+}
+
 // RunCommand invokes a registered slash command.
-func (r *Runner) RunCommand(name, args string) error {
+func (r *Runner) RunCommand(name, args string) (CommandOutcome, error) {
 	if r == nil {
-		return errors.New("extension: no runner")
+		return CommandOutcome{}, errors.New("extension: no runner")
 	}
 	r.mu.Lock()
+	procs := append([]*Proc(nil), r.procs...)
 	apis := append([]*ext.API(nil), r.apis...)
 	r.mu.Unlock()
+
+	for _, p := range procs {
+		for _, c := range p.cmds {
+			if c.Name != name {
+				continue
+			}
+			resp, err := p.CallCommand(context.Background(), name, args)
+			if err != nil {
+				return CommandOutcome{}, err
+			}
+			if !resp.OK {
+				if resp.Error != "" {
+					return CommandOutcome{}, errors.New(resp.Error)
+				}
+				return CommandOutcome{}, fmt.Errorf("extension command %q failed", name)
+			}
+			return CommandOutcome{Submit: resp.Submit}, nil
+		}
+	}
 
 	for _, api := range apis {
 		cmds := api.Commands()
@@ -272,9 +332,9 @@ func (r *Runner) RunCommand(name, args string) error {
 		if !ok {
 			continue
 		}
-		return cmd.Handler(args, api.NewContext())
+		return CommandOutcome{}, cmd.Handler(args, api.NewContext())
 	}
-	return fmt.Errorf("extension: command %q not found", name)
+	return CommandOutcome{}, fmt.Errorf("extension: command %q not found", name)
 }
 
 // PreTool runs tool_call handlers serially. First block wins; input rewrites chain.

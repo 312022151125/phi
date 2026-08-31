@@ -3,7 +3,7 @@
 | Path                     | Purpose                                        |
 | ------------------------ | ---------------------------------------------- |
 | `cmd/`                   | Entry points (`main.go` via pli: `phi run`, `phi update`, `phi sessions`, …) |
-| `ext/`                   | Public API for yaegi extensions (`API`, events, ToolDef) |
+| `ext/`                   | Public extension API, PXB protocol (`ext/pxb`), author SDK (`ext/sdk`) |
 | `internal/util/update/`  | Self-update check + GitHub Releases install    |
 | `internal/agent/`        | Agent engine, executor, jobs                     |
 | `internal/agent/prompt/` | System prompt templates + Skills/MCP catalogs    |
@@ -26,7 +26,7 @@
 | `internal/version/`      | Build-time `Version` (splash / `phi update`) |
 | `internal/util/`         | Shared helpers (diff, retry, SSE, file search, …) |
 | `internal/permission/`   | Permission policy and ask gate                 |
-| `internal/extension/`    | Yaegi extension discover/load/runner           |
+| `internal/extension/`    | PXB extension discover/spawn/runner            |
 | `internal/mcp/`          | MCP config + stdio client + pool (meta-tool route) |
 
 ## Design docs

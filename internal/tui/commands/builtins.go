@@ -243,7 +243,7 @@ func ExtensionsCommand(
 		ID:           "extensions",
 		Noun:         "extensions",
 		Verb:         "manage",
-		Keywords:     []string{"extension", "plugin", "yaegi", "reload", "list"},
+		Keywords:     []string{"extension", "plugin", "pxb", "reload", "list"},
 		SubmenuTitle: "Extensions",
 		Submenu: []palette.PaletteCommand{
 			{
