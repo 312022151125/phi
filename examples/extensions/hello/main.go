@@ -12,7 +12,7 @@ import (
 
 func main() {
 	m := sdk.New("hello", "0.1.0")
-	m.RegisterCommand("hello", ext.CommandDef{
+	m.RegisterCommand("hello", ext.Command{
 		Description: "Say hello via extension",
 		Handler: func(args string, _ *ext.Context) error {
 			msg := "Hello from PXB!"
@@ -23,7 +23,7 @@ func main() {
 			return nil
 		},
 	})
-	m.RegisterTool(ext.ToolDef{
+	m.RegisterTool(ext.Tool{
 		Name:        "ext_hello",
 		Description: "Greet someone by name (extension tool)",
 		Parameters: map[string]any{

@@ -435,7 +435,7 @@ func (p *Proc) BuildAPI(api *ext.API) {
 		if len(t.SchemaJSON) > 0 {
 			_ = json.Unmarshal(t.SchemaJSON, &params)
 		}
-		api.RegisterTool(ext.ToolDef{
+		api.RegisterTool(ext.Tool{
 			Name:        name,
 			Description: t.Description,
 			Parameters:  params,
@@ -447,7 +447,7 @@ func (p *Proc) BuildAPI(api *ext.API) {
 	for _, c := range p.cmds {
 		name := c.Name
 		desc := c.Description
-		api.RegisterCommand(name, ext.CommandDef{
+		api.RegisterCommand(name, ext.Command{
 			Description: desc,
 			Handler: func(args string, _ *ext.Context) error {
 				resp, err := p.CallCommand(context.Background(), name, args)

@@ -100,7 +100,7 @@ import (
 
 func main() {
 	m := sdk.New("greet", "0.0.1")
-	m.RegisterTool(ext.ToolDef{
+	m.RegisterTool(ext.Tool{
 		Name:        "greet",
 		Description: "Greet someone",
 		Parameters: map[string]any{
