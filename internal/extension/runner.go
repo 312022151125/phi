@@ -224,7 +224,7 @@ func (r *Runner) ExtensionTools() []tools.Tool {
 	return out
 }
 
-func toolFromDef(def ext.ToolDef) tools.Tool {
+func toolFromDef(def ext.Tool) tools.Tool {
 	params := schemaFromMap(def.Parameters)
 	exec := def.Execute
 	return tools.Tool{

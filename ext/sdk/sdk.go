@@ -37,12 +37,12 @@ type Module struct {
 }
 
 type toolReg struct {
-	def ext.ToolDef
+	def ext.Tool
 }
 
 type cmdReg struct {
 	name string
-	def  ext.CommandDef
+	def  ext.Command
 }
 
 // HelloInfo is filled after hello_ack.
@@ -70,7 +70,7 @@ func (m *Module) Host() HelloInfo {
 }
 
 // RegisterTool adds an LLM-callable tool.
-func (m *Module) RegisterTool(t ext.ToolDef) {
+func (m *Module) RegisterTool(t ext.Tool) {
 	if t.Name == "" || t.Execute == nil {
 		return
 	}
@@ -80,7 +80,7 @@ func (m *Module) RegisterTool(t ext.ToolDef) {
 }
 
 // RegisterCommand adds a slash command.
-func (m *Module) RegisterCommand(name string, cmd ext.CommandDef) {
+func (m *Module) RegisterCommand(name string, cmd ext.Command) {
 	if name == "" || cmd.Handler == nil {
 		return
 	}
@@ -242,11 +242,11 @@ func (m *Module) Run() error {
 		return err
 	}
 
-	toolByName := make(map[string]ext.ToolDef, len(tools))
+	toolByName := make(map[string]ext.Tool, len(tools))
 	for _, t := range tools {
 		toolByName[t.def.Name] = t.def
 	}
-	cmdByName := make(map[string]ext.CommandDef, len(cmds))
+	cmdByName := make(map[string]ext.Command, len(cmds))
 	for _, c := range cmds {
 		cmdByName[c.name] = c.def
 	}

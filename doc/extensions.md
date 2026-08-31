@@ -47,7 +47,7 @@ import (
 
 func main() {
 	m := sdk.New("hello", "0.1.0")
-	m.RegisterCommand("hello", ext.CommandDef{
+	m.RegisterCommand("hello", ext.Command{
 		Description: "Say hi",
 		Handler: func(args string, ctx *ext.Context) error {
 			m.Notify("info", "Hello!")
@@ -100,7 +100,7 @@ Tool loop order remains **ExtensionPre → Gate/Ask → Run → ExtensionPost**.
 
 | Path | Role |
 |------|------|
-| `ext/` | Shared types (`ToolDef`, events) |
+| `ext/` | Shared types (`Tool`, `Command`, events) |
 | `ext/pxb` | Binary wire protocol |
 | `ext/sdk` | Author SDK (`Module.Run`) |
 | `internal/extension` | Discover, spawn, Runner shims |

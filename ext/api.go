@@ -16,8 +16,8 @@ type API struct {
 	mu sync.Mutex
 
 	handlers map[string][]any
-	tools    []ToolDef
-	commands map[string]CommandDef
+	tools    []Tool
+	commands map[string]Command
 
 	// Bound by host after load.
 	ui           UI
@@ -36,7 +36,7 @@ type API struct {
 func NewAPI() *API {
 	return &API{
 		handlers: make(map[string][]any),
-		commands: make(map[string]CommandDef),
+		commands: make(map[string]Command),
 	}
 }
 
@@ -52,7 +52,7 @@ func (a *API) On(event string, handler any) {
 }
 
 // RegisterTool adds an LLM-callable tool.
-func (a *API) RegisterTool(t ToolDef) {
+func (a *API) RegisterTool(t Tool) {
 	if a == nil || t.Name == "" || t.Execute == nil {
 		return
 	}
@@ -62,7 +62,7 @@ func (a *API) RegisterTool(t ToolDef) {
 }
 
 // RegisterCommand adds a slash command (cannot override builtins at host level).
-func (a *API) RegisterCommand(name string, cmd CommandDef) {
+func (a *API) RegisterCommand(name string, cmd Command) {
 	if a == nil || name == "" || cmd.Handler == nil {
 		return
 	}
@@ -88,19 +88,19 @@ func (a *API) Handlers(event string) []any {
 }
 
 // Tools returns registered tools.
-func (a *API) Tools() []ToolDef {
+func (a *API) Tools() []Tool {
 	if a == nil {
 		return nil
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	out := make([]ToolDef, len(a.tools))
+	out := make([]Tool, len(a.tools))
 	copy(out, a.tools)
 	return out
 }
 
 // Commands returns registered slash commands.
-func (a *API) Commands() map[string]CommandDef {
+func (a *API) Commands() map[string]Command {
 	if a == nil {
 		return nil
 	}

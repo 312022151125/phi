@@ -107,8 +107,8 @@ type ToolResult struct {
 	Output  string
 }
 
-// ToolDef registers an LLM-callable tool.
-type ToolDef struct {
+// Tool registers an LLM-callable tool.
+type Tool struct {
 	Name        string
 	Label       string
 	Description string
@@ -124,8 +124,8 @@ type ToolInfo struct {
 	Source      string // builtin | extension
 }
 
-// CommandDef registers a slash command.
-type CommandDef struct {
+// Command registers a slash command.
+type Command struct {
 	Description string
 	Handler     func(args string, ctx *Context) error
 }
