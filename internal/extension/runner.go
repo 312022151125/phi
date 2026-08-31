@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/pulseaiclub/phi/ext"
+	"github.com/pulseaiclub/phi/ext/pxb"
 	"github.com/pulseaiclub/phi/internal/debuglog"
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/tools"
@@ -108,6 +109,25 @@ func (r *Runner) Bind(opts ext.HostOpts) {
 	r.host = opts
 	for _, api := range r.apis {
 		api.BindHost(opts)
+	}
+	// Forward spontaneous Notify frames from extension processes to the host UI.
+	ui := opts.UI
+	for _, p := range r.procs {
+		p.onNotify = func(n pxb.NotifyMsg) {
+			if ui == nil {
+				return
+			}
+			if n.Message != "" {
+				kind := n.Level
+				if kind == "" {
+					kind = "info"
+				}
+				ui.Notify(n.Message, kind)
+			}
+			if n.StatusSet {
+				ui.SetStatus("", n.Status)
+			}
+		}
 	}
 }
 

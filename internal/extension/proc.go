@@ -350,7 +350,14 @@ func (p *Proc) CallCommand(ctx context.Context, name, args string) (pxb.CommandR
 	if err != nil {
 		return pxb.CommandResponse{}, err
 	}
-	return pxb.DecodeCommandResponse(f.Body)
+	resp, err := pxb.DecodeCommandResponse(f.Body)
+	if err != nil {
+		return pxb.CommandResponse{}, err
+	}
+	if resp.Notify != "" && p.onNotify != nil {
+		p.onNotify(pxb.NotifyMsg{Level: "info", Message: resp.Notify})
+	}
+	return resp, nil
 }
 
 // Intercept runs a request/response intercept for subscribed events.
