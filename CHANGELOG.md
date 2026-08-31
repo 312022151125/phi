@@ -10,19 +10,21 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- **Yaegi extensions:** Go extensions under `~/.phi/extensions` and `<cwd>/.phi/extensions` (`*.go` / `*/index.go`). Public API `ext`, runtime `internal/extension`. Supports `On` events, `RegisterTool`, `RegisterCommand`, session/tool lifecycle. See [doc/extensions.md](doc/extensions.md). Palette: **extensions → list/reload**. Disable with `PHI_EXTENSIONS=off`.
-- `phi plugin install <github-repo[@tag]>`: shallow-clone a GitHub repo into `~/.phi/extensions/<repo>/` (`index.go` or a single root `*.go`). No registry.
+- **PXB extensions:** native binary extensions speaking a length-prefixed binary protocol (`ext/pxb`) over stdin/stdout. Author SDK `ext/sdk`. Layout: `~/.phi/extensions/<name>/phi.yaml` + `exec`. See [doc/extensions.md](doc/extensions.md). Palette: **extensions → list/reload**. Disable with `PHI_EXTENSIONS=off`.
+- `phi plugin install <github-repo[@tag]>`: shallow-clone a GitHub repo into `~/.phi/extensions/<repo>/` (requires `phi.yaml` + compiled binary).
 
 ### Changed
 
 - TUI: `agent_spawn` / `agent_wait` tool rows show role in the detail line (`explore · …`).
-- **Breaking:** Shell `plugin.json` hooks (`internal/hooks`, `PHI_HOOKS`, `.phi/hooks`) are removed. Rewrite policy as Go extensions (migration table in doc/extensions.md).
+- **Breaking:** Shell `plugin.json` hooks (`internal/hooks`, `PHI_HOOKS`, `.phi/hooks`) are removed. Rewrite policy as extensions (migration table in doc/extensions.md).
+- **Breaking:** Yaegi-interpreted `.go` extensions are no longer loaded. Migrate to PXB binaries + `phi.yaml`.
 
 ### Deprecated
 
 ### Removed
 
 - Shell hook plugins (`plugin.json` + `type: "command"`), `doc/hooks.md`, and related TUI **hooks →** commands.
+- Yaegi extension loader (`github.com/pulseaiclub/yaegi` dependency).
 
 ### Fixed
 

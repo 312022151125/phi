@@ -52,7 +52,7 @@ func TestParseSpec(t *testing.T) {
 	}
 }
 
-func TestDiscoverSoleGoInSubdir(t *testing.T) {
+func TestDiscoverRequiresManifest(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "greet")
 	require.NoError(t, os.Mkdir(sub, 0o755))
@@ -60,10 +60,9 @@ func TestDiscoverSoleGoInSubdir(t *testing.T) {
 
 	found, warns, err := extension.Discover(dir, "")
 	require.NoError(t, err)
-	assert.Empty(t, warns)
-	require.Len(t, found, 1)
-	assert.Equal(t, "greet", found[0].ID)
-	assert.Equal(t, filepath.Join(sub, "greet.go"), found[0].Path)
+	assert.Empty(t, found)
+	require.NotEmpty(t, warns)
+	assert.Contains(t, warns[0].Message, "legacy")
 }
 
 func TestInstallClonesAndValidates(t *testing.T) {
@@ -79,7 +78,11 @@ func TestInstallClonesAndValidates(t *testing.T) {
 			sawArgs = append([]string{}, args...)
 			dest := args[len(args)-1]
 			require.NoError(t, os.MkdirAll(dest, 0o755))
-			return os.WriteFile(filepath.Join(dest, "index.go"), []byte("package main\n"), 0o644)
+			require.NoError(
+				t,
+				os.WriteFile(filepath.Join(dest, "phi.yaml"), []byte("name: greet\nexec: ./greet\n"), 0o644),
+			)
+			return os.WriteFile(filepath.Join(dest, "greet"), []byte("#!/bin/true\n"), 0o755)
 		},
 	})
 	require.NoError(t, err)
@@ -107,7 +110,7 @@ func TestInstallRejectsMissingEntry(t *testing.T) {
 		},
 	})
 	require.Error(t, err)
-	assert.Contains(t, err.Error(), "no extension entry")
+	assert.Contains(t, err.Error(), "phi.yaml")
 	_, err = os.Stat(filepath.Join(dir, "empty"))
 	assert.True(t, os.IsNotExist(err), "failed install should clean up dest")
 }

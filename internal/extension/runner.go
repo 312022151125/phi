@@ -22,6 +22,7 @@ const maxContextBytes = 4 * 1024
 type Runner struct {
 	mu      sync.Mutex
 	apis    []*ext.API
+	procs   []*Proc
 	loaded  []Discovered
 	warns   []Warning
 	ui      ext.UI
@@ -32,6 +33,20 @@ type Runner struct {
 	baseTools   []tools.Tool
 	activeNames map[string]bool // nil = all active
 	host        ext.HostOpts
+}
+
+// Close shuts down every extension subprocess.
+func (r *Runner) Close() {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	procs := append([]*Proc(nil), r.procs...)
+	r.procs = nil
+	r.mu.Unlock()
+	for _, p := range procs {
+		_ = p.Close()
+	}
 }
 
 // Loaded returns discovered extensions that were loaded.

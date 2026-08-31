@@ -30,11 +30,12 @@ func (w Warning) String() string {
 	return w.Path + ": " + w.Message
 }
 
-// Discovered is one extension entry point on disk.
+// Discovered is one extension directory with a phi.yaml manifest.
 type Discovered struct {
-	ID     string // file stem or directory name
-	Path   string // absolute path to .go entry file
-	Source string
+	ID       string // directory name / manifest name
+	Path     string // absolute path to extension directory
+	Manifest Manifest
+	Source   string
 }
 
 // ExtensionsDisabled reports whether PHI_EXTENSIONS=off.
@@ -43,12 +44,10 @@ func ExtensionsDisabled() bool {
 	return strings.EqualFold(v, "off")
 }
 
-// Discover finds extension entry points under userDir then projectDir.
+// Discover finds extension directories under userDir then projectDir.
 // Same ID: project replaces user. Layout:
 //
-//	<dir>/*.go
-//	<dir>/*/index.go
-//	<dir>/*/<sole>.go  (exactly one non-test *.go when index.go is absent)
+//	<dir>/<id>/phi.yaml   (exec points at a PXB binary)
 func Discover(userDir, projectDir string) ([]Discovered, []Warning, error) {
 	if ExtensionsDisabled() {
 		return nil, nil, nil
@@ -102,50 +101,58 @@ func scanDir(dir, source string) ([]Discovered, []Warning, error) {
 		seen     = make(map[string]string)
 	)
 
-	add := func(id, path string) {
-		if prev, dup := seen[id]; dup {
-			warnings = append(warnings, Warning{
-				Path:    path,
-				Message: fmt.Sprintf("duplicate extension %q (already %s); skipped", id, prev),
-			})
-			return
-		}
-		seen[id] = path
-		out = append(out, Discovered{ID: id, Path: path, Source: source})
-	}
-
 	for _, ent := range entries {
 		name := ent.Name()
-		if strings.HasPrefix(name, ".") {
+		if strings.HasPrefix(name, ".") || !ent.IsDir() {
+			if !ent.IsDir() && (strings.HasSuffix(name, ".go") || name == "index.go") {
+				warnings = append(warnings, Warning{
+					Path: filepath.Join(dir, name),
+					Message: "yaegi .go extensions are no longer loaded; " +
+						"build a PXB binary and add phi.yaml (see doc/extensions.md)",
+				})
+			}
 			continue
 		}
 		full := filepath.Join(dir, name)
-		if ent.IsDir() {
-			entry, err := dirEntryFile(full)
-			if err != nil {
-				warnings = append(warnings, Warning{Path: full, Message: err.Error()})
+		m, err := ReadManifest(full)
+		if err != nil {
+			if os.IsNotExist(err) {
+				// Subdir without manifest: ignore unless it looks like a legacy go plugin.
+				if _, e2 := dirEntryFile(full); e2 == nil {
+					if entry, _ := dirEntryFile(full); entry != "" {
+						warnings = append(warnings, Warning{
+							Path: full,
+							Message: "legacy Go source extension ignored; " +
+								"migrate to PXB (phi.yaml + compiled binary)",
+						})
+					}
+				}
 				continue
 			}
-			if entry == "" {
-				continue
-			}
-			add(name, entry)
+			warnings = append(warnings, Warning{Path: full, Message: err.Error()})
 			continue
 		}
-		if filepath.Ext(name) != ".go" {
+		if !m.IsEnabled() {
 			continue
 		}
-		if strings.HasSuffix(name, "_test.go") {
+		id := m.Name
+		if id == "" {
+			id = name
+		}
+		if prev, dup := seen[id]; dup {
+			warnings = append(warnings, Warning{
+				Path:    full,
+				Message: fmt.Sprintf("duplicate extension %q (already %s); skipped", id, prev),
+			})
 			continue
 		}
-		id := strings.TrimSuffix(name, ".go")
-		add(id, full)
+		seen[id] = full
+		out = append(out, Discovered{ID: id, Path: full, Manifest: m, Source: source})
 	}
 	return out, warnings, nil
 }
 
-// dirEntryFile returns the extension entry under a plugin subdirectory:
-// index.go if present, otherwise the sole non-test *.go at that directory's root.
+// dirEntryFile returns a legacy yaegi entry (kept for migration warnings).
 func dirEntryFile(dir string) (string, error) {
 	index := filepath.Join(dir, "index.go")
 	st, err := os.Stat(index)
@@ -158,8 +165,6 @@ func dirEntryFile(dir string) (string, error) {
 	return soleRootGoFile(dir)
 }
 
-// soleRootGoFile returns the only non-test *.go file in dir, or ("", nil) if
-// there is not exactly one.
 func soleRootGoFile(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

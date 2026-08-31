@@ -1,8 +1,12 @@
-// Package ext is the public API surface available to yaegi-loaded extensions.
+// Package ext is the public API surface for Phi extensions.
 //
-// Extensions live under ~/.phi/extensions/ and <cwd>/.phi/extensions/ and export:
+// Extensions are native binaries that speak the PXB protocol (package ext/pxb)
+// over stdin/stdout. Prefer the author SDK in package ext/sdk:
 //
-//	func Extension(phi *ext.API)
+//	m := sdk.New("greet", "1.0.0")
+//	m.RegisterTool(...)
+//	m.Run()
 //
+// Ship a phi.yaml next to the binary under ~/.phi/extensions/<name>/.
 // See doc/extensions.md.
 package ext

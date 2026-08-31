@@ -108,25 +108,3 @@ func defaultRunGit(ctx context.Context, gitBin string, args ...string) error {
 	}
 	return nil
 }
-
-// findInstallEntry returns the absolute path of the extension entry file in a
-// freshly cloned plugin directory.
-func findInstallEntry(dir string) (string, error) {
-	index := filepath.Join(dir, "index.go")
-	if st, err := os.Stat(index); err == nil && !st.IsDir() {
-		return index, nil
-	} else if err != nil && !os.IsNotExist(err) {
-		return "", err
-	}
-
-	sole, err := soleRootGoFile(dir)
-	if err != nil {
-		return "", err
-	}
-	if sole != "" {
-		return sole, nil
-	}
-	return "", errors.New(
-		"cloned repo has no extension entry (need index.go or a single *.go at the repo root)",
-	)
-}

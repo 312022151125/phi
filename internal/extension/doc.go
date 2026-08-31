@@ -1,5 +1,7 @@
-// Package extension discovers, loads (via yaegi), and runs Go extensions.
+// Package extension discovers, spawns, and runs PXB extension subprocesses.
 //
-// Extensions replace the former shell hooks system. See doc/extensions.md and
-// the public API in package ext.
+// Each extension is a native binary that speaks the Phi eXtension Binary
+// protocol (see package ext/pxb) over stdin/stdout. Authors use ext/sdk.
+//
+// See doc/extensions.md.
 package extension

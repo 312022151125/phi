@@ -193,7 +193,7 @@ Anthropic Messages API；其余走 OpenAI 兼容的 `/chat/completions` 路径�
 ├── config.yaml   # 全局配置
 ├── bin/          # 下载的搜索工具（fd、ripgrep）
 ├── skills/       # SKILL.md 技能目录
-├── extensions/   # yaegi Go 扩展（*.go）
+├── extensions/   # PXB 二进制 + phi.yaml
 ├── jobs/         # 子代理任务产物（meta、logs、result.md）
 └── session/      # 持久化会话，每个工作目录一个目录
     └── <encoded-cwd>/
@@ -337,22 +337,27 @@ Instructions the agent should follow when this skill is relevant.
 
 ## Extensions（扩展）
 
-扩展是用 yaegi 加载的 Go 源文件：订阅工具/会话事件、注册 LLM 工具、添加斜杠命令，无需重编 phi。
+扩展是讲 **PXB** 二进制协议的原生进程（作者 SDK：`ext/sdk`）：订阅工具/会话事件、注册 LLM 工具、添加斜杠命令。
 
 ```go
 package main
 
-import "github.com/pulseaiclub/phi/ext"
+import (
+	"github.com/pulseaiclub/phi/ext"
+	"github.com/pulseaiclub/phi/ext/sdk"
+)
 
-func Extension(phi *ext.API) {
-	phi.On(ext.EventToolCall, func(ev ext.ToolCallEvent, ctx *ext.Context) *ext.ToolCallResult {
+func main() {
+	m := sdk.New("hello", "0.1.0")
+	m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
 		// return &ext.ToolCallResult{Block: true, Reason: "..."}
 		return nil
 	})
+	_ = m.Run()
 }
 ```
 
-从 `~/.phi/extensions/` 与 `<cwd>/.phi/extensions/` 加载（`*.go` 或 `*/index.go`）。
+放到 `~/.phi/extensions/<name>/`，附带 `phi.yaml` 指向二进制。
 TUI：`Ctrl+K` → **extensions**。禁用：`PHI_EXTENSIONS=off`。完整指南见 [doc/extensions.md](doc/extensions.md)。
 
 ## MCP

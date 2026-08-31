@@ -15,16 +15,16 @@ var (
 	pluginCommand = cli.Command{
 		Name: "plugin",
 		Desc: "manage extensions (install from GitHub)",
-		Long: `Install a published Go extension (yaegi) from a GitHub repo into ~/.phi/extensions/<repo>/.
+		Long: `Install a PXB extension from a GitHub repo into ~/.phi/extensions/<repo>/.
 
-The repo root must contain index.go, or exactly one non-test *.go file.
+The repo root must contain phi.yaml and the compiled exec binary it references.
 
 Examples:
   phi plugin install alice/greet
   phi plugin install alice/greet@v1.2.3
   phi plugin install github.com/alice/greet@main
 
-Security: extensions run with your full process permissions.`,
+Security: extension processes run with your full permissions.`,
 	}
 
 	pluginInstallCommand = cli.Command{

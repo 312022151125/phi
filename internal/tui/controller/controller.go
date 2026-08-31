@@ -255,8 +255,10 @@ func (c *EngineController) ReloadExtensions() (loaded int, warns []extension.War
 		return 0, warns, err
 	}
 	logExtensionWarnings(warns)
+	if prev := c.extRunner.Swap(r); prev != nil {
+		prev.Close()
+	}
 	c.bindExtensionHost(r)
-	c.extRunner.Store(r)
 	if c.engine != nil {
 		c.engine.SetExtensions(r)
 	}

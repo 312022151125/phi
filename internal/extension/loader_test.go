@@ -12,42 +12,47 @@ import (
 	"github.com/pulseaiclub/phi/internal/extension"
 )
 
-func TestDiscoverGoFiles(t *testing.T) {
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello.go"), []byte("package main\n"), 0o644))
-	require.NoError(t, os.Mkdir(filepath.Join(dir, "nested"), 0o755))
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "nested", "index.go"), []byte("package main\n"), 0o644))
+func TestDiscoverManifest(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "hello")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "phi.yaml"), []byte("name: hello\nexec: ./hello\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello"), []byte("#!/bin/true\n"), 0o755))
 
-	found, warns, err := extension.Discover(dir, "")
+	found, warns, err := extension.Discover(root, "")
 	require.NoError(t, err)
 	assert.Empty(t, warns)
-	require.Len(t, found, 2)
-	ids := []string{found[0].ID, found[1].ID}
-	assert.Contains(t, ids, "hello")
-	assert.Contains(t, ids, "nested")
+	require.Len(t, found, 1)
+	assert.Equal(t, "hello", found[0].ID)
 }
 
 func TestExtensionsDisabled(t *testing.T) {
 	t.Setenv(extension.EnvExtensions, "off")
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "hello.go"), []byte("package main\n"), 0o644))
-	found, _, err := extension.Discover(dir, "")
+	root := t.TempDir()
+	dir := filepath.Join(root, "hello")
+	require.NoError(t, os.MkdirAll(dir, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "phi.yaml"), []byte("name: hello\nexec: ./x\n"), 0o644))
+	found, _, err := extension.Discover(root, "")
 	require.NoError(t, err)
 	assert.Empty(t, found)
 }
 
 func TestLoadAndPreToolBlock(t *testing.T) {
-	dir := t.TempDir()
+	root := t.TempDir()
+	extDir := filepath.Join(root, "guard")
 	src := `package main
 
 import (
 	"encoding/json"
 	"strings"
+
 	"github.com/pulseaiclub/phi/ext"
+	"github.com/pulseaiclub/phi/ext/sdk"
 )
 
-func Extension(phi *ext.API) {
-	phi.On(ext.EventToolCall, func(ev ext.ToolCallEvent, ctx *ext.Context) *ext.ToolCallResult {
+func main() {
+	m := sdk.New("guard", "0.0.1")
+	m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
 		if ev.ToolName != "bash" {
 			return nil
 		}
@@ -60,16 +65,15 @@ func Extension(phi *ext.API) {
 		}
 		return nil
 	})
+	_ = m.Run()
 }
 `
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "guard.go"), []byte(src), 0o644))
+	require.NoError(t, extension.Materialize(extDir, "guard", "0.0.1", src))
 
-	r, warns, err := extension.Load(dir, "")
+	r, warns, err := extension.Load(root, "")
 	require.NoError(t, err)
-	if len(warns) > 0 {
-		t.Fatalf("unexpected warnings: %v", warns)
-	}
-	require.NotNil(t, r)
+	require.Empty(t, warns, "%v", warns)
+	t.Cleanup(r.Close)
 	require.Len(t, r.Loaded(), 1)
 
 	input := json.RawMessage(`{"command":"echo phi-deny"}`)
@@ -82,17 +86,21 @@ func Extension(phi *ext.API) {
 }
 
 func TestRegisterTool(t *testing.T) {
-	dir := t.TempDir()
+	root := t.TempDir()
+	extDir := filepath.Join(root, "greet")
 	src := `package main
 
 import (
 	"context"
 	"encoding/json"
+
 	"github.com/pulseaiclub/phi/ext"
+	"github.com/pulseaiclub/phi/ext/sdk"
 )
 
-func Extension(phi *ext.API) {
-	phi.RegisterTool(ext.ToolDef{
+func main() {
+	m := sdk.New("greet", "0.0.1")
+	m.RegisterTool(ext.ToolDef{
 		Name:        "greet",
 		Description: "Greet someone",
 		Parameters: map[string]any{
@@ -110,12 +118,14 @@ func Extension(phi *ext.API) {
 			return ext.ToolResult{Content: "Hello, " + in.Name + "!"}, nil
 		},
 	})
+	_ = m.Run()
 }
 `
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "greet.go"), []byte(src), 0o644))
-	r, warns, err := extension.Load(dir, "")
+	require.NoError(t, extension.Materialize(extDir, "greet", "0.0.1", src))
+	r, warns, err := extension.Load(root, "")
 	require.NoError(t, err)
-	require.Empty(t, warns)
+	require.Empty(t, warns, "%v", warns)
+	t.Cleanup(r.Close)
 	tools := r.ExtensionTools()
 	require.Len(t, tools, 1)
 	assert.Equal(t, "greet", tools[0].Definition.Name)

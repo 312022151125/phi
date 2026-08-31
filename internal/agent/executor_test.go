@@ -3,7 +3,6 @@ package agent
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -19,13 +18,15 @@ import (
 	"github.com/pulseaiclub/phi/internal/tools"
 )
 
-func loadExt(t *testing.T, src string) *extension.Runner {
+func loadExt(t *testing.T, mainGo string) *extension.Runner {
 	t.Helper()
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.go"), []byte(src), 0o644))
-	r, warns, err := extension.Load(dir, "")
+	root := t.TempDir()
+	extDir := filepath.Join(root, "test")
+	require.NoError(t, extension.Materialize(extDir, "test", "0.0.1", mainGo))
+	r, warns, err := extension.Load(root, "")
 	require.NoError(t, err)
 	require.Empty(t, warns, "unexpected warnings: %v", warns)
+	t.Cleanup(r.Close)
 	return r
 }
 
@@ -254,14 +255,19 @@ func TestExecutorExtDenySkipsGateAsk(t *testing.T) {
 		return permission.AskResult{Approved: true}, nil
 	}
 	r := loadExt(t, `package main
-import "github.com/pulseaiclub/phi/ext"
-func Extension(phi *ext.API) {
-  phi.On(ext.EventToolCall, func(ev ext.ToolCallEvent, ctx *ext.Context) *ext.ToolCallResult {
+import (
+  "github.com/pulseaiclub/phi/ext"
+  "github.com/pulseaiclub/phi/ext/sdk"
+)
+func main() {
+  m := sdk.New("test", "0.0.1")
+  m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
     if ev.ToolName == "bash" {
       return &ext.ToolCallResult{Block: true, Reason: "ext blocked"}
     }
     return nil
   })
+  _ = m.Run()
 }
 `)
 	ex := NewExecutor(reg, fixedGate{dec: permission.Ask, reason: "needs approval"}, ask, r)
@@ -300,12 +306,17 @@ func TestExecutorExtModifySeenByGateAndRun(t *testing.T) {
 	}
 	gate := &recordingGate{}
 	r := loadExt(t, `package main
-import "encoding/json"
-import "github.com/pulseaiclub/phi/ext"
-func Extension(phi *ext.API) {
-  phi.On(ext.EventToolCall, func(ev ext.ToolCallEvent, ctx *ext.Context) *ext.ToolCallResult {
+import (
+  "encoding/json"
+  "github.com/pulseaiclub/phi/ext"
+  "github.com/pulseaiclub/phi/ext/sdk"
+)
+func main() {
+  m := sdk.New("test", "0.0.1")
+  m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
     return &ext.ToolCallResult{Input: json.RawMessage(`+"`"+`{"command":"echo safe"}`+"`"+`)}
   })
+  _ = m.Run()
 }
 `)
 	ex := NewExecutor(reg, gate, nil, r)
@@ -336,11 +347,16 @@ func TestExecutorExtPostContextOnModelOnly(t *testing.T) {
 		},
 	}
 	r := loadExt(t, `package main
-import "github.com/pulseaiclub/phi/ext"
-func Extension(phi *ext.API) {
-  phi.On(ext.EventToolResult, func(ev ext.ToolResultEvent, ctx *ext.Context) *ext.ToolResultResult {
+import (
+  "github.com/pulseaiclub/phi/ext"
+  "github.com/pulseaiclub/phi/ext/sdk"
+)
+func main() {
+  m := sdk.New("test", "0.0.1")
+  m.OnToolResult(func(ev ext.ToolResultEvent) *ext.ToolResultResult {
     return &ext.ToolResultResult{Context: "policy note"}
   })
+  _ = m.Run()
 }
 `)
 	ex := NewExecutor(reg, permission.AllowAll{}, nil, r)
