@@ -163,7 +163,7 @@ type moduleUI struct{ m *Module }
 
 func (u moduleUI) Notify(message, kind string) { u.m.Notify(kind, message) }
 func (u moduleUI) SetStatus(_, text string)    { u.m.SetStatus(text) }
-func (u moduleUI) Confirm(_, _ string) bool    { return false }
+func (moduleUI) Confirm(_, _ string) bool      { return false }
 
 // Run speaks PXB on stdin/stdout until shutdown.
 func (m *Module) Run() error {
