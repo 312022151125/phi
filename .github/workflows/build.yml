@@ -1,0 +1,81 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/*.md"
+      - "docs/**"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.os }}-${{ matrix.arch }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: darwin
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build
+        shell: bash
+        env:
+          GOOS: ${{ matrix.os }}
+          GOARCH: ${{ matrix.arch }}
+          CGO_ENABLED: "0"
+        run: |
+          mkdir -p dist
+
+          VERSION="dev-$(git rev-parse --short HEAD)"
+          OUTPUT="phi-${GOOS}-${GOARCH}"
+
+          go build \
+            -trimpath \
+            -ldflags="-s -w -X github.com/pulseaiclub/phi/internal/version.Version=${VERSION}" \
+            -o "dist/${OUTPUT}" \
+            ./cmd
+
+          chmod +x "dist/${OUTPUT}"
+
+      - name: Verify
+        run: |
+          ls -lh dist/
+          file dist/*
+
+      - name: Package
+        shell: bash
+        run: |
+          cd dist
+          tar -czf "phi-${{ matrix.os }}-${{ matrix.arch }}.tar.gz" \
+            "phi-${{ matrix.os }}-${{ matrix.arch }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: phi-${{ matrix.os }}-${{ matrix.arch }}
+          path: dist/phi-${{ matrix.os }}-${{ matrix.arch }}.tar.gz
+          if-no-files-found: error
+          retention-days: 30
