@@ -68,7 +68,7 @@ func main() {
 	_ = m.Run()
 }
 `
-	require.NoError(t, extension.Materialize(extDir, "guard", "0.0.1", src))
+	require.NoError(t, extension.Materialize(t.Context(), extDir, "guard", "0.0.1", src))
 
 	r, warns, err := extension.Load(root, "")
 	require.NoError(t, err)
@@ -121,7 +121,7 @@ func main() {
 	_ = m.Run()
 }
 `
-	require.NoError(t, extension.Materialize(extDir, "greet", "0.0.1", src))
+	require.NoError(t, extension.Materialize(t.Context(), extDir, "greet", "0.0.1", src))
 	r, warns, err := extension.Load(root, "")
 	require.NoError(t, err)
 	require.Empty(t, warns, "%v", warns)

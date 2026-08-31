@@ -533,11 +533,13 @@ func (p *Proc) BuildAPI(api *ext.API) {
 	}
 	if _, ok := p.events[pxb.EvTurnStart]; ok {
 		api.On(ext.EventTurnStart, func(ev ext.TurnStartEvent, _ *ext.Context) {
+			//nolint:gosec // G115: turn index is a small session counter
 			p.Emit(pxb.EventNotify{Event: pxb.EvTurnStart, TurnIndex: uint32(ev.TurnIndex)})
 		})
 	}
 	if _, ok := p.events[pxb.EvTurnEnd]; ok {
 		api.On(ext.EventTurnEnd, func(ev ext.TurnEndEvent, _ *ext.Context) {
+			//nolint:gosec // G115: turn index is a small session counter
 			p.Emit(pxb.EventNotify{Event: pxb.EvTurnEnd, TurnIndex: uint32(ev.TurnIndex)})
 		})
 	}

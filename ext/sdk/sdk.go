@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"slices"
 	"sync"
 	"sync/atomic"
 
@@ -351,10 +352,8 @@ func (m *Module) handleIntercept(req pxb.InterceptReq) pxb.InterceptResp {
 }
 
 func appendUnique(xs []uint16, v uint16) []uint16 {
-	for _, x := range xs {
-		if x == v {
-			return xs
-		}
+	if slices.Contains(xs, v) {
+		return xs
 	}
 	return append(xs, v)
 }

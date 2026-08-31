@@ -64,6 +64,7 @@ func WriteFrame(w io.Writer, typ, flags uint16, id uint32, body []byte) error {
 		return ErrPayloadLarge
 	}
 	var hdr [HeaderSize]byte
+	//nolint:gosec // G115: len(body) is bounded by the MaxPayload check above
 	EncodeHeader(hdr[:], Header{Type: typ, Flags: flags, ID: id, Payload: uint32(len(body))})
 	if _, err := w.Write(hdr[:]); err != nil {
 		return err
@@ -218,24 +219,24 @@ func (bw *ByteWriter) Bool(v bool) {
 }
 
 func (bw *ByteWriter) Blob(p []byte) {
-	bw.U32(uint32(len(p)))
+	bw.U32(uint32(len(p))) //nolint:gosec // G115: payload bounded by MaxPayload on the frame path
 	bw.b = append(bw.b, p...)
 }
 
 func (bw *ByteWriter) String(s string) {
-	bw.U32(uint32(len(s)))
+	bw.U32(uint32(len(s))) //nolint:gosec // G115: payload bounded by MaxPayload on the frame path
 	bw.b = append(bw.b, s...)
 }
 
 func (bw *ByteWriter) Strings(ss []string) {
-	bw.U16(uint16(len(ss)))
+	bw.U16(uint16(len(ss))) //nolint:gosec // G115: element count bounded by MaxPayload
 	for _, s := range ss {
 		bw.String(s)
 	}
 }
 
 func (bw *ByteWriter) U16s(vs []uint16) {
-	bw.U16(uint16(len(vs)))
+	bw.U16(uint16(len(vs))) //nolint:gosec // G115: element count bounded by MaxPayload
 	for _, v := range vs {
 		bw.U16(v)
 	}

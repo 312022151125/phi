@@ -25,16 +25,16 @@ func TestFrameRoundTrip(t *testing.T) {
 	h, err := pxb.DecodeHello(f.Body)
 	require.NoError(t, err)
 	assert.Equal(t, "greet", h.Name)
-	assert.Equal(t, uint32(pxb.CapTools|pxb.CapCommands), h.Caps)
+	assert.Equal(t, pxb.CapTools|pxb.CapCommands, h.Caps)
 }
 
 func TestReaderReusesBuffer(t *testing.T) {
 	var buf bytes.Buffer
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		require.NoError(t, pxb.WriteFrame(&buf, pxb.TypeReady, 0, 0, nil))
 	}
 	rd := pxb.NewReader(&buf)
-	for i := 0; i < 3; i++ {
+	for range 3 {
 		f, err := rd.Read()
 		require.NoError(t, err)
 		assert.Equal(t, pxb.TypeReady, f.Type)

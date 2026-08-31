@@ -43,7 +43,7 @@ func TestForwardCompatSkipsUnknownTags(t *testing.T) {
 
 	out, err := pxb.DecodeEventNotify(fw.Bytes())
 	require.NoError(t, err)
-	assert.Equal(t, uint16(pxb.EvTurnStart), out.Event)
+	assert.Equal(t, pxb.EvTurnStart, out.Event)
 	assert.Equal(t, uint32(7), out.TurnIndex)
 	_ = base
 }
@@ -56,7 +56,7 @@ func TestBackwardCompatMissingTagsAreZero(t *testing.T) {
 
 	out, err := pxb.DecodeInterceptReq(fw.Bytes())
 	require.NoError(t, err)
-	assert.Equal(t, uint16(pxb.EvToolCall), out.Event)
+	assert.Equal(t, pxb.EvToolCall, out.Event)
 	assert.Equal(t, "bash", out.ToolName)
 	assert.Empty(t, out.ToolCallID)
 	assert.Nil(t, out.Input)
@@ -86,6 +86,6 @@ func TestSubscribeRoundTrip(t *testing.T) {
 }
 
 func TestUnknownEventCodeMapsEmpty(t *testing.T) {
-	assert.Equal(t, "", pxb.EventName(999))
+	assert.Empty(t, pxb.EventName(999))
 	assert.Equal(t, uint16(0), pxb.EventCode("nope"))
 }

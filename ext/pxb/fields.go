@@ -1,6 +1,9 @@
 package pxb
 
-import "fmt"
+import (
+	"encoding/binary"
+	"errors"
+)
 
 // Tagged payload wire kinds. Only these two exist so unknown fields are
 // always skippable without a schema.
@@ -10,8 +13,8 @@ const (
 )
 
 var (
-	ErrBadWire = fmt.Errorf("pxb: bad wire kind")
-	ErrBadTag  = fmt.Errorf("pxb: bad field tag")
+	ErrBadWire = errors.New("pxb: bad wire kind")
+	ErrBadTag  = errors.New("pxb: bad field tag")
 )
 
 // FieldWriter builds a tagged-field payload (protobuf-style, fixed-width).
@@ -34,8 +37,7 @@ func (fw *FieldWriter) Bytes() []byte { return fw.b }
 
 func (fw *FieldWriter) putHdr(tag uint16, kind uint8) {
 	var tmp [3]byte
-	tmp[0] = byte(tag)
-	tmp[1] = byte(tag >> 8)
+	binary.LittleEndian.PutUint16(tmp[0:2], tag)
 	tmp[2] = kind
 	fw.b = append(fw.b, tmp[:]...)
 }
@@ -44,14 +46,7 @@ func (fw *FieldWriter) putHdr(tag uint16, kind uint8) {
 func (fw *FieldWriter) PutU64(tag uint16, v uint64) {
 	fw.putHdr(tag, WireU64)
 	var tmp [8]byte
-	tmp[0] = byte(v)
-	tmp[1] = byte(v >> 8)
-	tmp[2] = byte(v >> 16)
-	tmp[3] = byte(v >> 24)
-	tmp[4] = byte(v >> 32)
-	tmp[5] = byte(v >> 40)
-	tmp[6] = byte(v >> 48)
-	tmp[7] = byte(v >> 56)
+	binary.LittleEndian.PutUint64(tmp[:], v)
 	fw.b = append(fw.b, tmp[:]...)
 }
 
@@ -77,12 +72,9 @@ func (fw *FieldWriter) PutBytes(tag uint16, p []byte) {
 		return
 	}
 	fw.putHdr(tag, WireBytes)
-	n := uint32(len(p))
+	n := uint32(len(p)) //nolint:gosec // G115: blob length bounded by MaxPayload on the frame path
 	var tmp [4]byte
-	tmp[0] = byte(n)
-	tmp[1] = byte(n >> 8)
-	tmp[2] = byte(n >> 16)
-	tmp[3] = byte(n >> 24)
+	binary.LittleEndian.PutUint32(tmp[:], n)
 	fw.b = append(fw.b, tmp[:]...)
 	fw.b = append(fw.b, p...)
 }

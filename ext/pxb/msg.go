@@ -121,11 +121,11 @@ func DecodeHello(b []byte) (Hello, error) {
 			return err
 		case fHelloCaps:
 			v, err := takeU64(kind, fr)
-			h.Caps = uint32(v)
+			h.Caps = uint32(v) //nolint:gosec // G115: caps bitmask is u32 by protocol
 			return err
 		case fHelloProtocol:
 			v, err := takeU64(kind, fr)
-			h.Protocol = uint16(v)
+			h.Protocol = uint16(v) //nolint:gosec // G115: protocol version is u16 by protocol
 			return err
 		default:
 			return fr.Skip(kind)
@@ -159,7 +159,7 @@ func DecodeHelloAck(b []byte) (HelloAck, error) {
 		switch tag {
 		case fAckProtocol:
 			v, err := takeU64(kind, fr)
-			h.Protocol = uint16(v)
+			h.Protocol = uint16(v) //nolint:gosec // G115: protocol version is u16 by protocol
 			return err
 		case fAckPhiVersion:
 			s, err := takeString(kind, fr)
@@ -492,7 +492,7 @@ func DecodeInterceptReq(b []byte) (InterceptReq, error) {
 		switch tag {
 		case fIxReqEvent:
 			v, err := takeU64(kind, fr)
-			r.Event = uint16(v)
+			r.Event = uint16(v) //nolint:gosec // G115: event code is u16 by protocol
 			return err
 		case fIxReqToolName:
 			s, err := takeString(kind, fr)
@@ -532,7 +532,7 @@ func DecodeInterceptReq(b []byte) (InterceptReq, error) {
 			return err
 		case fIxReqTurnIndex:
 			v, err := takeU64(kind, fr)
-			r.TurnIndex = uint32(v)
+			r.TurnIndex = uint32(v) //nolint:gosec // G115: turn index is u32 by protocol
 			return err
 		default:
 			return fr.Skip(kind)
@@ -646,7 +646,7 @@ func DecodeEventNotify(b []byte) (EventNotify, error) {
 		switch tag {
 		case fEvEvent:
 			v, err := takeU64(kind, fr)
-			e.Event = uint16(v)
+			e.Event = uint16(v) //nolint:gosec // G115: event code is u16 by protocol
 			return err
 		case fEvToolName:
 			s, err := takeString(kind, fr)
@@ -674,7 +674,7 @@ func DecodeEventNotify(b []byte) (EventNotify, error) {
 			return err
 		case fEvTurnIndex:
 			v, err := takeU64(kind, fr)
-			e.TurnIndex = uint32(v)
+			e.TurnIndex = uint32(v) //nolint:gosec // G115: turn index is u32 by protocol
 			return err
 		default:
 			return fr.Skip(kind)
