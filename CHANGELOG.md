@@ -10,6 +10,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Publishable Go author SDK: nested module `github.com/pulseaiclub/phi/ext` (`go get …@vX.Y.Z` via `ext/vX.Y.Z` tags). See [doc/extensions.md](doc/extensions.md).
+
 ### Changed
 
 ### Deprecated
@@ -17,6 +19,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Removed
 
 ### Fixed
+
+- Extension discovery follows symlinked directories (e.g. `.phi/extensions/foo` → `examples/foo`), so linked installs are no longer skipped.
 
 ### Security
 
