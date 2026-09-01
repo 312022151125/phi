@@ -1,4 +1,4 @@
-package sdk
+package phi
 
 import (
 	"slices"
