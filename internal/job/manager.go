@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -171,6 +172,7 @@ func (m *Manager) Spawn(ctx context.Context, req SpawnRequest) (Info, error) {
 		ParentID:    req.ParentID,
 		ParentDepth: req.Depth,
 		Role:        NormalizeRole(string(req.Role)),
+		Model:       strings.TrimSpace(req.Model),
 		Prompt:      req.Prompt,
 		Description: req.Description,
 		WorkDir:     req.WorkDir,

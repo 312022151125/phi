@@ -97,9 +97,9 @@ func NewController(bus *Bus, proj *project.Project, cwd string) (*EngineControll
 	c.extRunner.Store(extRunner)
 	c.bindExtensionHost(extRunner)
 
-	jobs, err := agent.NewJobManager(proj.JobsDir(), c.modelCfg, func() llm.ModelConfig {
+	jobs, err := agent.NewJobManagerWithModelResolver(proj.JobsDir(), c.modelCfg, func() llm.ModelConfig {
 		return c.modelCfg
-	}, c.Extensions)
+	}, c.Extensions, config.FindModel)
 	if err != nil {
 		return nil, err
 	}

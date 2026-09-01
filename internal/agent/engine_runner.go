@@ -27,13 +27,14 @@ import (
 // tool_call handlers apply. Extension RegisterTool tools are not merged
 // into child engines. ExtensionsFn wins when set (live reload).
 type EngineRunner struct {
-	Model        llm.ModelConfig
-	ModelFn      func() llm.ModelConfig // if set, preferred over Model
-	Gate         permission.Gate        // nil → SpecForRole(job.Role).Mode on WorkDir
-	Tools        []tools.Tool           // nil → SpecForRole(job.Role).Tools
-	MaxRounds    int                    // 0 → Engine default
-	Extensions   *extension.Runner
-	ExtensionsFn func() *extension.Runner
+	Model         llm.ModelConfig
+	ModelFn       func() llm.ModelConfig               // if set, preferred over Model
+	ModelResolver func(string) (llm.ModelConfig, bool) // optional per-job configured-model lookup
+	Gate          permission.Gate                      // nil → SpecForRole(job.Role).Mode on WorkDir
+	Tools         []tools.Tool                         // nil → SpecForRole(job.Role).Tools
+	MaxRounds     int                                  // 0 → Engine default
+	Extensions    *extension.Runner
+	ExtensionsFn  func() *extension.Runner
 }
 
 // Run implements [job.Runner].
@@ -69,6 +70,16 @@ func (r EngineRunner) Run(ctx context.Context, env job.RunEnv) (string, error) {
 	if r.ModelFn != nil {
 		model = r.ModelFn()
 	}
+	if name := strings.TrimSpace(env.Job.Model); name != "" {
+		if r.ModelResolver == nil {
+			return "", fmt.Errorf("agent: model override %q is unavailable", name)
+		}
+		resolved, ok := r.ModelResolver(name)
+		if !ok {
+			return "", fmt.Errorf("agent: unknown model %q", name)
+		}
+		model = resolved
+	}
 
 	extRunner := r.Extensions
 	if r.ExtensionsFn != nil {
@@ -96,7 +107,7 @@ func (r EngineRunner) Run(ctx context.Context, env job.RunEnv) (string, error) {
 		return "", err
 	}
 
-	env.Log(fmt.Sprintf("sub-agent role=%s session=%s parent=%s", spec.Role, engine.SessionID(), env.Job.ParentID))
+	env.Log(fmt.Sprintf("sub-agent role=%s model=%s session=%s parent=%s", spec.Role, model.Name, engine.SessionID(), env.Job.ParentID))
 
 	prompt := env.Job.Prompt
 	if env.Job.Description != "" {

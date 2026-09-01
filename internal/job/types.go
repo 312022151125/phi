@@ -36,7 +36,8 @@ type Meta struct {
 	ID          string    `json:"id"`
 	ParentID    string    `json:"parent_id,omitempty"`
 	ParentDepth int       `json:"parent_depth"`
-	Role        Role      `json:"role,omitempty"` // explore | worker | review; empty → explore
+	Role        Role      `json:"role,omitempty"`  // explore | worker | review; empty → explore
+	Model       string    `json:"model,omitempty"` // configured Phi model name; empty → inherit parent model
 	Prompt      string    `json:"prompt"`
 	Description string    `json:"description,omitempty"`
 	WorkDir     string    `json:"workdir,omitempty"`
@@ -63,6 +64,7 @@ type SpawnRequest struct {
 	ParentToolUseID string // parent agent tool_use id for TUI nesting (not persisted)
 	Depth           int    // 0 = top-level; tool layer should force Depth for children
 	Role            Role   // explore | worker | review; empty → explore
+	Model           string // optional configured Phi model name; empty → inherit active parent model
 	WorkDir         string
 	Timeout         time.Duration // 0 = no run timeout; Cancel still works
 }

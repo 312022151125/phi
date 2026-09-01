@@ -82,9 +82,9 @@ func runHeadless(opts runOptions) error {
 		defer func() { _ = pool.Close() }()
 	}
 	if bs.Config.Agents.Enabled {
-		jobs, jobErr := agent.NewJobManager(bs.Proj.JobsDir(), bs.Config.Model(), nil, func() *extension.Runner {
+		jobs, jobErr := agent.NewJobManagerWithModelResolver(bs.Proj.JobsDir(), bs.Config.Model(), nil, func() *extension.Runner {
 			return extRunner
-		})
+		}, bs.Config.FindModel)
 		if jobErr != nil {
 			fmt.Fprintln(os.Stderr, "phi run:", jobErr)
 			return exitCode(ExitUsage)

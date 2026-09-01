@@ -88,6 +88,10 @@ Concurrency cap: at most %d sub-agents run concurrently; spawning more fails (jo
 						"description": "explore (default) | review | worker. See tool description for when to pick each.",
 						"enum":        []string{"explore", "review", "worker"},
 					},
+					"model": llm.Object{
+						"type":        "string",
+						"description": "Optional configured Phi model name for this sub-agent. Empty/omitted inherits the active parent model.",
+					},
 					"workdir": llm.Object{
 						"type":        "string",
 						"description": "Working directory for the sub-agent (default: parent session cwd).",
@@ -121,6 +125,7 @@ Concurrency cap: at most %d sub-agents run concurrently; spawning more fails (jo
 				ParentToolUseID: tooldef.ToolCallID(ctx),
 				Depth:           0,
 				Role:            role,
+				Model:           strings.TrimSpace(in.Model),
 				WorkDir:         wd,
 			}
 			if in.TimeoutSec > 0 {
@@ -134,6 +139,7 @@ Concurrency cap: at most %d sub-agents run concurrently; spawning more fails (jo
 				"job_id":      info.ID,
 				"status":      info.Status,
 				"role":        info.Role,
+				"model":       info.Model,
 				"dir":         info.Dir,
 				"result_path": info.ResultPath,
 			})
@@ -146,6 +152,7 @@ type spawnInput struct {
 	Prompt      string `json:"prompt"`
 	Description string `json:"description"`
 	Role        string `json:"role"`
+	Model       string `json:"model"`
 	WorkDir     string `json:"workdir"`
 	TimeoutSec  int    `json:"timeout_sec"`
 }
@@ -203,6 +210,7 @@ func agentListTool(deps AgentDeps) tooldef.Tool {
 					"job_id":      info.ID,
 					"status":      info.Status,
 					"role":        info.Role,
+					"model":       info.Model,
 					"description": info.Description,
 					"dir":         info.Dir,
 				})
