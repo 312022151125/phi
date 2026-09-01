@@ -13,9 +13,12 @@ import (
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/chat"
 	"github.com/pulseaiclub/phi/internal/components/layout"
+	"github.com/pulseaiclub/phi/internal/components/listpicker"
 	"github.com/pulseaiclub/phi/internal/components/mention"
 	"github.com/pulseaiclub/phi/internal/components/palette"
+	"github.com/pulseaiclub/phi/internal/components/sessionlist"
 	"github.com/pulseaiclub/phi/internal/components/toast"
+	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tui/commands"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
 	"github.com/pulseaiclub/phi/internal/tui/footer"
@@ -26,16 +29,18 @@ import (
 	imgutil "github.com/pulseaiclub/phi/internal/util/image"
 )
 
-// ComposerPane owns the chat input, slash/@ pickers, and palette.
+// ComposerPane owns the chat input, slash/@ pickers, palette, and session list.
 type ComposerPane struct {
 	theme components.Theme
 	cwd   string
 
-	Chat     chat.ChatInput
-	mention  mention.Picker
-	slash    mention.Picker
-	question mention.Picker
-	palette  palette.CommandPalette
+	Chat       chat.ChatInput
+	mention    mention.Picker
+	slash      mention.Picker
+	question   mention.Picker
+	palette    palette.CommandPalette
+	listPicker listpicker.Picker
+	onListPick func(listpicker.Item)
 
 	mentionGen int
 	// mentionCancel stops the search in flight; nil before the first search.
@@ -78,6 +83,9 @@ func NewComposerPane(theme components.Theme, model, cwd string) *ComposerPane {
 			NoPrefix: true,
 		},
 		palette: palette.CommandPalette{
+			Theme: theme,
+		},
+		listPicker: listpicker.Picker{
 			Theme: theme,
 		},
 	}
@@ -123,6 +131,12 @@ func (c *ComposerPane) Wire(
 	c.ctrlClose = ctrlClose
 
 	c.palette.FocusReturn = &c.Chat
+	c.listPicker.FocusReturn = &c.Chat
+	c.listPicker.OnAccept = func(item listpicker.Item) {
+		if c.onListPick != nil {
+			c.onListPick(item)
+		}
+	}
 	c.Chat.OnSubmit = func(text string) {
 		c.bus.Publish(controller.SubmitMsg{Text: text})
 		if c.drainBus != nil {
@@ -162,6 +176,49 @@ func (c *ComposerPane) HidePalette() {
 	if c != nil {
 		c.palette.Hide()
 	}
+}
+
+// SetListPickHandler registers the callback for list picker Enter.
+func (c *ComposerPane) SetListPickHandler(fn func(listpicker.Item)) {
+	if c != nil {
+		c.onListPick = fn
+	}
+}
+
+// ShowList opens the opaque list picker overlay.
+func (c *ComposerPane) ShowList(items []listpicker.Item, cfg listpicker.ShowConfig) {
+	if c == nil {
+		return
+	}
+	c.HideCompleters()
+	c.HidePalette()
+	c.listPicker.Show(items, cfg)
+	if c.requestFocus != nil {
+		c.requestFocus(&c.listPicker)
+	}
+	if c.onRedraw != nil {
+		c.onRedraw()
+	}
+}
+
+// ShowSessionList maps sessions into list rows and opens the picker.
+func (c *ComposerPane) ShowSessionList(items []session.SessionMeta, currentID string) {
+	if c == nil {
+		return
+	}
+	c.ShowList(sessionlist.Items(items, currentID, time.Time{}), sessionlist.Config())
+}
+
+// ListOverlay returns the list picker surface when open.
+func (c *ComposerPane) ListOverlay(ctx components.DrawContext) (components.SubSurface, bool) {
+	if c == nil || !c.listPicker.Open {
+		return components.SubSurface{}, false
+	}
+	return components.SubSurface{
+		Origin:  components.Point{X: 0, Y: 0},
+		Surface: c.listPicker.Draw(ctx),
+		Z:       20,
+	}, true
 }
 
 // ClearInput clears the chat composer text.
@@ -324,6 +381,7 @@ func (c *ComposerPane) SetTheme(th components.Theme) {
 	c.Chat.BottomRightLabel.Style = footer.PathLabelStyle(th)
 	c.Chat.TopRightLabel.Style = th.Success
 	c.palette.Theme = th
+	c.listPicker.Theme = th
 	c.mention.Theme = th
 	c.slash.Theme = th
 	c.question.Theme = th
@@ -443,6 +501,10 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			if c.requestFocusEditor != nil {
 				c.requestFocusEditor()
 			}
+		} else if c.listPicker.Open {
+			if c.requestFocus != nil {
+				c.requestFocus(&c.listPicker)
+			}
 		} else if c.palette.Open {
 			if c.requestFocus != nil {
 				c.requestFocus(&c.palette)
@@ -474,6 +536,13 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			if c.handleEscape(ctx) {
 				return
 			}
+		}
+		if c.listPicker.Open {
+			c.listPicker.Handle(ctx, ev)
+			if !c.listPicker.Open {
+				c.FocusChat()
+			}
+			return
 		}
 		if ev.Press && ev.Mods.Has(xui.ModCtrl) && ev.Code == xui.KeyRune &&
 			(ev.Rune == 'k' || ev.Rune == 'K') {
@@ -533,6 +602,10 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 		}
 		c.Chat.Handle(ctx, ev)
 	case xui.MouseEvent:
+		if c.listPicker.Open {
+			c.listPicker.Handle(ctx, ev)
+			return
+		}
 		if c.palette.Open {
 			c.palette.Handle(ctx, ev)
 			return
@@ -541,6 +614,10 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			c.transcript.HandleMouse(ctx, ev, c.FocusChat)
 		}
 	case xui.PasteEvent:
+		if c.listPicker.Open {
+			c.listPicker.Handle(ctx, ev)
+			return
+		}
 		if c.palette.Open {
 			c.palette.Handle(ctx, ev)
 			return
@@ -554,6 +631,18 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 // Escape key was consumed. Priority order matters: pickers first, then
 // the running stream, then a selection.
 func (c *ComposerPane) handleEscape(ctx *components.EventContext) bool {
+	if c.listPicker.Open {
+		c.listPicker.Hide()
+		c.FocusChat()
+		ctx.ConsumeAndRedraw()
+		return true
+	}
+	if c.palette.Open {
+		c.palette.Hide()
+		c.FocusChat()
+		ctx.ConsumeAndRedraw()
+		return true
+	}
 	if c.question.Open {
 		c.question.Cancel()
 		c.Chat.QuestionOpen = false

@@ -1,8 +1,6 @@
 package commands
 
 import (
-	"fmt"
-	"strings"
 	"time"
 
 	"github.com/pulseaiclub/phi/internal/components/toast"
@@ -19,6 +17,13 @@ type SessionCommands struct {
 	Footer     *footer.FooterChrome
 	Bus        *controller.Bus
 	SyncHooks  func()
+	// OpenPicker opens the session list overlay. When nil, Show toasts only.
+	OpenPicker func(items []session.SessionMeta, currentID string)
+	// StreamActive reports whether resume should be blocked.
+	StreamActive func() bool
+	// SessionDir / SessionID override Ctrl for tests when set.
+	SessionDir func() string
+	SessionID  func() string
 }
 
 // NewSessionCommands builds session command handlers.
@@ -45,37 +50,52 @@ func (s *SessionCommands) showToast(msg string, kind toast.ToastKind, d time.Dur
 	s.Bus.Publish(controller.ToastMsg{Message: msg, Kind: kind, Duration: d})
 }
 
-// Show lists recent sessions for the current session directory.
+// Show opens the session picker for the current session directory.
 func (s *SessionCommands) Show() {
 	if s == nil {
 		return
 	}
-	dir := ""
-	if s.Ctrl != nil {
-		dir = s.Ctrl.SessionDir()
-	}
+	dir, currentID := s.dirAndID()
 	list, err := session.ListSessions(dir)
 	if err != nil {
 		s.showToast(err.Error(), toast.ToastError, 3*time.Second)
 		return
 	}
-	const maxN = 12
-	var b strings.Builder
 	if len(list) == 0 {
-		b.WriteString("No sessions for this directory")
-	} else {
-		writeSessionList(&b, list, maxN)
+		s.showToast("No sessions for this directory", toast.ToastWarning, 3*time.Second)
+		return
 	}
-	s.Transcript.ApplySession(session.AssistantMessageUpdate{Message: session.Message{
-		ID:    fmt.Sprintf("sessions-%d", time.Now().UnixNano()),
-		State: session.StateComplete,
-		Text:  b.String(),
-		Content: []session.ContentBlock{
-			{Type: session.BlockText, Text: b.String()},
-		},
-	}})
-	s.Transcript.Sync()
-	s.Transcript.StickToBottom()
+	if s.OpenPicker == nil {
+		s.showToast("Session picker unavailable", toast.ToastError, 3*time.Second)
+		return
+	}
+	s.OpenPicker(list, currentID)
+}
+
+func (s *SessionCommands) dirAndID() (dir, currentID string) {
+	if s.SessionDir != nil {
+		dir = s.SessionDir()
+	} else if s.Ctrl != nil {
+		dir = s.Ctrl.SessionDir()
+	}
+	if s.SessionID != nil {
+		currentID = s.SessionID()
+	} else if s.Ctrl != nil {
+		currentID = s.Ctrl.SessionID()
+	}
+	return dir, currentID
+}
+
+// Accept resumes the chosen session (used by the session list overlay).
+func (s *SessionCommands) Accept(id string) {
+	if s == nil {
+		return
+	}
+	if s.StreamActive != nil && s.StreamActive() {
+		s.showToast("Cannot resume while a reply or command is running", toast.ToastWarning, 3*time.Second)
+		return
+	}
+	s.Resume(id)
 }
 
 // Resume loads a prior session by id into the UI.
@@ -96,7 +116,7 @@ func (s *SessionCommands) Resume(id string) {
 	s.Transcript.StickToBottom()
 	msg := "Resumed " + shortSessionID(s.Ctrl.SessionID())
 	if warn != "" {
-		s.showToast(msg+": "+warn, toast.ToastWarning, 5*time.Second)
+		s.showToast(msg+" · "+warn, toast.ToastWarning, 4*time.Second)
 		return
 	}
 	s.showToast(msg, toast.ToastSuccess, 3*time.Second)
@@ -126,24 +146,4 @@ func shortSessionID(id string) string {
 		return id[:8]
 	}
 	return id
-}
-
-// writeSessionList renders up to maxN sessions for the /sessions message.
-func writeSessionList(b *strings.Builder, list []session.SessionMeta, maxN int) {
-	fmt.Fprintf(b, "Sessions in this directory (%d):\n", len(list))
-	n := len(list)
-	n = min(n, maxN)
-	for i := 0; i < n; i++ {
-		m := list[i]
-		short := m.ID
-		if len(short) > 8 {
-			short = short[:8]
-		}
-		preview := m.Preview
-		if preview == "" {
-			preview = "(no preview)"
-		}
-		fmt.Fprintf(b, "  %s  %s  %s\n", short, m.Mtime.Format("01-02 15:04"), preview)
-	}
-	b.WriteString("Resume with /resume <id>")
 }

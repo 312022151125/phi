@@ -10,10 +10,28 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+<!-- Released section -->
+<!-- Don't change this section unless doing release -->
+
+## [0.19.0] - 2026-09-01
+
+### Added
+
 - **PXB extensions:** native binary extensions speaking a length-prefixed binary protocol (`ext/pxb`) over stdin/stdout. Author SDK `ext/phi`. Layout: `~/.phi/extensions/<name>/phi.yaml` + `exec`. See [doc/extensions.md](doc/extensions.md). Palette: **extensions → list/reload**. Disable with `PHI_EXTENSIONS=off`.
 - `phi plugin install <github-repo[@tag]>`: shallow-clone a GitHub repo into `~/.phi/extensions/<repo>/` (requires `phi.yaml` + compiled binary).
 - Extension full chain: `user_input`, `turn_stopping`, `session_compact` intercepts/events; `SubscribeEvent` with payload; `SendUserMessage` host request.
 - Extension **Confirm** dialog (blocking RPC).
+- `/sessions` opens an opaque filterable session picker (Enter resumes); no longer prints into the transcript.
 
 ### Changed
 
@@ -43,9 +61,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Session ID / previous / target fields ride on lifecycle `EventNotify`; host pushes `SessionMeta` after `/new` / `/resume`.
 
 ### Security
-
-<!-- Released section -->
-<!-- Don't change this section unless doing release -->
 
 ## [0.18.1] - 2026-08-28
 
@@ -223,7 +238,9 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.19.0
+[0.18.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.18.1
 [0.18.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.18.0
 [0.17.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.17.0
 [0.16.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.16.0

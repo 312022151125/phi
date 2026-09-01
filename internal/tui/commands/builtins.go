@@ -22,7 +22,7 @@ func NewBuiltinRegistry() *CommandRegistry {
 func registerBuiltinCommands(r *CommandRegistry) {
 	r.Register(Command{
 		Name:        "sessions",
-		Description: "List sessions for this directory",
+		Description: "Browse and resume sessions for this directory",
 		Slash:       true,
 		Insert:      "/sessions",
 		Run: func(ctx CommandContext) error {
