@@ -52,7 +52,7 @@ func TestParseSpec(t *testing.T) {
 	}
 }
 
-func TestDiscoverRequiresManifest(t *testing.T) {
+func TestDiscoverIgnoresSubdirWithoutManifest(t *testing.T) {
 	dir := t.TempDir()
 	sub := filepath.Join(dir, "greet")
 	require.NoError(t, os.Mkdir(sub, 0o755))
@@ -61,8 +61,7 @@ func TestDiscoverRequiresManifest(t *testing.T) {
 	found, warns, err := extension.Discover(dir, "")
 	require.NoError(t, err)
 	assert.Empty(t, found)
-	require.NotEmpty(t, warns)
-	assert.Contains(t, warns[0].Message, "legacy")
+	assert.Empty(t, warns)
 }
 
 func TestInstallClonesAndValidates(t *testing.T) {
