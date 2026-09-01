@@ -10,6 +10,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+<!-- Released section -->
+<!-- Don't change this section unless doing release -->
+
+## [0.19.1] - 2026-09-01
+
+### Added
+
 - Publishable Go author SDK: nested module `github.com/pulseaiclub/phi/ext` (`go get …@vX.Y.Z` via `ext/vX.Y.Z` tags). See [doc/extensions.md](doc/extensions.md).
 
 ### Changed
@@ -23,9 +40,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Extension discovery follows symlinked directories (e.g. `.phi/extensions/foo` → `examples/foo`), so linked installs are no longer skipped.
 
 ### Security
-
-<!-- Released section -->
-<!-- Don't change this section unless doing release -->
 
 ## [0.19.0] - 2026-09-01
 
@@ -242,7 +256,8 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.19.1
 [0.19.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.19.0
 [0.18.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.18.1
 [0.18.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.18.0
