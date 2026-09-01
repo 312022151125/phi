@@ -3,7 +3,7 @@
 | Path                     | Purpose                                        |
 | ------------------------ | ---------------------------------------------- |
 | `cmd/`                   | Entry points (`main.go` via pli: `phi run`, `phi update`, `phi sessions`, …) |
-| `ext/`                   | Public extension API, PXB protocol (`ext/pxb`), author SDK (`ext/phi`) |
+| `ext/`                   | Public extension API, PXB protocol (`ext/go/pxb`), author SDK (`ext/go/phi`) — nested Go module `github.com/pulseaiclub/phi/ext` |
 | `internal/util/update/`  | Self-update check + GitHub Releases install    |
 | `internal/agent/`        | Agent engine, executor, jobs                     |
 | `internal/agent/prompt/` | System prompt templates + Skills/MCP catalogs    |

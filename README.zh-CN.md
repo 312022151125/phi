@@ -337,7 +337,11 @@ Instructions the agent should follow when this skill is relevant.
 
 ## Extensions（扩展）
 
-扩展是讲 **PXB** 二进制协议的原生进程（作者 SDK：`ext/phi`）：订阅工具/会话事件、注册 LLM 工具、添加斜杠命令。
+扩展是讲 **PXB** 二进制协议的原生进程（作者 SDK：Go `github.com/pulseaiclub/phi/ext/phi`）：订阅工具/会话事件、注册 LLM 工具、添加斜杠命令。
+
+```bash
+go get github.com/pulseaiclub/phi/ext@v0.19.0
+```
 
 ```go
 package main
