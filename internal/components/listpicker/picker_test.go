@@ -1,0 +1,71 @@
+package listpicker
+
+import (
+	"strings"
+	"testing"
+
+	"github.com/pulseaiclub/xui"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/pulseaiclub/phi/internal/components"
+)
+
+func TestPickerFilterAndAccept(t *testing.T) {
+	var got string
+	p := &Picker{
+		Theme: components.DefaultTheme(),
+		OnAccept: func(item Item) {
+			got = item.ID
+		},
+	}
+	p.Show([]Item{
+		{ID: "aaaaaaaa-1111", Leading: "2m ago", Primary: "aaaaaaaa", Detail: "fix resume leak"},
+		{ID: "bbbbbbbb-2222", Leading: "1h ago", Primary: "bbbbbbbb", Detail: "add themes", Badge: "current"},
+		{ID: "cccccccc-3333", Leading: "2h ago", Primary: "cccccccc", Detail: "hello world"},
+	}, ShowConfig{Title: "Sessions"})
+	require.True(t, p.Open)
+	assert.Equal(t, 1, p.Selected, "prefer badged row")
+
+	ctx := &components.EventContext{}
+	for _, r := range "resume" {
+		p.Handle(ctx, xui.KeyEvent{Code: xui.KeyRune, Rune: r, Press: true})
+	}
+	require.Len(t, p.filtered, 1)
+	assert.Equal(t, "aaaaaaaa-1111", p.Items[p.filtered[0]].ID)
+
+	p.Handle(ctx, xui.KeyEvent{Code: xui.KeyEnter, Press: true})
+	assert.Equal(t, "aaaaaaaa-1111", got)
+	assert.False(t, p.Open)
+}
+
+func TestPickerEscapeCloses(t *testing.T) {
+	p := &Picker{Theme: components.DefaultTheme()}
+	p.Show([]Item{{ID: "abc", Primary: "abc", Detail: "x"}}, ShowConfig{})
+	ctx := &components.EventContext{}
+	p.Handle(ctx, xui.KeyEvent{Code: xui.KeyEscape, Press: true})
+	assert.False(t, p.Open)
+}
+
+func TestPickerEmptyDraw(t *testing.T) {
+	p := &Picker{Theme: components.DefaultTheme()}
+	p.Show(nil, ShowConfig{Title: "Sessions", Empty: "No sessions in this directory"})
+	s := p.Draw(components.DrawContext{Max: components.Size{Width: 80, Height: 24}, Method: xui.WidthUnicode})
+	require.Len(t, s.Children, 1)
+	text := components.SurfaceText(s.Children[0].Surface)
+	assert.Contains(t, text, "Sessions")
+	assert.True(t, strings.Contains(text, "No sessions"), text)
+}
+
+func TestPickerDrawBadge(t *testing.T) {
+	p := &Picker{Theme: components.DefaultTheme()}
+	p.Show([]Item{
+		{ID: "deadbeef-0001", Leading: "2m ago", Primary: "deadbeef", Detail: "first", Badge: "current"},
+	}, ShowConfig{Title: "Sessions"})
+	s := p.Draw(components.DrawContext{Max: components.Size{Width: 80, Height: 24}, Method: xui.WidthUnicode})
+	require.Len(t, s.Children, 1)
+	text := components.SurfaceText(s.Children[0].Surface)
+	assert.Contains(t, text, "Sessions")
+	assert.Contains(t, text, "deadbeef")
+	assert.Contains(t, text, "current")
+}
