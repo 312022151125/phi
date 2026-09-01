@@ -34,6 +34,7 @@ type Runner struct {
 	baseTools   []tools.Tool
 	activeNames map[string]bool // nil = all active
 	host        ext.HostOpts
+	paneOwner   map[string]*Proc
 }
 
 // Close shuts down every extension subprocess.
@@ -110,9 +111,11 @@ func (r *Runner) Bind(opts ext.HostOpts) {
 	for _, api := range r.apis {
 		api.BindHost(opts)
 	}
-	// Forward spontaneous Notify frames from extension processes to the host UI.
+	// Forward spontaneous Notify frames / host requests from extension processes.
 	ui := opts.UI
+	sendUser := opts.SendUserMessage
 	for _, p := range r.procs {
+		proc := p
 		p.onNotify = func(n pxb.NotifyMsg) {
 			if ui == nil {
 				return
@@ -128,10 +131,135 @@ func (r *Runner) Bind(opts ext.HostOpts) {
 				ui.SetStatus("", n.Status)
 			}
 		}
+		p.onHostRequest = func(id uint32, hasID bool, req pxb.HostRequest) {
+			r.handleHostRequest(proc, id, hasID, req, ui, sendUser)
+		}
 	}
 }
 
-// SetMeta updates cwd/session on bound APIs.
+func (r *Runner) handleHostRequest(
+	p *Proc,
+	id uint32,
+	hasID bool,
+	req pxb.HostRequest,
+	ui ext.UI,
+	sendUser func(string),
+) {
+	switch req.Method {
+	case "send_user_message":
+		if sendUser != nil && req.Arg != "" {
+			sendUser(req.Arg)
+		}
+		if hasID {
+			p.ReplyHost(id, pxb.HostResult{OK: true})
+		}
+	case "confirm":
+		go func() {
+			reply := ext.ConfirmReply{}
+			if ui != nil {
+				var cr ext.ConfirmRequest
+				if req.Arg != "" {
+					_ = json.Unmarshal([]byte(req.Arg), &cr)
+				}
+				if cr.Title == "" && cr.Message == "" {
+					cr.Message = req.Arg
+				}
+				reply = ui.ConfirmOpts(cr)
+			}
+			if hasID {
+				p.ReplyHost(id, pxb.HostResult{OK: reply.OK})
+			}
+		}()
+	case "pane_show":
+		if ui != nil && req.Arg != "" {
+			var pane ext.Pane
+			if err := json.Unmarshal([]byte(req.Arg), &pane); err == nil {
+				if pane.ID == "" {
+					pane.ID = "default"
+				}
+				r.rememberPaneOwner(pane.ID, p)
+				ui.ShowPane(pane)
+			}
+		}
+	case "pane_update":
+		if ui != nil && req.Arg != "" {
+			var in struct {
+				ID   string `json:"id"`
+				Body string `json:"body"`
+			}
+			if err := json.Unmarshal([]byte(req.Arg), &in); err == nil {
+				if in.ID == "" {
+					in.ID = "default"
+				}
+				ui.UpdatePane(in.ID, in.Body)
+			}
+		}
+	case "pane_close":
+		if ui != nil {
+			id := strings.TrimSpace(req.Arg)
+			if id == "" {
+				var in struct {
+					ID string `json:"id"`
+				}
+				_ = json.Unmarshal([]byte(req.Arg), &in)
+				id = in.ID
+			}
+			if id == "" {
+				id = "default"
+			}
+			ui.ClosePane(id)
+			r.forgetPaneOwner(id)
+		}
+	default:
+		debuglog.Logf("extension: unknown host request %q", req.Method)
+		if hasID {
+			p.ReplyHost(id, pxb.HostResult{OK: false, Error: "unknown method"})
+		}
+	}
+}
+
+// DeliverPaneAction pushes a pane_action event to the extension that owns the pane.
+func (r *Runner) DeliverPaneAction(paneID, actionID, source string) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	p := r.paneOwner[paneID]
+	if p == nil && source != "" {
+		for _, proc := range r.procs {
+			if proc.Manifest.Name == source {
+				p = proc
+				break
+			}
+		}
+	}
+	r.mu.Unlock()
+	if p == nil {
+		return
+	}
+	p.PushEvent(pxb.EventNotify{
+		Event:  pxb.EvPaneAction,
+		Reason: actionID,
+		Prompt: paneID,
+	})
+}
+
+func (r *Runner) rememberPaneOwner(paneID string, p *Proc) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.paneOwner == nil {
+		r.paneOwner = make(map[string]*Proc)
+	}
+	r.paneOwner[paneID] = p
+}
+
+func (r *Runner) forgetPaneOwner(paneID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.paneOwner, paneID)
+}
+
+// SetMeta updates cwd/session on bound APIs and pushes to subprocesses.
 func (r *Runner) SetMeta(sessionID, cwd string) {
 	if r == nil {
 		return
@@ -144,6 +272,9 @@ func (r *Runner) SetMeta(sessionID, cwd string) {
 	r.host.Cwd = cwd
 	for _, api := range r.apis {
 		api.BindHost(r.host)
+	}
+	for _, p := range r.procs {
+		p.PushSessionMeta(sessionID, cwd)
 	}
 }
 
@@ -493,20 +624,74 @@ func (r *Runner) EmitToolExecutionEnd(toolName, id string, isError bool) {
 	)
 }
 
-// EmitBeforeAgentStart runs before_agent_start and merges SystemPromptAppend.
-func (r *Runner) EmitBeforeAgentStart(prompt string) string {
+// EmitBeforeAgentStart runs before_agent_start; returns prompt rewrite + append text.
+func (r *Runner) EmitBeforeAgentStart(prompt string) (newPrompt, appendText string) {
 	if r == nil {
-		return ""
+		return prompt, ""
 	}
 	ev := ext.BeforeAgentStartEvent{Prompt: prompt}
+	out := prompt
 	var appends []string
 	for _, h := range r.handlers(ext.EventBeforeAgentStart) {
 		res := callBeforeAgentStart(h, ev, r.context())
-		if res != nil && res.SystemPromptAppend != "" {
+		if res == nil {
+			continue
+		}
+		if res.Prompt != "" {
+			out = res.Prompt
+			ev.Prompt = out
+		}
+		if res.SystemPromptAppend != "" {
 			appends = append(appends, res.SystemPromptAppend)
 		}
 	}
-	return strings.Join(appends, "\n")
+	return out, strings.Join(appends, "\n")
+}
+
+// EmitUserInput runs user_input intercepts. handled=true means skip the agent loop.
+func (r *Runner) EmitUserInput(text string) (out string, handled bool) {
+	if r == nil {
+		return text, false
+	}
+	ev := ext.UserInputEvent{Text: text}
+	out = text
+	for _, h := range r.handlers(ext.EventUserInput) {
+		res := callUserInput(h, ev, r.context())
+		if res == nil {
+			continue
+		}
+		if res.Text != "" {
+			out = res.Text
+			ev.Text = out
+		}
+		if res.Handled {
+			return out, true
+		}
+	}
+	return out, false
+}
+
+// EmitTurnStopping asks extensions whether to steer another step.
+func (r *Runner) EmitTurnStopping(idx int) (continueTurn bool, message string) {
+	if r == nil {
+		return false, ""
+	}
+	ev := ext.TurnStoppingEvent{TurnIndex: idx}
+	for _, h := range r.handlers(ext.EventTurnStopping) {
+		res := callTurnStopping(h, ev, r.context())
+		if res == nil {
+			continue
+		}
+		if res.Continue {
+			return true, res.Message
+		}
+	}
+	return false, ""
+}
+
+// EmitSessionCompact notifies listeners that compaction ran.
+func (r *Runner) EmitSessionCompact(reason string) {
+	r.emitNotify(ext.EventSessionCompact, ext.SessionCompactEvent{Reason: reason})
 }
 
 func (r *Runner) emitNotify(event string, payload any) {
@@ -573,6 +758,24 @@ func callBeforeAgentStart(h any, ev ext.BeforeAgentStartEvent, ctx *ext.Context)
 		return fn(ev, ctx)
 	default:
 		return callViaReflect[ext.BeforeAgentStartResult](h, ev, ctx)
+	}
+}
+
+func callUserInput(h any, ev ext.UserInputEvent, ctx *ext.Context) *ext.UserInputResult {
+	switch fn := h.(type) {
+	case func(ext.UserInputEvent, *ext.Context) *ext.UserInputResult:
+		return fn(ev, ctx)
+	default:
+		return callViaReflect[ext.UserInputResult](h, ev, ctx)
+	}
+}
+
+func callTurnStopping(h any, ev ext.TurnStoppingEvent, ctx *ext.Context) *ext.TurnStoppingResult {
+	switch fn := h.(type) {
+	case func(ext.TurnStoppingEvent, *ext.Context) *ext.TurnStoppingResult:
+		return fn(ev, ctx)
+	default:
+		return callViaReflect[ext.TurnStoppingResult](h, ev, ctx)
 	}
 }
 

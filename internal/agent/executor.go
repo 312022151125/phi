@@ -66,23 +66,32 @@ func (e *Executor) activeExt() *extension.Runner {
 
 // Run executes tool calls in order, yielding ToolData updates via emit.
 // Returns role=tool messages for the next LLM turn (including cancel stubs).
+// stop=true means an extension PostTool asked to end the agent loop.
 func (e *Executor) Run(
 	ctx context.Context,
 	calls []llm.ToolCall,
 	emit func(session.ToolData) bool,
-) []llm.Message {
+) (msgs []llm.Message, stop bool, stopReason string) {
 	results := make([]llm.Message, 0, len(calls))
 	for _, call := range calls {
 		if ctx.Err() != nil {
 			results = append(results, e.cancelResult(call, emit))
 			continue
 		}
-		results = append(results, e.runOne(ctx, call, emit))
+		msg, halt, reason := e.runOne(ctx, call, emit)
+		results = append(results, msg)
+		if halt {
+			return results, true, reason
+		}
 	}
-	return results
+	return results, false, ""
 }
 
-func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(session.ToolData) bool) llm.Message {
+func (e *Executor) runOne(
+	ctx context.Context,
+	call llm.ToolCall,
+	emit func(session.ToolData) bool,
+) (llm.Message, bool, string) {
 	ctx = tools.WithCwd(ctx, e.cwd)
 	tool, ok := e.registry[call.Function.Name]
 	args := json.RawMessage(call.Function.Arguments)
@@ -94,13 +103,13 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 	}
 
 	if !emit(session.ToolData{Run: e.toolRun(call, session.ToolInProgress, detail, "", "")}) {
-		return e.toolMessage(call.ID, ToolCanceledResult)
+		return e.toolMessage(call.ID, ToolCanceledResult), false, ""
 	}
 
 	if !ok {
 		errText := fmt.Sprintf("tool '%s' not found", call.Function.Name)
 		_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, errText, "")})
-		return e.toolMessage(call.ID, errText)
+		return e.toolMessage(call.ID, errText), false, ""
 	}
 
 	extRunner := e.activeExt()
@@ -122,7 +131,7 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 			if extRunner != nil {
 				extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
 			}
-			return e.rejectResult(call, detail, reason, emit)
+			return e.rejectResult(call, detail, reason, emit), false, ""
 		}
 		if len(newArgs) > 0 {
 			args = newArgs
@@ -140,7 +149,7 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 		if extRunner != nil {
 			extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
 		}
-		return msg
+		return msg, false, ""
 	}
 
 	result, err := tool.Run(tools.WithToolCallID(ctx, call.ID), args)
@@ -155,7 +164,7 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 			if extRunner != nil {
 				extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
 			}
-			return e.cancelResult(call, emit)
+			return e.cancelResult(call, emit), false, ""
 		}
 		errText = err.Error()
 		content = errText
@@ -170,9 +179,13 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 		}
 	}
 
-	var postContext string
+	var (
+		postContext string
+		postStop    bool
+		postReason  string
+	)
 	if extRunner != nil {
-		newContent, ctxText, _, _ := extRunner.PostTool(
+		newContent, ctxText, stop, reason := extRunner.PostTool(
 			ctx,
 			call.Function.Name,
 			call.ID,
@@ -182,6 +195,8 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 			errText,
 		)
 		postContext = ctxText
+		postStop = stop
+		postReason = reason
 		if newContent != "" {
 			content = newContent
 			output = newContent
@@ -193,10 +208,10 @@ func (e *Executor) runOne(ctx context.Context, call llm.ToolCall, emit func(sess
 
 	if err != nil {
 		_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolError, detail, errText, output)})
-		return e.toolMessage(call.ID, modelContent)
+		return e.toolMessage(call.ID, modelContent), postStop, postReason
 	}
 	_ = emit(session.ToolData{Run: e.toolRun(call, session.ToolDone, detail, "", output)})
-	return e.toolMessage(call.ID, modelContent)
+	return e.toolMessage(call.ID, modelContent), postStop, postReason
 }
 
 func (e *Executor) checkPermission(

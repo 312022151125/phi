@@ -330,6 +330,24 @@ func (c *EngineController) bindExtensionHost(r *extension.Runner) {
 		SetStatusFn: func(_, text string) {
 			c.publish(ExtSessionEffectsMsg{Status: text, StatusSet: true})
 		},
+		ConfirmFn: func(req ext.ConfirmRequest) ext.ConfirmReply {
+			return c.askExtConfirm(req)
+		},
+		ShowPaneFn: func(p ext.Pane) {
+			msg := ExtPaneMsg{
+				Op: "show", ID: p.ID, Title: p.Title, Body: p.Body, Format: p.Format,
+			}
+			for _, a := range p.Actions {
+				msg.Actions = append(msg.Actions, ExtPaneAction{ID: a.ID, Label: a.Label, Kind: a.Kind})
+			}
+			c.publish(msg)
+		},
+		UpdatePaneFn: func(id, body string) {
+			c.publish(ExtPaneMsg{Op: "update", ID: id, Body: body})
+		},
+		ClosePaneFn: func(id string) {
+			c.publish(ExtPaneMsg{Op: "close", ID: id})
+		},
 	}
 	r.Bind(ext.HostOpts{
 		UI:        ui,
@@ -340,6 +358,9 @@ func (c *EngineController) bindExtensionHost(r *extension.Runner) {
 			if c.engine != nil {
 				c.engine.SetExtensions(r)
 			}
+		},
+		SendUserMessage: func(text string) {
+			go c.StartPrompt(text, nil, nil)
 		},
 	})
 }
@@ -404,6 +425,42 @@ func (c *EngineController) askContinue(ctx context.Context, maxRounds int) (bool
 	case <-timer.C:
 		c.publish(ContinueDismissMsg{})
 		return false, nil
+	}
+}
+
+// askExtConfirm blocks until the user answers an extension Confirm dialog.
+func (c *EngineController) askExtConfirm(req ext.ConfirmRequest) ext.ConfirmReply {
+	reply := make(chan ExtConfirmReply, 1)
+	c.publish(ExtConfirmMsg{
+		Title:   req.Title,
+		Message: req.Message,
+		Yes:     req.Yes,
+		No:      req.No,
+		Danger:  req.Danger,
+		Reply:   reply,
+	})
+	timeout := time.Duration(c.askTimeoutSec) * time.Second
+	if timeout <= 0 {
+		timeout = 120 * time.Second
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case r := <-reply:
+		return ext.ConfirmReply{OK: r.OK}
+	case <-timer.C:
+		c.publish(ExtConfirmDismissMsg{})
+		return ext.ConfirmReply{}
+	}
+}
+
+// DeliverPaneAction forwards a pane button click to the owning extension.
+func (c *EngineController) DeliverPaneAction(paneID, actionID, source string) {
+	if c == nil {
+		return
+	}
+	if r := c.Extensions(); r != nil {
+		r.DeliverPaneAction(paneID, actionID, source)
 	}
 }
 
@@ -694,15 +751,6 @@ func (c *EngineController) emitSessionStart(reason, sessionID, previousID string
 	c.publishSessionEffects(out)
 }
 
-// recordTurnEnd fires turn_end after a completed assistant turn (PostTurn replacement).
-func (c *EngineController) recordTurnEnd() {
-	r := c.Extensions()
-	if r == nil {
-		return
-	}
-	r.EmitTurnEnd(0)
-}
-
 func (c *EngineController) publishSessionEffects(out ext.SessionEffects) {
 	if out.Toast == "" && !out.StatusSet {
 		return
@@ -786,9 +834,6 @@ func (c *EngineController) runLoop(
 		}
 		if ev != nil {
 			c.publish(SessionEventMsg{Event: ev})
-			if up, ok := ev.(session.AssistantMessageUpdate); ok && up.Message.State == session.StateComplete {
-				c.recordTurnEnd()
-			}
 		}
 	}
 }

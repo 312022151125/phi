@@ -27,6 +27,8 @@ type Module struct {
 	onToolResult          func(ext.ToolResultEvent) *ext.ToolResultResult
 	onBeforeAgentStart    func(ext.BeforeAgentStartEvent) *ext.BeforeAgentStartResult
 	onSessionBeforeSwitch func(ext.SessionBeforeSwitchEvent) *ext.SessionBeforeSwitchResult
+	onUserInput           func(ext.UserInputEvent) *ext.UserInputResult
+	onTurnStopping        func(ext.TurnStoppingEvent) *ext.TurnStoppingResult
 	onEvent               map[uint16]func(pxb.EventNotify)
 
 	wr *pxb.Writer
@@ -34,6 +36,7 @@ type Module struct {
 
 	host          HelloInfo
 	pendingSubmit string
+	nextHostID    atomic.Uint32
 }
 
 type toolReg struct {
@@ -121,8 +124,33 @@ func (m *Module) OnSessionBeforeSwitch(fn func(ext.SessionBeforeSwitchEvent) *ex
 	m.intercept = appendUnique(m.intercept, pxb.EvSessionBeforeSwitch)
 }
 
-// Subscribe adds a fire-and-forget lifecycle listener.
+// OnUserInput may transform or swallow the user prompt before the agent loop.
+func (m *Module) OnUserInput(fn func(ext.UserInputEvent) *ext.UserInputResult) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onUserInput = fn
+	m.intercept = appendUnique(m.intercept, pxb.EvUserInput)
+}
+
+// OnTurnStopping may steer another step when the model stops with no tools.
+func (m *Module) OnTurnStopping(fn func(ext.TurnStoppingEvent) *ext.TurnStoppingResult) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.onTurnStopping = fn
+	m.intercept = appendUnique(m.intercept, pxb.EvTurnStopping)
+}
+
+// Subscribe adds a fire-and-forget lifecycle listener (no payload).
 func (m *Module) Subscribe(event string, fn func()) {
+	m.SubscribeEvent(event, func(pxb.EventNotify) {
+		if fn != nil {
+			fn()
+		}
+	})
+}
+
+// SubscribeEvent adds a fire-and-forget listener with the wire payload.
+func (m *Module) SubscribeEvent(event string, fn func(pxb.EventNotify)) {
 	code := pxb.EventCode(event)
 	if code == 0 {
 		return
@@ -131,7 +159,7 @@ func (m *Module) Subscribe(event string, fn func()) {
 	defer m.mu.Unlock()
 	m.events = appendUnique(m.events, code)
 	if fn != nil {
-		m.onEvent[code] = func(pxb.EventNotify) { fn() }
+		m.onEvent[code] = fn
 	}
 }
 
@@ -158,12 +186,151 @@ func (m *Module) Submit(text string) {
 	m.mu.Unlock()
 }
 
-// moduleUI implements ext.UI over PXB Notify frames.
+// SendUserMessage asks the host to enqueue a user turn (fire-and-forget).
+// Safe to call from command/tool handlers on the PXB read loop.
+func (m *Module) SendUserMessage(text string) {
+	if m.wr == nil || text == "" {
+		return
+	}
+	_ = m.wr.Write(pxb.TypeHostRequest, 0, 0, pxb.EncodeHostRequest(pxb.HostRequest{
+		Method: "send_user_message", Arg: text,
+	}))
+}
+
+// Confirm shows a yes/no dialog on the host and waits for the answer.
+// Must be called from a command/tool/intercept handler (nested read on the PXB loop).
+func (m *Module) Confirm(title, message string) bool {
+	return m.ConfirmOpts(ext.ConfirmRequest{Title: title, Message: message}).OK
+}
+
+// ConfirmOpts is Confirm with labels / danger styling.
+func (m *Module) ConfirmOpts(req ext.ConfirmRequest) ext.ConfirmReply {
+	if m.wr == nil || m.rd == nil {
+		return ext.ConfirmReply{}
+	}
+	payload, _ := json.Marshal(req)
+	id := m.nextHostID.Add(1)
+	if err := m.wr.Write(pxb.TypeHostRequest, pxb.FlagHasID, id, pxb.EncodeHostRequest(pxb.HostRequest{
+		Method: "confirm", Arg: string(payload),
+	})); err != nil {
+		return ext.ConfirmReply{}
+	}
+	for {
+		fr, err := m.rd.Read()
+		if err != nil {
+			return ext.ConfirmReply{}
+		}
+		body := pxb.CloneBody(fr)
+		switch fr.Type {
+		case pxb.TypeHostResult:
+			if fr.Flags&pxb.FlagHasID == 0 || fr.ID != id {
+				continue
+			}
+			res, err := pxb.DecodeHostResult(body)
+			if err != nil {
+				return ext.ConfirmReply{}
+			}
+			return ext.ConfirmReply{OK: res.OK}
+		case pxb.TypeSessionMeta:
+			meta, err := pxb.DecodeSessionMeta(body)
+			if err != nil {
+				continue
+			}
+			m.mu.Lock()
+			if meta.SessionID != "" {
+				m.host.SessionID = meta.SessionID
+			}
+			if meta.Cwd != "" {
+				m.host.Cwd = meta.Cwd
+			}
+			m.mu.Unlock()
+		case pxb.TypeEvent:
+			ev, err := pxb.DecodeEventNotify(body)
+			if err != nil {
+				continue
+			}
+			m.mu.Lock()
+			fn := m.onEvent[ev.Event]
+			m.mu.Unlock()
+			if fn != nil {
+				fn(ev)
+			}
+		case pxb.TypeShutdown:
+			_ = m.wr.Write(pxb.TypeShutdownAck, 0, 0, nil)
+			return ext.ConfirmReply{}
+		default:
+			// Ignore unrelated frames while blocked on confirm.
+		}
+	}
+}
+
+// ShowPane opens or replaces a non-blocking extension pane on the host.
+func (m *Module) ShowPane(p ext.Pane) {
+	if m.wr == nil {
+		return
+	}
+	if p.ID == "" {
+		p.ID = "default"
+	}
+	payload, _ := json.Marshal(p)
+	_ = m.wr.Write(pxb.TypeHostRequest, 0, 0, pxb.EncodeHostRequest(pxb.HostRequest{
+		Method: "pane_show", Arg: string(payload),
+	}))
+}
+
+// UpdatePane replaces the body of an existing pane.
+func (m *Module) UpdatePane(id, body string) {
+	if m.wr == nil {
+		return
+	}
+	if id == "" {
+		id = "default"
+	}
+	payload, _ := json.Marshal(map[string]string{"id": id, "body": body})
+	_ = m.wr.Write(pxb.TypeHostRequest, 0, 0, pxb.EncodeHostRequest(pxb.HostRequest{
+		Method: "pane_update", Arg: string(payload),
+	}))
+}
+
+// ClosePane dismisses a pane.
+func (m *Module) ClosePane(id string) {
+	if m.wr == nil {
+		return
+	}
+	if id == "" {
+		id = "default"
+	}
+	payload, _ := json.Marshal(map[string]string{"id": id})
+	_ = m.wr.Write(pxb.TypeHostRequest, 0, 0, pxb.EncodeHostRequest(pxb.HostRequest{
+		Method: "pane_close", Arg: string(payload),
+	}))
+}
+
+// OnPaneAction registers a listener for pane button clicks.
+func (m *Module) OnPaneAction(fn func(paneID, actionID string)) {
+	if fn == nil {
+		return
+	}
+	m.SubscribeEvent(ext.EventPaneAction, func(ev pxb.EventNotify) {
+		fn(ev.Prompt, ev.Reason)
+	})
+}
+
+// moduleUI implements ext.UI over PXB host requests / notify frames.
 type moduleUI struct{ m *Module }
 
 func (u moduleUI) Notify(message, kind string) { u.m.Notify(kind, message) }
 func (u moduleUI) SetStatus(_, text string)    { u.m.SetStatus(text) }
-func (moduleUI) Confirm(_, _ string) bool      { return false }
+func (u moduleUI) Confirm(title, message string) bool {
+	return u.m.Confirm(title, message)
+}
+
+func (u moduleUI) ConfirmOpts(req ext.ConfirmRequest) ext.ConfirmReply {
+	return u.m.ConfirmOpts(req)
+}
+func (u moduleUI) ShowPane(p ext.Pane)        { u.m.ShowPane(p) }
+func (u moduleUI) UpdatePane(id, body string) { u.m.UpdatePane(id, body) }
+func (u moduleUI) ClosePane(id string)        { u.m.ClosePane(id) }
 
 // Run speaks PXB on stdin/stdout until shutdown.
 func (m *Module) Run() error {
@@ -323,6 +490,19 @@ func (m *Module) Run() error {
 			if fn != nil {
 				fn(ev)
 			}
+		case pxb.TypeSessionMeta:
+			meta, err := pxb.DecodeSessionMeta(body)
+			if err != nil {
+				return err
+			}
+			m.mu.Lock()
+			if meta.SessionID != "" {
+				m.host.SessionID = meta.SessionID
+			}
+			if meta.Cwd != "" {
+				m.host.Cwd = meta.Cwd
+			}
+			m.mu.Unlock()
 		}
 	}
 	return nil
@@ -361,7 +541,7 @@ func (m *Module) handleIntercept(req pxb.InterceptReq) pxb.InterceptResp {
 		if r == nil {
 			return pxb.InterceptResp{}
 		}
-		return pxb.InterceptResp{SystemPromptAppend: r.SystemPromptAppend}
+		return pxb.InterceptResp{SystemPromptAppend: r.SystemPromptAppend, Prompt: r.Prompt}
 	case pxb.EvSessionBeforeSwitch:
 		if m.onSessionBeforeSwitch == nil {
 			return pxb.InterceptResp{}
@@ -373,6 +553,24 @@ func (m *Module) handleIntercept(req pxb.InterceptReq) pxb.InterceptResp {
 			return pxb.InterceptResp{}
 		}
 		return pxb.InterceptResp{Cancel: r.Cancel, Reason: r.Reason, Toast: r.Toast}
+	case pxb.EvUserInput:
+		if m.onUserInput == nil {
+			return pxb.InterceptResp{}
+		}
+		r := m.onUserInput(ext.UserInputEvent{Text: req.Prompt})
+		if r == nil {
+			return pxb.InterceptResp{}
+		}
+		return pxb.InterceptResp{Handled: r.Handled, Prompt: r.Text, Reason: r.Reason}
+	case pxb.EvTurnStopping:
+		if m.onTurnStopping == nil {
+			return pxb.InterceptResp{}
+		}
+		r := m.onTurnStopping(ext.TurnStoppingEvent{TurnIndex: int(req.TurnIndex)})
+		if r == nil {
+			return pxb.InterceptResp{}
+		}
+		return pxb.InterceptResp{Continue: r.Continue, Prompt: r.Message, Reason: r.Reason}
 	default:
 		return pxb.InterceptResp{}
 	}

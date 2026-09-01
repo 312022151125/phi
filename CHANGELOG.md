@@ -12,6 +12,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 - **PXB extensions:** native binary extensions speaking a length-prefixed binary protocol (`ext/pxb`) over stdin/stdout. Author SDK `ext/sdk`. Layout: `~/.phi/extensions/<name>/phi.yaml` + `exec`. See [doc/extensions.md](doc/extensions.md). Palette: **extensions → list/reload**. Disable with `PHI_EXTENSIONS=off`.
 - `phi plugin install <github-repo[@tag]>`: shallow-clone a GitHub repo into `~/.phi/extensions/<repo>/` (requires `phi.yaml` + compiled binary).
+- Extension full chain: `user_input`, `turn_stopping`, `session_compact` intercepts/events; `SubscribeEvent` with payload; `SendUserMessage` host request.
+- Extension **Confirm** dialog (blocking RPC) and **lightweight pane** (show/update/close + action buttons).
+- Example extension [examples/extensions/showcase](examples/extensions/showcase): aggregate demo of Confirm, pane, Submit, intercepts, and tools.
 
 ### Changed
 
@@ -33,6 +36,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Extension handshake registration respects the handshake timeout (no longer only checked between blocking reads).
 - `session_before_switch` toast without cancel is published (previously only on deny).
 - SDK command handlers receive a usable `ctx.UI` (maps to `Notify` / `SetStatus`).
+- `OnToolResult.Stop` now ends the agent loop (was discarded in the executor).
+- Duplicate `turn_end` from the TUI controller removed (engine owns turn indices).
+- Session ID / previous / target fields ride on lifecycle `EventNotify`; host pushes `SessionMeta` after `/new` / `/resume`.
 
 ### Security
 
