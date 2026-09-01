@@ -9,6 +9,7 @@ import (
 
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/app"
+	"github.com/pulseaiclub/phi/internal/components/listpicker"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/tui/commands"
@@ -150,6 +151,11 @@ func NewEditor(
 		e.overlays.ResolveConfirm,
 	)
 	e.extCmds.Submitter = e.submitter
+	e.sessions.OpenPicker = e.composer.ShowSessionList
+	e.sessions.StreamActive = e.submitter.StreamActive
+	e.composer.SetListPickHandler(func(item listpicker.Item) {
+		e.sessions.Accept(item.ID)
+	})
 	bridge = newCommandBridge(
 		e.bus,
 		e.composer,
@@ -357,6 +363,9 @@ func (e *Editor) Draw(ctx components.DrawContext) components.Surface {
 	}
 	if pal, ok := e.composer.PaletteOverlay(ctx); ok {
 		root.Children = append(root.Children, pal)
+	}
+	if list, ok := e.composer.ListOverlay(ctx); ok {
+		root.Children = append(root.Children, list)
 	}
 	if e.toast.Visible() {
 		toastSurf := e.toast.Draw(ctx)
