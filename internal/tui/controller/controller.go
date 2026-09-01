@@ -255,10 +255,7 @@ func (c *EngineController) ReloadExtensions() (loaded int, warns []extension.War
 		return 0, warns, err
 	}
 	logExtensionWarnings(warns)
-	if prev := c.extRunner.Swap(r); prev != nil {
-		prev.Close()
-	}
-	c.bindExtensionHost(r)
+	c.swapExtensionRunner(r)
 	if c.engine != nil {
 		c.engine.SetExtensions(r)
 	}
@@ -266,6 +263,18 @@ func (c *EngineController) ReloadExtensions() (loaded int, warns []extension.War
 		return 0, warns, nil
 	}
 	return len(r.Loaded()), warns, nil
+}
+
+// swapExtensionRunner replaces the live runner, closing the previous one and
+// rebinding host UI callbacks onto the replacement.
+func (c *EngineController) swapExtensionRunner(r *extension.Runner) {
+	if c == nil {
+		return
+	}
+	if prev := c.extRunner.Swap(r); prev != nil {
+		prev.Close()
+	}
+	c.bindExtensionHost(r)
 }
 
 // ListExtensions returns the current on-disk discovery (does not swap the runner).
@@ -551,7 +560,9 @@ func (c *EngineController) Resume(id string) (cwdWarning string, err error) {
 	}
 
 	extRunner := loadExtensions(c.proj)
-	c.extRunner.Store(extRunner)
+	// Close the previous runner before attaching the new one so UI host
+	// callbacks and subprocesses do not leak across /resume.
+	c.swapExtensionRunner(extRunner)
 	sess, err := agent.NewSession(
 		agent.WithCwd(c.cwd),
 		agent.WithSessionDir(c.sessionDir),
@@ -672,7 +683,7 @@ func (c *EngineController) Cancel() {
 	}
 }
 
-// Close cancels the stream and shuts down the job manager.
+// Close cancels the stream and shuts down jobs, MCP, and extensions.
 func (c *EngineController) Close() {
 	c.sessionShutdown("quit", c.SessionID())
 	c.Cancel()
@@ -686,6 +697,9 @@ func (c *EngineController) Close() {
 	if c.mcpPool != nil {
 		_ = c.mcpPool.Close()
 		c.mcpPool = nil
+	}
+	if prev := c.extRunner.Swap(nil); prev != nil {
+		prev.Close()
 	}
 }
 

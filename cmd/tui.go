@@ -79,6 +79,7 @@ func runTUI() error {
 		fmt.Fprintln(os.Stderr, "phi:", err)
 		return exitCode(ExitError)
 	}
+	defer ctrl.Close()
 	ui := editor.NewEditor(
 		application,
 		bus,

@@ -14,7 +14,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - `phi plugin install <github-repo[@tag]>`: shallow-clone a GitHub repo into `~/.phi/extensions/<repo>/` (requires `phi.yaml` + compiled binary).
 - Extension full chain: `user_input`, `turn_stopping`, `session_compact` intercepts/events; `SubscribeEvent` with payload; `SendUserMessage` host request.
 - Extension **Confirm** dialog (blocking RPC).
-- Example extension [examples/extensions/showcase](examples/extensions/showcase): aggregate demo of Confirm, Submit, intercepts, and tools.
 
 ### Changed
 
@@ -32,6 +31,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- `/resume` closes the previous extension runner and rebinds host UI (was leaking subprocesses and dropping Notify/Confirm).
+- Controller `Close` and headless `phi run` shut down extension subprocesses; TUI defers `ctrl.Close()` on exit.
 - Extension `Notify` / status frames now reach the TUI (`Proc.onNotify` wired in `Runner.Bind`).
 - Slash-command `Submit` from PXB `CommandResponse` is delivered to the composer.
 - Extension handshake registration respects the handshake timeout (no longer only checked between blocking reads).

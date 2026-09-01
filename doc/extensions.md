@@ -122,10 +122,6 @@ mkdir -p ~/.phi/extensions/hello
 cp hello phi.yaml ~/.phi/extensions/hello/
 ```
 
-Samples:
-- [examples/extensions/hello](../examples/extensions/hello) — minimal slash + notify
-- [examples/extensions/showcase](../examples/extensions/showcase) — Confirm, intercepts, tools
-
 Reload: **Ctrl+K → extensions → reload**.
 
 ## Install from GitHub
