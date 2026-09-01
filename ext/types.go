@@ -81,9 +81,41 @@ type BeforeAgentStartEvent struct {
 	Prompt string
 }
 
-// BeforeAgentStartResult may append system prompt text for this turn.
+// BeforeAgentStartResult may rewrite the prompt and/or append turn context.
+// Prompt non-empty replaces the user prompt; SystemPromptAppend is appended
+// to the user message (Phi has no per-turn system-prompt rewrite yet).
 type BeforeAgentStartResult struct {
+	Prompt             string
 	SystemPromptAppend string
+}
+
+// UserInputEvent fires on every user submit (slash already dispatched).
+type UserInputEvent struct {
+	Text string
+}
+
+// UserInputResult may transform or swallow the prompt.
+type UserInputResult struct {
+	Handled bool   // true: do not start the agent loop
+	Text    string // non-empty: replace prompt text
+	Reason  string
+}
+
+// TurnStoppingEvent fires when the model ends a turn with no more tool calls.
+type TurnStoppingEvent struct {
+	TurnIndex int
+}
+
+// TurnStoppingResult may force another agent step (steer).
+type TurnStoppingResult struct {
+	Continue bool
+	Message  string // injected as a user message when Continue
+	Reason   string
+}
+
+// SessionCompactEvent notifies that context compaction ran.
+type SessionCompactEvent struct {
+	Reason string // auto | manual
 }
 
 // AgentStartEvent / AgentEndEvent wrap a Loop run.

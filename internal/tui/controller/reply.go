@@ -8,6 +8,11 @@ type AskReply struct {
 	AllowPersistent bool // Allow All for Every Session
 }
 
+// ExtConfirmReply is the user's response for an extension Confirm dialog.
+type ExtConfirmReply struct {
+	OK bool
+}
+
 // ContinueReply is the user's response when the tool-round budget is exhausted.
 type ContinueReply struct {
 	Continue bool
