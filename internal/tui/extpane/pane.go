@@ -6,7 +6,6 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/ext"
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
@@ -267,22 +266,6 @@ func (h *Host) Draw(ctx components.DrawContext, width, height int) components.Su
 		y++
 	}
 	return panel
-}
-
-// FromExt converts an ext.Pane into a bus message payload.
-func FromExt(p ext.Pane, source string) controller.ExtPaneMsg {
-	id := p.ID
-	if id == "" {
-		id = "default"
-	}
-	actions := make([]controller.ExtPaneAction, len(p.Actions))
-	for i, a := range p.Actions {
-		actions[i] = controller.ExtPaneAction{ID: a.ID, Label: a.Label, Kind: a.Kind}
-	}
-	return controller.ExtPaneMsg{
-		Op: "show", ID: id, Title: p.Title, Body: p.Body, Format: p.Format,
-		Actions: actions, Source: source,
-	}
 }
 
 func (h *Host) bringToFront(id string) {
