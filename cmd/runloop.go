@@ -67,6 +67,9 @@ func runHeadless(opts runOptions) error {
 	// approval UI is ever reachable (Ask≡Deny even if the config mode
 	// does not fold Ask).
 	extRunner := loadRunExtensions(bs)
+	if extRunner != nil {
+		defer extRunner.Close()
+	}
 	engineOpts := []agent.EngineOption{
 		agent.WithGate(bs.Gate),
 		agent.WithExtensions(extRunner),
