@@ -29,7 +29,7 @@ func TestItemsMapsCurrentBadge(t *testing.T) {
 		{ID: "bbbbbbbb-2222", Preview: "two", Mtime: now},
 	}, "bbbbbbbb-2222", now)
 	require.Len(t, items, 2)
-	assert.Equal(t, "", items[0].Badge)
+	assert.Empty(t, items[0].Badge)
 	assert.Equal(t, "current", items[1].Badge)
 	assert.Equal(t, "bbbbbbbb", items[1].Primary)
 }

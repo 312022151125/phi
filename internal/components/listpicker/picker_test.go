@@ -1,7 +1,6 @@
 package listpicker
 
 import (
-	"strings"
 	"testing"
 
 	"github.com/pulseaiclub/xui"
@@ -54,7 +53,7 @@ func TestPickerEmptyDraw(t *testing.T) {
 	require.Len(t, s.Children, 1)
 	text := components.SurfaceText(s.Children[0].Surface)
 	assert.Contains(t, text, "Sessions")
-	assert.True(t, strings.Contains(text, "No sessions"), text)
+	assert.Contains(t, text, "No sessions")
 }
 
 func TestPickerDrawBadge(t *testing.T) {
