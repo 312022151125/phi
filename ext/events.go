@@ -25,5 +25,4 @@ const (
 	EventUserInput           = "user_input"
 	EventTurnStopping        = "turn_stopping"
 	EventSessionCompact      = "session_compact"
-	EventPaneAction          = "pane_action"
 )

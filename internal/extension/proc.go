@@ -169,15 +169,15 @@ func (p *Proc) handshake(ctx context.Context, cwd, sessionID string) error {
 	}
 
 	for {
-		fr, err := p.readFrame(ctx)
+		frame, err := p.readFrame(ctx)
 		if err != nil {
 			if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 				return fmt.Errorf("extension %q: registration timeout", p.Manifest.Name)
 			}
 			return fmt.Errorf("extension %q: registration: %w", p.Manifest.Name, err)
 		}
-		body := pxb.CloneBody(fr)
-		switch fr.Type {
+		body := pxb.CloneBody(frame)
+		switch frame.Type {
 		case pxb.TypeRegisterCommand:
 			rc, err := pxb.DecodeRegisterCommand(body)
 			if err != nil {
@@ -204,7 +204,7 @@ func (p *Proc) handshake(ctx context.Context, cwd, sessionID string) error {
 		case pxb.TypeReady:
 			return nil
 		default:
-			return fmt.Errorf("extension %q: unexpected frame %d before ready", p.Manifest.Name, fr.Type)
+			return fmt.Errorf("extension %q: unexpected frame %d before ready", p.Manifest.Name, frame.Type)
 		}
 	}
 }

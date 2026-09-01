@@ -1,9 +1,9 @@
 // Package ext is the public API surface for Phi extensions.
 //
 // Extensions are native binaries that speak the PXB protocol (package ext/pxb)
-// over stdin/stdout. Prefer the author SDK in package ext/sdk:
+// over stdin/stdout. Prefer the author SDK in package ext/phi:
 //
-//	m := sdk.New("greet", "1.0.0")
+//	m := phi.New("greet", "1.0.0")
 //	m.RegisterTool(...)
 //	m.Run()
 //

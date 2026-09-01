@@ -11,7 +11,7 @@ import (
 )
 
 // Materialize writes a PXB extension module under dir and builds its binary.
-// mainGo must be a complete package main that uses ext/sdk.
+// mainGo must be a complete package main that uses ext/phi.
 // dir becomes the extension directory (contains phi.yaml + binary).
 func Materialize(ctx context.Context, dir, name, version, mainGo string) error {
 	if err := os.MkdirAll(dir, 0o755); err != nil {

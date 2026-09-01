@@ -10,11 +10,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- **PXB extensions:** native binary extensions speaking a length-prefixed binary protocol (`ext/pxb`) over stdin/stdout. Author SDK `ext/sdk`. Layout: `~/.phi/extensions/<name>/phi.yaml` + `exec`. See [doc/extensions.md](doc/extensions.md). Palette: **extensions → list/reload**. Disable with `PHI_EXTENSIONS=off`.
+- **PXB extensions:** native binary extensions speaking a length-prefixed binary protocol (`ext/pxb`) over stdin/stdout. Author SDK `ext/phi`. Layout: `~/.phi/extensions/<name>/phi.yaml` + `exec`. See [doc/extensions.md](doc/extensions.md). Palette: **extensions → list/reload**. Disable with `PHI_EXTENSIONS=off`.
 - `phi plugin install <github-repo[@tag]>`: shallow-clone a GitHub repo into `~/.phi/extensions/<repo>/` (requires `phi.yaml` + compiled binary).
 - Extension full chain: `user_input`, `turn_stopping`, `session_compact` intercepts/events; `SubscribeEvent` with payload; `SendUserMessage` host request.
-- Extension **Confirm** dialog (blocking RPC) and **lightweight pane** (show/update/close + action buttons).
-- Example extension [examples/extensions/showcase](examples/extensions/showcase): aggregate demo of Confirm, pane, Submit, intercepts, and tools.
+- Extension **Confirm** dialog (blocking RPC).
 
 ### Changed
 
@@ -26,11 +25,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Removed
 
+- Extension **ShowPane** / **UpdatePane** / **ClosePane** / `OnPaneAction` (and `internal/tui/extpane`). Prefer Ctrl+K-style overlays for list UIs.
 - Shell hook plugins (`plugin.json` + `type: "command"`), `doc/hooks.md`, and related TUI **hooks →** commands.
 - Yaegi extension loader (`github.com/pulseaiclub/yaegi` dependency).
 
 ### Fixed
 
+- `/resume` closes the previous extension runner and rebinds host UI (was leaking subprocesses and dropping Notify/Confirm).
+- Controller `Close` and headless `phi run` shut down extension subprocesses; TUI defers `ctrl.Close()` on exit.
 - Extension `Notify` / status frames now reach the TUI (`Proc.onNotify` wired in `Runner.Bind`).
 - Slash-command `Submit` from PXB `CommandResponse` is delivered to the composer.
 - Extension handshake registration respects the handshake timeout (no longer only checked between blocking reads).

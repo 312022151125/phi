@@ -257,10 +257,10 @@ func TestExecutorExtDenySkipsGateAsk(t *testing.T) {
 	r := loadExt(t, `package main
 import (
   "github.com/pulseaiclub/phi/ext"
-  "github.com/pulseaiclub/phi/ext/sdk"
+  "github.com/pulseaiclub/phi/ext/phi"
 )
 func main() {
-  m := sdk.New("test", "0.0.1")
+  m := phi.New("test", "0.0.1")
   m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
     if ev.ToolName == "bash" {
       return &ext.ToolCallResult{Block: true, Reason: "ext blocked"}
@@ -309,10 +309,10 @@ func TestExecutorExtModifySeenByGateAndRun(t *testing.T) {
 import (
   "encoding/json"
   "github.com/pulseaiclub/phi/ext"
-  "github.com/pulseaiclub/phi/ext/sdk"
+  "github.com/pulseaiclub/phi/ext/phi"
 )
 func main() {
-  m := sdk.New("test", "0.0.1")
+  m := phi.New("test", "0.0.1")
   m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
     return &ext.ToolCallResult{Input: json.RawMessage(`+"`"+`{"command":"echo safe"}`+"`"+`)}
   })
@@ -349,10 +349,10 @@ func TestExecutorExtPostContextOnModelOnly(t *testing.T) {
 	r := loadExt(t, `package main
 import (
   "github.com/pulseaiclub/phi/ext"
-  "github.com/pulseaiclub/phi/ext/sdk"
+  "github.com/pulseaiclub/phi/ext/phi"
 )
 func main() {
-  m := sdk.New("test", "0.0.1")
+  m := phi.New("test", "0.0.1")
   m.OnToolResult(func(ev ext.ToolResultEvent) *ext.ToolResultResult {
     return &ext.ToolResultResult{Context: "policy note"}
   })

@@ -34,7 +34,6 @@ type Runner struct {
 	baseTools   []tools.Tool
 	activeNames map[string]bool // nil = all active
 	host        ext.HostOpts
-	paneOwner   map[string]*Proc
 }
 
 // Close shuts down every extension subprocess.
@@ -137,7 +136,7 @@ func (r *Runner) Bind(opts ext.HostOpts) {
 	}
 }
 
-func (r *Runner) handleHostRequest(
+func (*Runner) handleHostRequest(
 	p *Proc,
 	id uint32,
 	hasID bool,
@@ -170,93 +169,12 @@ func (r *Runner) handleHostRequest(
 				p.ReplyHost(id, pxb.HostResult{OK: reply.OK})
 			}
 		}()
-	case "pane_show":
-		if ui != nil && req.Arg != "" {
-			var pane ext.Pane
-			if err := json.Unmarshal([]byte(req.Arg), &pane); err == nil {
-				if pane.ID == "" {
-					pane.ID = "default"
-				}
-				r.rememberPaneOwner(pane.ID, p)
-				ui.ShowPane(pane)
-			}
-		}
-	case "pane_update":
-		if ui != nil && req.Arg != "" {
-			var in struct {
-				ID   string `json:"id"`
-				Body string `json:"body"`
-			}
-			if err := json.Unmarshal([]byte(req.Arg), &in); err == nil {
-				if in.ID == "" {
-					in.ID = "default"
-				}
-				ui.UpdatePane(in.ID, in.Body)
-			}
-		}
-	case "pane_close":
-		if ui != nil {
-			id := strings.TrimSpace(req.Arg)
-			if id == "" {
-				var in struct {
-					ID string `json:"id"`
-				}
-				_ = json.Unmarshal([]byte(req.Arg), &in)
-				id = in.ID
-			}
-			if id == "" {
-				id = "default"
-			}
-			ui.ClosePane(id)
-			r.forgetPaneOwner(id)
-		}
 	default:
 		debuglog.Logf("extension: unknown host request %q", req.Method)
 		if hasID {
 			p.ReplyHost(id, pxb.HostResult{OK: false, Error: "unknown method"})
 		}
 	}
-}
-
-// DeliverPaneAction pushes a pane_action event to the extension that owns the pane.
-func (r *Runner) DeliverPaneAction(paneID, actionID, source string) {
-	if r == nil {
-		return
-	}
-	r.mu.Lock()
-	p := r.paneOwner[paneID]
-	if p == nil && source != "" {
-		for _, proc := range r.procs {
-			if proc.Manifest.Name == source {
-				p = proc
-				break
-			}
-		}
-	}
-	r.mu.Unlock()
-	if p == nil {
-		return
-	}
-	p.PushEvent(pxb.EventNotify{
-		Event:  pxb.EvPaneAction,
-		Reason: actionID,
-		Prompt: paneID,
-	})
-}
-
-func (r *Runner) rememberPaneOwner(paneID string, p *Proc) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.paneOwner == nil {
-		r.paneOwner = make(map[string]*Proc)
-	}
-	r.paneOwner[paneID] = p
-}
-
-func (r *Runner) forgetPaneOwner(paneID string) {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	delete(r.paneOwner, paneID)
 }
 
 // SetMeta updates cwd/session on bound APIs and pushes to subprocesses.
