@@ -340,7 +340,7 @@ palette's settings → permissions entry toggles session-wide bypass.
 ## Extensions
 
 Extensions are native binaries speaking the **PXB** binary protocol over
-stdin/stdout (author SDK: `ext/sdk`). They subscribe to tool/session events,
+stdin/stdout (author SDK: `ext/phi`). They subscribe to tool/session events,
 register LLM tools, and add slash commands.
 
 ```go
@@ -348,11 +348,11 @@ package main
 
 import (
 	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/sdk"
+	"github.com/pulseaiclub/phi/ext/phi"
 )
 
 func main() {
-	m := sdk.New("hello", "0.1.0")
+	m := phi.New("hello", "0.1.0")
 	m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
 		// return &ext.ToolCallResult{Block: true, Reason: "..."}
 		return nil

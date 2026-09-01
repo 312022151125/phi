@@ -65,11 +65,11 @@ package main
 
 import (
 	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/sdk"
+	"github.com/pulseaiclub/phi/ext/phi"
 )
 
 func main() {
-	m := sdk.New("hello", "0.1.0")
+	m := phi.New("hello", "0.1.0")
 	m.RegisterCommand("hello", ext.Command{
 		Description: "Say hi",
 		Handler: func(args string, ctx *ext.Context) error {
@@ -106,18 +106,12 @@ func main() {
 Requires `import "github.com/pulseaiclub/phi/ext/pxb"` for `SubscribeEvent` payloads.
 
 UI surface today: **toast** (`Notify`), **footer status** (`SetStatus`), **Submit** / **SendUserMessage**,
-**Confirm** / **ConfirmOpts**, **ShowPane** / **UpdatePane** / **ClosePane** (+ `OnPaneAction`).
+**Confirm** / **ConfirmOpts**.
 
 ```go
 ok := m.ConfirmOpts(ext.ConfirmRequest{
 	Title: "Delete?", Message: "Remove /tmp/x", Yes: "Delete", No: "Cancel", Danger: true,
 }).OK
-
-m.ShowPane(ext.Pane{
-	ID: "todo", Title: "Todos", Body: "…",
-	Actions: []ext.PaneAction{{ID: "clear", Label: "Clear", Kind: "danger"}},
-})
-m.OnPaneAction(func(paneID, actionID string) { /* … */ })
 ```
 
 Build and install:
@@ -130,7 +124,7 @@ cp hello phi.yaml ~/.phi/extensions/hello/
 
 Samples:
 - [examples/extensions/hello](../examples/extensions/hello) — minimal slash + notify
-- [examples/extensions/showcase](../examples/extensions/showcase) — Confirm, pane, intercepts, tools
+- [examples/extensions/showcase](../examples/extensions/showcase) — Confirm, intercepts, tools
 
 Reload: **Ctrl+K → extensions → reload**.
 
@@ -158,14 +152,14 @@ release asset layout that includes it). Source-only yaegi repos no longer load.
 |------|------|
 | `ext/` | Shared types (`Tool`, events) |
 | `ext/pxb` | Binary wire protocol |
-| `ext/sdk` | Author SDK (`Module.Run`) |
+| `ext/phi` | Author SDK (`ExtensionAPI.Run`) |
 | `internal/extension` | Discover, spawn, Runner shims |
 
 ## Migration from yaegi
 
 | Old | New |
 |-----|-----|
-| `func Extension(phi *ext.API)` in `.go` | `sdk.New` + `m.Run()` binary |
+| `func Extension(phi *ext.API)` in `.go` | `phi.New` + `m.Run()` binary |
 | Drop file under `extensions/` | Directory + `phi.yaml` + binary |
 | `phi.On(ext.EventToolCall, …)` | `m.OnToolCall(…)` |
 

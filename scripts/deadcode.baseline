@@ -2,7 +2,7 @@
 # phi binary by design; kept for API or external consumers.
 cmd/exit.go exitError.silent
 
-# ext/sdk and the extension-side ext/pxb helpers are a public SDK consumed by
+# ext/phi and the extension-side ext/pxb helpers are a public SDK consumed by
 # external extension binaries (and by extension sources materialized at test
 # runtime), which deadcode cannot see from this module's roots.
 ext/pxb/codec.go ByteReader.Blob
@@ -35,37 +35,30 @@ ext/pxb/msg.go EncodeNotify
 ext/pxb/msg.go EncodeRegisterCommand
 ext/pxb/msg.go EncodeRegisterTool
 ext/pxb/msg.go EncodeToolResult
-ext/sdk/sdk.go Module.ClosePane
-ext/sdk/sdk.go Module.Confirm
-ext/sdk/sdk.go Module.ConfirmOpts
-ext/sdk/sdk.go Module.Host
-ext/sdk/sdk.go Module.Notify
-ext/sdk/sdk.go Module.OnBeforeAgentStart
-ext/sdk/sdk.go Module.OnPaneAction
-ext/sdk/sdk.go Module.OnSessionBeforeSwitch
-ext/sdk/sdk.go Module.OnToolCall
-ext/sdk/sdk.go Module.OnToolResult
-ext/sdk/sdk.go Module.OnTurnStopping
-ext/sdk/sdk.go Module.OnUserInput
-ext/sdk/sdk.go Module.RegisterCommand
-ext/sdk/sdk.go Module.RegisterTool
-ext/sdk/ui.go Module.Run
-ext/sdk/sdk.go Module.SendUserMessage
-ext/sdk/sdk.go Module.SetStatus
-ext/sdk/sdk.go Module.ShowPane
-ext/sdk/sdk.go Module.Submit
-ext/sdk/sdk.go Module.Subscribe
-ext/sdk/sdk.go Module.SubscribeEvent
-ext/sdk/sdk.go Module.UpdatePane
-ext/sdk/ui.go Module.handleIntercept
-ext/sdk/sdk.go New
-ext/sdk/ui.go appendUnique
-ext/sdk/ui.go errUnexpected
-ext/sdk/ui.go moduleUI.ClosePane
-ext/sdk/ui.go moduleUI.Confirm
-ext/sdk/ui.go moduleUI.ConfirmOpts
-ext/sdk/ui.go moduleUI.Notify
-ext/sdk/ui.go moduleUI.SetStatus
-ext/sdk/ui.go moduleUI.ShowPane
-ext/sdk/ui.go moduleUI.UpdatePane
-ext/sdk/ui.go unexpectedTypeError.Error
+ext/phi/sdk.go ExtensionAPI.Confirm
+ext/phi/sdk.go ExtensionAPI.ConfirmOpts
+ext/phi/sdk.go ExtensionAPI.Host
+ext/phi/sdk.go ExtensionAPI.Notify
+ext/phi/sdk.go ExtensionAPI.OnBeforeAgentStart
+ext/phi/sdk.go ExtensionAPI.OnSessionBeforeSwitch
+ext/phi/sdk.go ExtensionAPI.OnToolCall
+ext/phi/sdk.go ExtensionAPI.OnToolResult
+ext/phi/sdk.go ExtensionAPI.OnTurnStopping
+ext/phi/sdk.go ExtensionAPI.OnUserInput
+ext/phi/sdk.go ExtensionAPI.RegisterCommand
+ext/phi/sdk.go ExtensionAPI.RegisterTool
+ext/phi/sdk.go ExtensionAPI.Run
+ext/phi/sdk.go ExtensionAPI.SendUserMessage
+ext/phi/sdk.go ExtensionAPI.SetStatus
+ext/phi/sdk.go ExtensionAPI.Submit
+ext/phi/sdk.go ExtensionAPI.Subscribe
+ext/phi/sdk.go ExtensionAPI.SubscribeEvent
+ext/phi/sdk.go ExtensionAPI.handleIntercept
+ext/phi/sdk.go New
+ext/phi/ui.go appendUnique
+ext/phi/ui.go errUnexpected
+ext/phi/ui.go extensionUI.Confirm
+ext/phi/ui.go extensionUI.ConfirmOpts
+ext/phi/ui.go extensionUI.Notify
+ext/phi/ui.go extensionUI.SetStatus
+ext/phi/ui.go unexpectedTypeError.Error

@@ -47,11 +47,11 @@ import (
 	"strings"
 
 	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/sdk"
+	"github.com/pulseaiclub/phi/ext/phi"
 )
 
 func main() {
-	m := sdk.New("guard", "0.0.1")
+	m := phi.New("guard", "0.0.1")
 	m.OnToolCall(func(ev ext.ToolCallEvent) *ext.ToolCallResult {
 		if ev.ToolName != "bash" {
 			return nil
@@ -95,11 +95,11 @@ import (
 	"encoding/json"
 
 	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/sdk"
+	"github.com/pulseaiclub/phi/ext/phi"
 )
 
 func main() {
-	m := sdk.New("greet", "0.0.1")
+	m := phi.New("greet", "0.0.1")
 	m.RegisterTool(ext.Tool{
 		Name:        "greet",
 		Description: "Greet someone",

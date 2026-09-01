@@ -145,35 +145,6 @@ type ExtConfirmDismissMsg struct{}
 
 func (ExtConfirmDismissMsg) isMsg() {}
 
-// ExtPaneMsg updates the extension pane surface (show/update/close).
-type ExtPaneMsg struct {
-	Op      string // show | update | close
-	ID      string
-	Title   string
-	Body    string
-	Format  string
-	Actions []ExtPaneAction
-	Source  string // extension name (for action routing)
-}
-
-// ExtPaneAction is a button on an extension pane.
-type ExtPaneAction struct {
-	ID    string
-	Label string
-	Kind  string
-}
-
-func (ExtPaneMsg) isMsg() {}
-
-// ExtPaneActionMsg is emitted when the user activates a pane button.
-type ExtPaneActionMsg struct {
-	PaneID   string
-	ActionID string
-	Source   string
-}
-
-func (ExtPaneActionMsg) isMsg() {}
-
 // JobProgressMsg carries a live sub-agent tool update for the nested tree UI.
 type JobProgressMsg struct {
 	Progress job.Progress

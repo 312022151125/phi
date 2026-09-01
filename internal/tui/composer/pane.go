@@ -53,7 +53,6 @@ type ComposerPane struct {
 	handlePermissionKey   WireKeyHandler
 	handleContinueKey     WireKeyHandler
 	handleConfirmKey      WireKeyHandler
-	handleExtPaneKey      WireKeyHandler
 	handleCopyKey         WireKeyHandler
 	requestFocusEditor    func()
 	requestFocus          func(components.Widget)
@@ -98,7 +97,6 @@ func (c *ComposerPane) Wire(
 	handlePermissionKey WireKeyHandler,
 	handleContinueKey WireKeyHandler,
 	handleConfirmKey WireKeyHandler,
-	handleExtPaneKey WireKeyHandler,
 	handleCopyKey WireKeyHandler,
 	requestFocusEditor func(),
 	requestFocus func(components.Widget),
@@ -119,7 +117,6 @@ func (c *ComposerPane) Wire(
 	c.handlePermissionKey = handlePermissionKey
 	c.handleContinueKey = handleContinueKey
 	c.handleConfirmKey = handleConfirmKey
-	c.handleExtPaneKey = handleExtPaneKey
 	c.handleCopyKey = handleCopyKey
 	c.requestFocusEditor = requestFocusEditor
 	c.requestFocus = requestFocus
@@ -468,9 +465,6 @@ func (c *ComposerPane) Handle(ctx *components.EventContext, ev xui.Event) {
 			return
 		}
 		if c.handleConfirmKey != nil && c.handleConfirmKey(ctx, ev) {
-			return
-		}
-		if c.handleExtPaneKey != nil && c.handleExtPaneKey(ctx, ev) {
 			return
 		}
 		if c.handleCopyKey != nil && c.handleCopyKey(ctx, ev) {

@@ -333,21 +333,6 @@ func (c *EngineController) bindExtensionHost(r *extension.Runner) {
 		ConfirmFn: func(req ext.ConfirmRequest) ext.ConfirmReply {
 			return c.askExtConfirm(req)
 		},
-		ShowPaneFn: func(p ext.Pane) {
-			msg := ExtPaneMsg{
-				Op: "show", ID: p.ID, Title: p.Title, Body: p.Body, Format: p.Format,
-			}
-			for _, a := range p.Actions {
-				msg.Actions = append(msg.Actions, ExtPaneAction{ID: a.ID, Label: a.Label, Kind: a.Kind})
-			}
-			c.publish(msg)
-		},
-		UpdatePaneFn: func(id, body string) {
-			c.publish(ExtPaneMsg{Op: "update", ID: id, Body: body})
-		},
-		ClosePaneFn: func(id string) {
-			c.publish(ExtPaneMsg{Op: "close", ID: id})
-		},
 	}
 	r.Bind(ext.HostOpts{
 		UI:        ui,
@@ -451,16 +436,6 @@ func (c *EngineController) askExtConfirm(req ext.ConfirmRequest) ext.ConfirmRepl
 	case <-timer.C:
 		c.publish(ExtConfirmDismissMsg{})
 		return ext.ConfirmReply{}
-	}
-}
-
-// DeliverPaneAction forwards a pane button click to the owning extension.
-func (c *EngineController) DeliverPaneAction(paneID, actionID, source string) {
-	if c == nil {
-		return
-	}
-	if r := c.Extensions(); r != nil {
-		r.DeliverPaneAction(paneID, actionID, source)
 	}
 }
 
