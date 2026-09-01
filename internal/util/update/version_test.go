@@ -25,10 +25,14 @@ func TestVersionLess(t *testing.T) {
 }
 
 func TestIsDevBuild(t *testing.T) {
-	if !update.IsDevBuild("dev") || !update.IsDevBuild("") || !update.IsDevBuild("v0.0.0") {
-		t.Fatal("expected dev builds")
+	for _, v := range []string{"", "dev", "DEV", "dev-c788df9", "DEV-C788DF9", "0.0.0", "v0.0.0"} {
+		if !update.IsDevBuild(v) {
+			t.Fatalf("IsDevBuild(%q)=false, want true", v)
+		}
 	}
-	if update.IsDevBuild("v0.1.0") {
-		t.Fatal("v0.1.0 should not be dev")
+	for _, v := range []string{"v0.1.0", "v0.19.0", "development"} {
+		if update.IsDevBuild(v) {
+			t.Fatalf("IsDevBuild(%q)=true, want false", v)
+		}
 	}
 }

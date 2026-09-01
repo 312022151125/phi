@@ -50,6 +50,6 @@ func VersionLess(a, b string) bool {
 
 // IsDevBuild reports whether update is disabled for this version string.
 func IsDevBuild(version string) bool {
-	v := strings.TrimSpace(versionOnly(version))
-	return v == "" || v == "dev" || v == "0.0.0" || v == "v0.0.0"
+	v := strings.ToLower(strings.TrimSpace(versionOnly(version)))
+	return v == "" || v == "dev" || strings.HasPrefix(v, "dev-") || v == "0.0.0" || v == "v0.0.0"
 }
