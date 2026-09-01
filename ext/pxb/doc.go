@@ -6,7 +6,7 @@
 // stream (typically a child process stdin/stdout). No JSON, no newlines.
 //
 //	┌──────── header (16 bytes, little-endian) ────────┐
-//	│ magic[4]="PXB\x01" │ typ u16 │ flags u16 │ id u32 │
+//	│ magic[4]="PXB\x01" │ typ u16 │ flags u16 │ id u32│
 //	│ payload_len u32                                  │
 //	└──────────────────────────────────────────────────┘
 //	│ payload: tagged fields                           │

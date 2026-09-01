@@ -50,7 +50,8 @@ type Proc struct {
 	pending map[uint32]chan frameResult
 	closed  atomic.Bool
 
-	onNotify func(pxb.NotifyMsg)
+	onNotify      func(pxb.NotifyMsg)
+	onHostRequest func(id uint32, hasID bool, req pxb.HostRequest)
 }
 
 type frameResult struct {
@@ -258,6 +259,15 @@ func (p *Proc) readLoop() {
 			if p.onNotify != nil {
 				p.onNotify(n)
 			}
+		case pxb.TypeHostRequest:
+			req, err := pxb.DecodeHostRequest(f.Body)
+			if err != nil {
+				debuglog.Logf("extension %q: host request decode: %v", p.Manifest.Name, err)
+				continue
+			}
+			if p.onHostRequest != nil {
+				p.onHostRequest(f.ID, f.Flags&pxb.FlagHasID != 0, req)
+			}
 		case pxb.TypeShutdownAck:
 			return
 		default:
@@ -392,6 +402,38 @@ func (p *Proc) Emit(ev pxb.EventNotify) {
 	}
 }
 
+// PushSessionMeta sends cwd/session identity to the child.
+func (p *Proc) PushSessionMeta(sessionID, cwd string) {
+	if p == nil || p.closed.Load() {
+		return
+	}
+	body := pxb.EncodeSessionMeta(pxb.SessionMeta{SessionID: sessionID, Cwd: cwd})
+	if err := p.wr.Write(pxb.TypeSessionMeta, 0, 0, body); err != nil {
+		debuglog.Logf("extension %q: session meta: %v", p.Manifest.Name, err)
+	}
+}
+
+// ReplyHost sends a HostResult for a prior HostRequest.
+func (p *Proc) ReplyHost(id uint32, res pxb.HostResult) {
+	if p == nil || p.closed.Load() {
+		return
+	}
+	if err := p.wr.Write(pxb.TypeHostResult, pxb.FlagHasID, id, pxb.EncodeHostResult(res)); err != nil {
+		debuglog.Logf("extension %q: host result: %v", p.Manifest.Name, err)
+	}
+}
+
+// PushEvent sends a lifecycle event regardless of Subscribe (pane actions, …).
+func (p *Proc) PushEvent(ev pxb.EventNotify) {
+	if p == nil || p.closed.Load() {
+		return
+	}
+	body := pxb.EncodeEventNotify(ev)
+	if err := p.wr.Write(pxb.TypeEvent, 0, 0, body); err != nil {
+		debuglog.Logf("extension %q: push event: %v", p.Manifest.Name, err)
+	}
+}
+
 // WantsIntercept reports subscription.
 func (p *Proc) WantsIntercept(code uint16) bool {
 	_, ok := p.intercept[code]
@@ -518,19 +560,57 @@ func (p *Proc) BuildAPI(api *ext.API) {
 				if err != nil {
 					return nil
 				}
-				return &ext.BeforeAgentStartResult{SystemPromptAppend: resp.SystemPromptAppend}
+				return &ext.BeforeAgentStartResult{
+					Prompt:             resp.Prompt,
+					SystemPromptAppend: resp.SystemPromptAppend,
+				}
 			},
 		)
+	}
+	if p.WantsIntercept(pxb.EvUserInput) {
+		api.On(ext.EventUserInput, func(ev ext.UserInputEvent, _ *ext.Context) *ext.UserInputResult {
+			resp, err := p.Intercept(context.Background(), pxb.InterceptReq{
+				Event: pxb.EvUserInput, Prompt: ev.Text,
+			})
+			if err != nil {
+				return nil
+			}
+			return &ext.UserInputResult{Handled: resp.Handled, Text: resp.Prompt, Reason: resp.Reason}
+		})
+	}
+	if p.WantsIntercept(pxb.EvTurnStopping) {
+		api.On(ext.EventTurnStopping, func(ev ext.TurnStoppingEvent, _ *ext.Context) *ext.TurnStoppingResult {
+			resp, err := p.Intercept(context.Background(), pxb.InterceptReq{
+				Event: pxb.EvTurnStopping, TurnIndex: uint32(ev.TurnIndex), //nolint:gosec // G115
+			})
+			if err != nil {
+				return nil
+			}
+			return &ext.TurnStoppingResult{Continue: resp.Continue, Message: resp.Prompt, Reason: resp.Reason}
+		})
 	}
 	// Fire-and-forget event shims.
 	if _, ok := p.events[pxb.EvSessionStart]; ok {
 		api.On(ext.EventSessionStart, func(ev ext.SessionStartEvent, _ *ext.Context) {
-			p.Emit(pxb.EventNotify{Event: pxb.EvSessionStart, Reason: ev.Reason})
+			p.Emit(pxb.EventNotify{
+				Event:             pxb.EvSessionStart,
+				Reason:            ev.Reason,
+				PreviousSessionID: ev.PreviousSessionID,
+			})
 		})
 	}
 	if _, ok := p.events[pxb.EvSessionShutdown]; ok {
 		api.On(ext.EventSessionShutdown, func(ev ext.SessionShutdownEvent, _ *ext.Context) {
-			p.Emit(pxb.EventNotify{Event: pxb.EvSessionShutdown, Reason: ev.Reason})
+			p.Emit(pxb.EventNotify{
+				Event:           pxb.EvSessionShutdown,
+				Reason:          ev.Reason,
+				TargetSessionID: ev.TargetSessionID,
+			})
+		})
+	}
+	if _, ok := p.events[pxb.EvSessionCompact]; ok {
+		api.On(ext.EventSessionCompact, func(ev ext.SessionCompactEvent, _ *ext.Context) {
+			p.Emit(pxb.EventNotify{Event: pxb.EvSessionCompact, Reason: ev.Reason})
 		})
 	}
 	if _, ok := p.events[pxb.EvAgentStart]; ok {

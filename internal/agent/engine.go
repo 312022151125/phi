@@ -317,6 +317,13 @@ type LoopOpts struct {
 func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) iter.Seq2[session.Event, error] {
 	return func(yield func(session.Event, error) bool) {
 		content := prompt
+		if engine.extensions != nil {
+			var handled bool
+			content, handled = engine.extensions.EmitUserInput(content)
+			if handled {
+				return
+			}
+		}
 		if instr := pendingSkillsInstruction(engine.skillPath, opts.PendingSkills); instr != "" {
 			if content == "" {
 				content = instr
@@ -325,7 +332,9 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 			}
 		}
 		if engine.extensions != nil {
-			if extra := engine.extensions.EmitBeforeAgentStart(content); extra != "" {
+			rewritten, extra := engine.extensions.EmitBeforeAgentStart(content)
+			content = rewritten
+			if extra != "" {
 				content = content + "\n\n" + extra
 			}
 			engine.extensions.EmitAgentStart()
@@ -390,6 +399,19 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 			if len(msg.ToolCalls) == 0 {
 				if engine.extensions != nil {
 					engine.extensions.EmitTurnEnd(toolRounds)
+					if cont, steer := engine.extensions.EmitTurnStopping(toolRounds); cont {
+						steerMsg := steer
+						if steerMsg == "" {
+							steerMsg = "continue"
+						}
+						if err := engine.session.Append(
+							llm.Message{Role: llm.RoleUser, Content: steerMsg},
+						); err != nil {
+							yield(nil, err)
+							return
+						}
+						continue
+					}
 				}
 				// Turn finished — compact using this assistant's usage.
 				if err := engine.maybeCompact(ctx, yield, msg.Usage.TotalTokens); err != nil {
@@ -399,7 +421,7 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 			}
 
 			toolRounds++
-			toolMsgs := engine.executor.Run(ctx, msg.ToolCalls, func(td session.ToolData) bool {
+			toolMsgs, stop, _ := engine.executor.Run(ctx, msg.ToolCalls, func(td session.ToolData) bool {
 				return yield(td, nil)
 			})
 			if err := engine.session.Append(toolMsgs...); err != nil {
@@ -408,6 +430,9 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 			}
 			if engine.extensions != nil {
 				engine.extensions.EmitTurnEnd(toolRounds - 1)
+			}
+			if stop {
+				return
 			}
 
 			if ctx.Err() != nil {
@@ -467,6 +492,9 @@ func (engine *Engine) maybeCompact(
 	}
 	if !yield(session.CompactionComplete{ID: id}, nil) {
 		return context.Canceled
+	}
+	if engine.extensions != nil {
+		engine.extensions.EmitSessionCompact("auto")
 	}
 	return nil
 }

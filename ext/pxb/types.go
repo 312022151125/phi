@@ -24,6 +24,7 @@ const (
 	TypeInterceptResponse uint16 = 8
 	TypeShutdownAck       uint16 = 9
 	TypeNotify            uint16 = 10
+	TypeHostRequest       uint16 = 11 // ext→host RPC (send_user_message, …)
 
 	TypeHelloAck       uint16 = 100
 	TypeCommandInvoked uint16 = 101
@@ -31,8 +32,8 @@ const (
 	TypeEvent          uint16 = 103
 	TypeIntercept      uint16 = 104
 	TypeShutdown       uint16 = 105
-	TypeHostCall       uint16 = 106 // reserved: host→ext capability probe
-	TypeHostCallResult uint16 = 107
+	TypeHostResult     uint16 = 106 // host→ext reply to TypeHostRequest
+	TypeSessionMeta    uint16 = 107 // host→ext session/cwd push
 )
 
 // Flag bits in the header.
@@ -64,6 +65,10 @@ const (
 	EvAgentEnd            uint16 = 10
 	EvTurnStart           uint16 = 11
 	EvTurnEnd             uint16 = 12
+	EvUserInput           uint16 = 13
+	EvTurnStopping        uint16 = 14
+	EvSessionCompact      uint16 = 15
+	EvPaneAction          uint16 = 16
 )
 
 // EventName maps a wire code to the public ext event string.
@@ -93,6 +98,14 @@ func EventName(code uint16) string {
 		return "turn_start"
 	case EvTurnEnd:
 		return "turn_end"
+	case EvUserInput:
+		return "user_input"
+	case EvTurnStopping:
+		return "turn_stopping"
+	case EvSessionCompact:
+		return "session_compact"
+	case EvPaneAction:
+		return "pane_action"
 	default:
 		return ""
 	}
@@ -125,6 +138,14 @@ func EventCode(name string) uint16 {
 		return EvTurnStart
 	case "turn_end":
 		return EvTurnEnd
+	case "user_input":
+		return EvUserInput
+	case "turn_stopping":
+		return EvTurnStopping
+	case "session_compact":
+		return EvSessionCompact
+	case "pane_action":
+		return EvPaneAction
 	default:
 		return 0
 	}

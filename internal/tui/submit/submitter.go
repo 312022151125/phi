@@ -27,8 +27,10 @@ type Submitter struct {
 
 	permissionActive  func() bool
 	continueActive    func() bool
+	confirmActive     func() bool
 	resolvePermission func(controller.AskReply)
 	resolveContinue   func(controller.ContinueReply)
+	resolveConfirm    func(controller.ExtConfirmReply)
 }
 
 // NewSubmitter builds a Submitter from explicit collaborators (no *Editor back-pointer).
@@ -43,8 +45,10 @@ func NewSubmitter(
 	commandContext func() commands.CommandContext,
 	permissionActive func() bool,
 	continueActive func() bool,
+	confirmActive func() bool,
 	resolvePermission func(controller.AskReply),
 	resolveContinue func(controller.ContinueReply),
+	resolveConfirm func(controller.ExtConfirmReply),
 ) *Submitter {
 	return &Submitter{
 		ctrl:              ctrl,
@@ -57,8 +61,10 @@ func NewSubmitter(
 		bus:               bus,
 		permissionActive:  permissionActive,
 		continueActive:    continueActive,
+		confirmActive:     confirmActive,
 		resolvePermission: resolvePermission,
 		resolveContinue:   resolveContinue,
+		resolveConfirm:    resolveConfirm,
 	}
 }
 
@@ -153,6 +159,9 @@ func (s *Submitter) Cancel() {
 	}
 	if s.resolveContinue != nil && s.continueActive != nil && s.continueActive() {
 		s.resolveContinue(controller.ContinueReply{})
+	}
+	if s.resolveConfirm != nil && s.confirmActive != nil && s.confirmActive() {
+		s.resolveConfirm(controller.ExtConfirmReply{})
 	}
 	if s.bash != nil && s.bash.Cancel() {
 		return

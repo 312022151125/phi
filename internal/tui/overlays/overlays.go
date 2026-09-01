@@ -17,11 +17,12 @@ type overlayComposer interface {
 	HidePalette()
 }
 
-// Overlays owns permission and continue-ask UI that replaces the composer slot.
+// Overlays owns permission, continue-ask, and extension-confirm UI that replaces the composer slot.
 type Overlays struct {
 	theme    components.Theme
 	perm     *permAskState
 	cont     *continueAskState
+	confirm  *confirmAskState
 	activity *controller.ActivityHandler
 	composer overlayComposer
 
@@ -54,7 +55,7 @@ func (o *Overlays) SetTheme(th components.Theme) {
 
 // Active reports whether a modal overlay is showing.
 func (o *Overlays) Active() bool {
-	return o != nil && (o.perm != nil || o.cont != nil)
+	return o != nil && (o.perm != nil || o.cont != nil || o.confirm != nil)
 }
 
 // BlocksComposer reports whether composer input should be disabled.
@@ -86,6 +87,10 @@ func (o *Overlays) Apply(m controller.Msg) {
 		o.beginContinueAsk(msg)
 	case controller.ContinueDismissMsg:
 		o.dismissContinue()
+	case controller.ExtConfirmMsg:
+		o.beginExtConfirm(msg)
+	case controller.ExtConfirmDismissMsg:
+		o.dismissExtConfirm()
 	}
 }
 
@@ -120,6 +125,9 @@ func (o *Overlays) PreferredBottomHeight(width int, method xui.WidthMethod) (hei
 	if o.cont != nil {
 		return o.cont.preferredAskHeight(), true
 	}
+	if o.confirm != nil {
+		return o.confirm.preferredAskHeight(), true
+	}
 	return 0, false
 }
 
@@ -134,6 +142,9 @@ func (o *Overlays) DrawBottom(ctx components.DrawContext, width, height int) (co
 	if o.cont != nil {
 		return o.drawContinueAsk(ctx, width, height), true
 	}
+	if o.confirm != nil {
+		return o.drawExtConfirm(ctx, width, height), true
+	}
 	return components.Surface{}, false
 }
 
@@ -143,6 +154,9 @@ func (o *Overlays) beginPermissionAsk(msg controller.PermissionAskMsg) {
 	}
 	if o.cont != nil {
 		o.resolveContinue(controller.ContinueReply{})
+	}
+	if o.confirm != nil {
+		o.resolveExtConfirm(controller.ExtConfirmReply{})
 	}
 	if o.composer != nil {
 		o.composer.HideCompleters()
@@ -195,6 +209,9 @@ func (o *Overlays) beginContinueAsk(msg controller.ContinueAskMsg) {
 	}
 	if o.perm != nil {
 		o.resolvePermission(controller.AskReply{})
+	}
+	if o.confirm != nil {
+		o.resolveExtConfirm(controller.ExtConfirmReply{})
 	}
 	if o.composer != nil {
 		o.composer.HideCompleters()

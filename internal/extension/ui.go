@@ -2,12 +2,14 @@ package extension
 
 import "github.com/pulseaiclub/phi/ext"
 
-// BusUI publishes Notify as toast-like callbacks. Confirm always returns false
-// until a real dialog is wired (safe default for policy gates that need explicit approval).
+// BusUI publishes UI effects onto host callbacks.
 type BusUI struct {
-	NotifyFn    func(message, kind string)
-	ConfirmFn   func(title, message string) bool
-	SetStatusFn func(key, text string)
+	NotifyFn     func(message, kind string)
+	ConfirmFn    func(ext.ConfirmRequest) ext.ConfirmReply
+	SetStatusFn  func(key, text string)
+	ShowPaneFn   func(ext.Pane)
+	UpdatePaneFn func(id, body string)
+	ClosePaneFn  func(id string)
 }
 
 func (u BusUI) Notify(message, kind string) {
@@ -17,10 +19,14 @@ func (u BusUI) Notify(message, kind string) {
 }
 
 func (u BusUI) Confirm(title, message string) bool {
+	return u.ConfirmOpts(ext.ConfirmRequest{Title: title, Message: message}).OK
+}
+
+func (u BusUI) ConfirmOpts(req ext.ConfirmRequest) ext.ConfirmReply {
 	if u.ConfirmFn != nil {
-		return u.ConfirmFn(title, message)
+		return u.ConfirmFn(req)
 	}
-	return false
+	return ext.ConfirmReply{}
 }
 
 func (u BusUI) SetStatus(key, text string) {
@@ -29,5 +35,22 @@ func (u BusUI) SetStatus(key, text string) {
 	}
 }
 
-// Ensure BusUI implements ext.UI.
+func (u BusUI) ShowPane(p ext.Pane) {
+	if u.ShowPaneFn != nil {
+		u.ShowPaneFn(p)
+	}
+}
+
+func (u BusUI) UpdatePane(id, body string) {
+	if u.UpdatePaneFn != nil {
+		u.UpdatePaneFn(id, body)
+	}
+}
+
+func (u BusUI) ClosePane(id string) {
+	if u.ClosePaneFn != nil {
+		u.ClosePaneFn(id)
+	}
+}
+
 var _ ext.UI = BusUI{}

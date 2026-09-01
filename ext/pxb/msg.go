@@ -74,20 +74,36 @@ const (
 	fIxResContext   uint16 = 7
 	fIxResSysAppend uint16 = 8
 	fIxResToast     uint16 = 9
+	fIxResHandled   uint16 = 10
+	fIxResPrompt    uint16 = 11
+	fIxResContinue  uint16 = 12
 
-	fEvEvent      uint16 = 1
-	fEvToolName   uint16 = 2
-	fEvToolCallID uint16 = 3
-	fEvInput      uint16 = 4
-	fEvIsError    uint16 = 5
-	fEvPrompt     uint16 = 6
-	fEvReason     uint16 = 7
-	fEvTurnIndex  uint16 = 8
+	fEvEvent             uint16 = 1
+	fEvToolName          uint16 = 2
+	fEvToolCallID        uint16 = 3
+	fEvInput             uint16 = 4
+	fEvIsError           uint16 = 5
+	fEvPrompt            uint16 = 6
+	fEvReason            uint16 = 7
+	fEvTurnIndex         uint16 = 8
+	fEvSessionID         uint16 = 9
+	fEvPreviousSessionID uint16 = 10
+	fEvTargetSessionID   uint16 = 11
 
 	fNotifyLevel     uint16 = 1
 	fNotifyMessage   uint16 = 2
 	fNotifyStatus    uint16 = 3
 	fNotifyStatusSet uint16 = 4
+
+	fHostReqMethod uint16 = 1
+	fHostReqArg    uint16 = 2
+
+	fHostResOK    uint16 = 1
+	fHostResError uint16 = 2
+	fHostResBody  uint16 = 3
+
+	fMetaSessionID uint16 = 1
+	fMetaCwd       uint16 = 2
 )
 
 // Hello is the first frame from an extension.
@@ -546,12 +562,15 @@ type InterceptResp struct {
 	Block              bool
 	Stop               bool
 	Cancel             bool
+	Handled            bool
+	Continue           bool
 	Reason             string
 	Input              []byte
 	Content            string
 	Context            string
 	SystemPromptAppend string
 	Toast              string
+	Prompt             string // rewrite user prompt / steer message
 }
 
 func EncodeInterceptResp(r InterceptResp) []byte {
@@ -565,6 +584,9 @@ func EncodeInterceptResp(r InterceptResp) []byte {
 	fw.PutString(fIxResContext, r.Context)
 	fw.PutString(fIxResSysAppend, r.SystemPromptAppend)
 	fw.PutString(fIxResToast, r.Toast)
+	fw.PutBool(fIxResHandled, r.Handled)
+	fw.PutString(fIxResPrompt, r.Prompt)
+	fw.PutBool(fIxResContinue, r.Continue)
 	return fw.Bytes()
 }
 
@@ -608,6 +630,18 @@ func DecodeInterceptResp(b []byte) (InterceptResp, error) {
 			s, err := takeString(kind, fr)
 			r.Toast = s
 			return err
+		case fIxResHandled:
+			v, err := takeU64(kind, fr)
+			r.Handled = v != 0
+			return err
+		case fIxResPrompt:
+			s, err := takeString(kind, fr)
+			r.Prompt = s
+			return err
+		case fIxResContinue:
+			v, err := takeU64(kind, fr)
+			r.Continue = v != 0
+			return err
 		default:
 			return fr.Skip(kind)
 		}
@@ -617,14 +651,17 @@ func DecodeInterceptResp(b []byte) (InterceptResp, error) {
 
 // EventNotify is a fire-and-forget host→ext lifecycle event.
 type EventNotify struct {
-	Event      uint16
-	ToolName   string
-	ToolCallID string
-	Input      []byte
-	IsError    bool
-	Prompt     string
-	Reason     string
-	TurnIndex  uint32
+	Event             uint16
+	ToolName          string
+	ToolCallID        string
+	Input             []byte
+	IsError           bool
+	Prompt            string
+	Reason            string
+	TurnIndex         uint32
+	SessionID         string
+	PreviousSessionID string
+	TargetSessionID   string
 }
 
 func EncodeEventNotify(e EventNotify) []byte {
@@ -637,6 +674,9 @@ func EncodeEventNotify(e EventNotify) []byte {
 	fw.PutString(fEvPrompt, e.Prompt)
 	fw.PutString(fEvReason, e.Reason)
 	fw.PutU32(fEvTurnIndex, e.TurnIndex)
+	fw.PutString(fEvSessionID, e.SessionID)
+	fw.PutString(fEvPreviousSessionID, e.PreviousSessionID)
+	fw.PutString(fEvTargetSessionID, e.TargetSessionID)
 	return fw.Bytes()
 }
 
@@ -675,6 +715,18 @@ func DecodeEventNotify(b []byte) (EventNotify, error) {
 		case fEvTurnIndex:
 			v, err := takeU64(kind, fr)
 			e.TurnIndex = uint32(v) //nolint:gosec // G115: turn index is u32 by protocol
+			return err
+		case fEvSessionID:
+			s, err := takeString(kind, fr)
+			e.SessionID = s
+			return err
+		case fEvPreviousSessionID:
+			s, err := takeString(kind, fr)
+			e.PreviousSessionID = s
+			return err
+		case fEvTargetSessionID:
+			s, err := takeString(kind, fr)
+			e.TargetSessionID = s
 			return err
 		default:
 			return fr.Skip(kind)
@@ -725,6 +777,108 @@ func DecodeNotify(b []byte) (NotifyMsg, error) {
 		}
 	})
 	return n, err
+}
+
+// HostRequest is ext→host capability RPC.
+type HostRequest struct {
+	Method string // send_user_message
+	Arg    string
+}
+
+func EncodeHostRequest(r HostRequest) []byte {
+	var fw FieldWriter
+	fw.PutString(fHostReqMethod, r.Method)
+	fw.PutString(fHostReqArg, r.Arg)
+	return fw.Bytes()
+}
+
+func DecodeHostRequest(b []byte) (HostRequest, error) {
+	var r HostRequest
+	err := Walk(b, func(tag uint16, kind uint8, fr *FieldReader) error {
+		switch tag {
+		case fHostReqMethod:
+			s, err := takeString(kind, fr)
+			r.Method = s
+			return err
+		case fHostReqArg:
+			s, err := takeString(kind, fr)
+			r.Arg = s
+			return err
+		default:
+			return fr.Skip(kind)
+		}
+	})
+	return r, err
+}
+
+// HostResult is host→ext reply.
+type HostResult struct {
+	OK    bool
+	Error string
+	Body  string
+}
+
+func EncodeHostResult(r HostResult) []byte {
+	var fw FieldWriter
+	fw.PutBool(fHostResOK, r.OK)
+	fw.PutString(fHostResError, r.Error)
+	fw.PutString(fHostResBody, r.Body)
+	return fw.Bytes()
+}
+
+func DecodeHostResult(b []byte) (HostResult, error) {
+	var r HostResult
+	err := Walk(b, func(tag uint16, kind uint8, fr *FieldReader) error {
+		switch tag {
+		case fHostResOK:
+			v, err := takeU64(kind, fr)
+			r.OK = v != 0
+			return err
+		case fHostResError:
+			s, err := takeString(kind, fr)
+			r.Error = s
+			return err
+		case fHostResBody:
+			s, err := takeString(kind, fr)
+			r.Body = s
+			return err
+		default:
+			return fr.Skip(kind)
+		}
+	})
+	return r, err
+}
+
+// SessionMeta is host→ext session identity push.
+type SessionMeta struct {
+	SessionID string
+	Cwd       string
+}
+
+func EncodeSessionMeta(m SessionMeta) []byte {
+	var fw FieldWriter
+	fw.PutString(fMetaSessionID, m.SessionID)
+	fw.PutString(fMetaCwd, m.Cwd)
+	return fw.Bytes()
+}
+
+func DecodeSessionMeta(b []byte) (SessionMeta, error) {
+	var m SessionMeta
+	err := Walk(b, func(tag uint16, kind uint8, fr *FieldReader) error {
+		switch tag {
+		case fMetaSessionID:
+			s, err := takeString(kind, fr)
+			m.SessionID = s
+			return err
+		case fMetaCwd:
+			s, err := takeString(kind, fr)
+			m.Cwd = s
+			return err
+		default:
+			return fr.Skip(kind)
+		}
+	})
+	return m, err
 }
 
 func takeU64(kind uint8, fr *FieldReader) (uint64, error) {

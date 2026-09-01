@@ -1,4 +1,0 @@
-name: hello
-version: "0.1.0"
-exec: ./hello
-description: Minimal PXB extension sample
