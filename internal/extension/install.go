@@ -31,8 +31,8 @@ func (o InstallOptions) out() io.Writer {
 	return io.Discard
 }
 
-// Install clones a GitHub repo into Dir/<repo>/ and verifies it looks like an
-// extension (index.go or a single *.go at the repo root).
+// Install clones a GitHub repo into Dir/<repo>/ and verifies it ships
+// phi.yaml plus the compiled exec binary.
 func Install(ctx context.Context, opts InstallOptions) error {
 	if opts.Dir == "" {
 		return errors.New("extensions directory is required")

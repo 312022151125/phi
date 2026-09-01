@@ -104,29 +104,12 @@ func scanDir(dir, source string) ([]Discovered, []Warning, error) {
 	for _, ent := range entries {
 		name := ent.Name()
 		if strings.HasPrefix(name, ".") || !ent.IsDir() {
-			if !ent.IsDir() && (strings.HasSuffix(name, ".go") || name == "index.go") {
-				warnings = append(warnings, Warning{
-					Path: filepath.Join(dir, name),
-					Message: "yaegi .go extensions are no longer loaded; " +
-						"build a PXB binary and add phi.yaml (see doc/extensions.md)",
-				})
-			}
 			continue
 		}
 		full := filepath.Join(dir, name)
 		m, err := ReadManifest(full)
 		if err != nil {
 			if os.IsNotExist(err) {
-				// Subdir without manifest: ignore unless it looks like a legacy go plugin.
-				if _, e2 := dirEntryFile(full); e2 == nil {
-					if entry, _ := dirEntryFile(full); entry != "" {
-						warnings = append(warnings, Warning{
-							Path: full,
-							Message: "legacy Go source extension ignored; " +
-								"migrate to PXB (phi.yaml + compiled binary)",
-						})
-					}
-				}
 				continue
 			}
 			warnings = append(warnings, Warning{Path: full, Message: err.Error()})
@@ -150,41 +133,6 @@ func scanDir(dir, source string) ([]Discovered, []Warning, error) {
 		out = append(out, Discovered{ID: id, Path: full, Manifest: m, Source: source})
 	}
 	return out, warnings, nil
-}
-
-// dirEntryFile returns a legacy yaegi entry (kept for migration warnings).
-func dirEntryFile(dir string) (string, error) {
-	index := filepath.Join(dir, "index.go")
-	st, err := os.Stat(index)
-	if err == nil && !st.IsDir() {
-		return index, nil
-	}
-	if err != nil && !os.IsNotExist(err) {
-		return "", err
-	}
-	return soleRootGoFile(dir)
-}
-
-func soleRootGoFile(dir string) (string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", err
-	}
-	var found string
-	for _, ent := range entries {
-		if ent.IsDir() {
-			continue
-		}
-		name := ent.Name()
-		if filepath.Ext(name) != ".go" || strings.HasSuffix(name, "_test.go") {
-			continue
-		}
-		if found != "" {
-			return "", nil
-		}
-		found = filepath.Join(dir, name)
-	}
-	return found, nil
 }
 
 // FormatDiscovered returns a one-line status for palette / logs.
