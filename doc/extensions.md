@@ -106,18 +106,12 @@ func main() {
 Requires `import "github.com/pulseaiclub/phi/ext/pxb"` for `SubscribeEvent` payloads.
 
 UI surface today: **toast** (`Notify`), **footer status** (`SetStatus`), **Submit** / **SendUserMessage**,
-**Confirm** / **ConfirmOpts**, **ShowPane** / **UpdatePane** / **ClosePane** (+ `OnPaneAction`).
+**Confirm** / **ConfirmOpts**.
 
 ```go
 ok := m.ConfirmOpts(ext.ConfirmRequest{
 	Title: "Delete?", Message: "Remove /tmp/x", Yes: "Delete", No: "Cancel", Danger: true,
 }).OK
-
-m.ShowPane(ext.Pane{
-	ID: "todo", Title: "Todos", Body: "…",
-	Actions: []ext.PaneAction{{ID: "clear", Label: "Clear", Kind: "danger"}},
-})
-m.OnPaneAction(func(paneID, actionID string) { /* … */ })
 ```
 
 Build and install:
@@ -130,7 +124,7 @@ cp hello phi.yaml ~/.phi/extensions/hello/
 
 Samples:
 - [examples/extensions/hello](../examples/extensions/hello) — minimal slash + notify
-- [examples/extensions/showcase](../examples/extensions/showcase) — Confirm, pane, intercepts, tools
+- [examples/extensions/showcase](../examples/extensions/showcase) — Confirm, intercepts, tools
 
 Reload: **Ctrl+K → extensions → reload**.
 

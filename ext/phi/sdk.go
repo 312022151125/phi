@@ -265,58 +265,6 @@ func (extension *ExtensionAPI) ConfirmOpts(req ext.ConfirmRequest) ext.ConfirmRe
 	}
 }
 
-// ShowPane opens or replaces a non-blocking extension pane on the host.
-func (extension *ExtensionAPI) ShowPane(p ext.Pane) {
-	if extension.wr == nil {
-		return
-	}
-	if p.ID == "" {
-		p.ID = "default"
-	}
-	payload, _ := json.Marshal(p)
-	_ = extension.wr.Write(pxb.TypeHostRequest, 0, 0, pxb.EncodeHostRequest(pxb.HostRequest{
-		Method: "pane_show", Arg: string(payload),
-	}))
-}
-
-// UpdatePane replaces the body of an existing pane.
-func (extension *ExtensionAPI) UpdatePane(id, body string) {
-	if extension.wr == nil {
-		return
-	}
-	if id == "" {
-		id = "default"
-	}
-	payload, _ := json.Marshal(map[string]string{"id": id, "body": body})
-	_ = extension.wr.Write(pxb.TypeHostRequest, 0, 0, pxb.EncodeHostRequest(pxb.HostRequest{
-		Method: "pane_update", Arg: string(payload),
-	}))
-}
-
-// ClosePane dismisses a pane.
-func (extension *ExtensionAPI) ClosePane(id string) {
-	if extension.wr == nil {
-		return
-	}
-	if id == "" {
-		id = "default"
-	}
-	payload, _ := json.Marshal(map[string]string{"id": id})
-	_ = extension.wr.Write(pxb.TypeHostRequest, 0, 0, pxb.EncodeHostRequest(pxb.HostRequest{
-		Method: "pane_close", Arg: string(payload),
-	}))
-}
-
-// OnPaneAction registers a listener for pane button clicks.
-func (extension *ExtensionAPI) OnPaneAction(fn func(paneID, actionID string)) {
-	if fn == nil {
-		return
-	}
-	extension.SubscribeEvent(ext.EventPaneAction, func(ev pxb.EventNotify) {
-		fn(ev.Prompt, ev.Reason)
-	})
-}
-
 // Run speaks PXB on stdin/stdout until shutdown.
 func (extension *ExtensionAPI) Run() error {
 	extension.wr = pxb.NewWriter(os.Stdout)

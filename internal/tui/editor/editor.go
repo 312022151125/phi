@@ -14,7 +14,6 @@ import (
 	"github.com/pulseaiclub/phi/internal/tui/commands"
 	"github.com/pulseaiclub/phi/internal/tui/composer"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
-	"github.com/pulseaiclub/phi/internal/tui/extpane"
 	"github.com/pulseaiclub/phi/internal/tui/footer"
 	"github.com/pulseaiclub/phi/internal/tui/overlays"
 	"github.com/pulseaiclub/phi/internal/tui/pathutil"
@@ -43,7 +42,6 @@ type Editor struct {
 	composer   *composer.ComposerPane
 	footer     *footer.FooterChrome
 	overlays   *overlays.Overlays
-	extPane    *extpane.Host
 	toast      toast.Toast
 
 	ctrl *controller.EngineController
@@ -109,11 +107,6 @@ func NewEditor(
 			}
 		},
 	)
-	e.extPane = extpane.New(theme, func(msg controller.ExtPaneActionMsg) {
-		if e.ctrl != nil {
-			e.ctrl.DeliverPaneAction(msg.PaneID, msg.ActionID, msg.Source)
-		}
-	})
 	e.transcript.SetCopyHandlers(
 		e.bus,
 		func(text string) bool {
@@ -193,9 +186,6 @@ func NewEditor(
 		e.overlays.HandlePermissionKey,
 		e.overlays.HandleContinueKey,
 		e.overlays.HandleConfirmKey,
-		func(ctx *components.EventContext, ke xui.KeyEvent) bool {
-			return e.extPane != nil && e.extPane.HandleKey(ctx, ke)
-		},
 		e.handleCopyKey,
 		func() {
 			if e.App != nil {
@@ -239,14 +229,6 @@ func (e *Editor) Update(m controller.Msg) {
 		controller.ContinueAskMsg, controller.ContinueDismissMsg,
 		controller.ExtConfirmMsg, controller.ExtConfirmDismissMsg:
 		e.overlays.Apply(m)
-	case controller.ExtPaneMsg:
-		if e.extPane != nil {
-			e.extPane.Apply(msg)
-		}
-	case controller.ExtPaneActionMsg:
-		if e.ctrl != nil {
-			e.ctrl.DeliverPaneAction(msg.PaneID, msg.ActionID, msg.Source)
-		}
 	case controller.SetActivityMsg, controller.ClearIfActivityMsg, controller.UpdateAvailableMsg:
 		e.footer.Apply(m)
 	case controller.ToastMsg:
@@ -384,17 +366,6 @@ func (e *Editor) Draw(ctx components.DrawContext) components.Surface {
 			Z:       40,
 		})
 	}
-	if e.extPane != nil && e.extPane.Active() {
-		paneH := e.extPane.PreferredHeight(maxSize.Height)
-		paneH = min(paneH, listH-1)
-		paneH = max(paneH, 6)
-		paneSurf := e.extPane.Draw(ctx, maxSize.Width, paneH)
-		root.Children = append(root.Children, components.SubSurface{
-			Origin:  components.Point{X: 0, Y: 0},
-			Surface: paneSurf,
-			Z:       30,
-		})
-	}
 	return root
 }
 
@@ -452,9 +423,6 @@ func (e *Editor) applyTheme(name string) {
 	e.transcript.SetTheme(th)
 	e.footer.SetTheme(th)
 	e.overlays.SetTheme(th)
-	if e.extPane != nil {
-		e.extPane.SetTheme(th)
-	}
 	e.toast.Show("Theme: "+name, toast.ToastSuccess, 2*time.Second)
 	if e.vx != nil {
 		e.vx.QueueRefresh()

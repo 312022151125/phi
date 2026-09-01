@@ -18,9 +18,6 @@ func (u extensionUI) Confirm(title, message string) bool {
 func (u extensionUI) ConfirmOpts(req ext.ConfirmRequest) ext.ConfirmReply {
 	return u.extensionAPI.ConfirmOpts(req)
 }
-func (u extensionUI) ShowPane(p ext.Pane)        { u.extensionAPI.ShowPane(p) }
-func (u extensionUI) UpdatePane(id, body string) { u.extensionAPI.UpdatePane(id, body) }
-func (u extensionUI) ClosePane(id string)        { u.extensionAPI.ClosePane(id) }
 
 func appendUnique(xs []uint16, v uint16) []uint16 {
 	if slices.Contains(xs, v) {
