@@ -160,9 +160,10 @@ byte-for-byte compatible with the Go SDK (golden-tested against the Go
 fixtures). Requires Rust ≥ 1.75.
 
 ```bash
-# pre-release: tracks the latest main (first ext tag containing ext/rust
-# is ext/v0.19.2+; pin it once a release is cut)
+# pre-release: tracks the latest main (crate publishes under ext/rust/vX.Y.Z tags)
 cargo add phi-ext --git https://github.com/pulseaiclub/phi --branch main
+# release: published crate version
+# cargo add phi-ext
 ```
 
 ```rust,no_run
