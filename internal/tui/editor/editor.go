@@ -172,7 +172,6 @@ func NewEditor(
 		e.setPermissions,
 		e.setAgents,
 		e.addPendingSkill,
-		e.copyLastMessage,
 	)
 	e.extCmds.CommandCtx = bridge.context
 	e.composer.Wire(
@@ -489,10 +488,6 @@ func (e *Editor) reloadExtensions() {
 func (e *Editor) listExtensions() []palette.PaletteCommand {
 	found, warns, err := e.ctrl.ListExtensions()
 	return commands.ExtensionListEntries(found, warns, err)
-}
-
-func (e *Editor) copyLastMessage() {
-	e.transcript.CopyBlock(e.transcript.LastCopyText())
 }
 
 // SubmitPrompt publishes a user prompt onto the bus.

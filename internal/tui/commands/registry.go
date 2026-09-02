@@ -32,7 +32,6 @@ type CommandContext struct {
 	ReloadExtensions func()
 	ListExtensions   func() []palette.PaletteCommand
 	AddSkill         func(name string)
-	CopyLastMessage  func()
 
 	ModelNames []string
 	SkillPath  string

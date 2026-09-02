@@ -16,6 +16,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Removed
 
+- Palette command `clipboard copy last message` (`Ctrl+Shift+C`); the key chord still copies selection / last message via the transcript handler.
+
 ### Fixed
 
 ### Security
