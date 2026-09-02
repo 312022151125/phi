@@ -10,6 +10,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Rust author SDK: zero-dependency `ext/rust` crate (`phi-ext`) — PXB wire protocol (`pxb`) + `Extension` API (`phi`), byte-compatible with the Go SDK via golden fixtures, plus fake-host end-to-end tests. See [doc/extensions.md](doc/extensions.md).
+
 ### Changed
 
 ### Deprecated

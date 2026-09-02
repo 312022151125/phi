@@ -34,6 +34,10 @@ test:
 	$(GO) test ./...
 	$(GO) test -C ext/go ./...
 
+# Rust extension SDK (ext/rust): build + test.
+test-rust:
+	cd ext/rust && cargo test --all-targets
+
 # Apply gofumpt / goimports / golines via .golangci.yml formatters.
 fmt:
 	golangci-lint fmt ./...
@@ -53,6 +57,10 @@ deadcode:
 
 check: fmt-check lint deadcode
 
+# Rust extension SDK checks: format + lint (CI mirrors this).
+check-rust:
+	cd ext/rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings
+
 help:
 	@echo "Usage:"
 	@echo "  make          - build binary ($(BINARY))"
@@ -65,3 +73,5 @@ help:
 	@echo "  make lint     - run golangci-lint"
 	@echo "  make deadcode - unreachable func check (deadcode -test vs baseline)"
 	@echo "  make check    - fmt-check + lint + deadcode (CI)"
+	@echo "  make test-rust - test Rust extension SDK (ext/rust)"
+	@echo "  make check-rust - format + lint Rust extension SDK (CI)"

@@ -7,3 +7,7 @@ phi-debug.log
 # local lint report, not committed
 lint-report.md
 .phi/
+
+# Rust extension SDK build output
+ext/rust/target/
+ext/rust/Cargo.lock

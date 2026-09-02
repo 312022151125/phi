@@ -1,0 +1,12 @@
+[package]
+name = "phi-ext"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.75"
+description = "Rust author SDK for Phi PXB extensions (port of ext/go)"
+license = "MIT"
+repository = "https://github.com/pulseaiclub/phi"
+keywords = ["phi", "coding-agent", "extension", "pxb"]
+categories = ["development-tools"]
+
+[dependencies]
