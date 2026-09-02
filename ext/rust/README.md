@@ -21,11 +21,16 @@ against `ext/go/pxb/testdata/*.bin` (`tests/pxb_test.rs`).
 
 ## Authoring
 
-Add the crate from the repo (tagged with the `ext/vX.Y.Z` release tags):
+Add the crate from the repo. Until the first release tag that contains
+`ext/rust` exists, track `main`; once a release is cut, pin the
+corresponding `ext/vX.Y.Z` tag instead:
 
 ```toml
 [dependencies]
-phi-ext = { git = "https://github.com/pulseaiclub/phi", tag = "ext/v0.19.1" }
+# pre-release: tracks the latest main
+phi-ext = { git = "https://github.com/pulseaiclub/phi", branch = "main" }
+# release: pin the ext tag (first one containing ext/rust)
+# phi-ext = { git = "https://github.com/pulseaiclub/phi", tag = "ext/v0.19.2" }
 ```
 
 ```rust,no_run
