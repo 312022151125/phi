@@ -53,6 +53,25 @@ jobs:
         run: go test ./...
         working-directory: ext/go
 
+  ext-sdk-rust:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Test Rust ext module
+        run: cargo test --all-targets
+        working-directory: ext/rust
+
+      - name: Check Rust ext module
+        run: cargo fmt --check && cargo clippy --all-targets -- -D warnings
+        working-directory: ext/rust
+
   lint:
     runs-on: ubuntu-latest
     steps:
