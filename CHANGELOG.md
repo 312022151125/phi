@@ -14,6 +14,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- TUI chrome consistency: shared glyph/hint dialect (`internal/components/chrome`), unified ask/continue/confirm option rows, `Theme.Identity` for model/user/bash chrome (separate from Success status), and aligned transcript expand indent / status suffixes. Permission/continue/confirm overlays navigate with arrows only (no Alt+N accelerators). Sessions list picker uses a wider panel (~90% / up to 112 cols) so previews truncate less.
+
 ### Deprecated
 
 ### Removed

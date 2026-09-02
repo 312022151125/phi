@@ -10,6 +10,7 @@ import (
 	"github.com/pulseaiclub/xui"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chrome"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/util"
 )
@@ -96,7 +97,7 @@ func normalizeConfig(cfg ShowConfig) ShowConfig {
 		cfg.EmptyFilter = "No matches for %q"
 	}
 	if cfg.Hint == "" {
-		cfg.Hint = " ↑↓ move  ⏎ select  esc close "
+		cfg.Hint = chrome.ListHint("select")
 	}
 	if cfg.LeadingWidth <= 0 {
 		cfg.LeadingWidth = 10
@@ -353,10 +354,11 @@ func (p *Picker) Draw(ctx components.DrawContext) components.Surface {
 func (p *Picker) panelWidth(maxW int) int {
 	boxW := p.Width
 	if boxW <= 0 {
-		boxW = maxW * 4 / 5
-		boxW = min(boxW, 72)
-		if boxW < 48 {
-			boxW = min(maxW, 60)
+		// Session previews need room; prefer ~90% of the terminal up to a soft cap.
+		boxW = maxW * 9 / 10
+		boxW = min(boxW, 112)
+		if boxW < 56 {
+			boxW = min(maxW, 72)
 		}
 	}
 	if boxW > maxW-2 {
@@ -406,7 +408,7 @@ func (p *Picker) syncScroll(visible int) {
 
 func (p *Picker) drawPrompt(panel *components.Surface, ctx components.DrawContext, th components.Theme, boxW int) {
 	const y = 1
-	panel.Print(1, y, ">", th.Foreground, ctx.Method)
+	panel.Print(1, y, chrome.FilterPrompt, th.Foreground, ctx.Method)
 	avail := max(boxW-5, 1)
 	q := p.Query
 	placeholder := false
@@ -512,7 +514,7 @@ func (p *Picker) drawHint(
 ) {
 	hint := p.cfg.Hint
 	if xui.StringWidth(hint, ctx.Method) > boxW-2 {
-		hint = " ⏎ select  esc close "
+		hint = chrome.ListHintShort("select")
 	}
 	y := boxH - 1
 	w := xui.StringWidth(hint, ctx.Method)

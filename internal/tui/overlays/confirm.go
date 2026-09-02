@@ -6,6 +6,7 @@ import (
 	"github.com/pulseaiclub/xui"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chrome"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
 )
 
@@ -184,14 +185,10 @@ func (o *Overlays) drawExtConfirm(ctx components.DrawContext, width, height int)
 		innerW = width
 	}
 
-	primary := th.Success
-	if st.danger {
-		primary = th.Destructive
-	} else if th.ToolName.Fg.Kind != 0 {
-		primary = th.ToolName
-	}
+	primary := chrome.DecisionPrimary(th)
 	warn := th.Warning
 	if st.danger {
+		primary = th.Destructive
 		warn = th.Destructive
 	}
 
@@ -212,27 +209,11 @@ func (o *Overlays) drawExtConfirm(ctx components.DrawContext, width, height int)
 	}
 	body = append(body, components.RichLine{})
 
-	labels := []string{st.yes, st.no}
-	for i, label := range labels {
-		sel := i == st.selected
-		arrow := " "
-		dot := "○"
-		labelSt := th.Foreground
-		dotSt := th.Muted
-		if sel {
-			arrow = "▸"
-			dot = "●"
-			labelSt = xui.Style{Bold: true, Fg: primary.Fg}
-			dotSt = primary
-		}
-		body = append(body, components.WrapSpans([]components.Span{
-			{Text: arrow, Style: primary},
-			{Text: dot, Style: dotSt},
-			{Text: " " + label, Style: labelSt},
-		}, innerW, ctx.Method)...)
+	for i, label := range []string{st.yes, st.no} {
+		body = append(body, chrome.OptionLine(th, primary, label, i == st.selected, innerW, ctx.Method)...)
 	}
 	body = append(body, components.WrapSpans([]components.Span{
-		{Text: "←→ select · Enter confirm · Esc/N cancel · Y yes", Style: th.Muted},
+		{Text: chrome.ConfirmHint(), Style: th.Muted},
 	}, innerW, ctx.Method)...)
 
 	return paintAskPanel(body, width, height, warn, ctx.Method)

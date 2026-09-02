@@ -119,7 +119,7 @@ func activityMessage(a Activity) string {
 	case ActivityCancelled:
 		return "Stopped"
 	case ActivityAwaitingApproval:
-		return "Waiting for approval..."
+		return "Waiting for approval…"
 	default:
 		return ""
 	}

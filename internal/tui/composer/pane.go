@@ -379,7 +379,7 @@ func (c *ComposerPane) SetTheme(th components.Theme) {
 	c.Chat.BorderStyle = th.Border
 	c.Chat.TextStyle = th.Foreground
 	c.Chat.BottomRightLabel.Style = footer.PathLabelStyle(th)
-	c.Chat.TopRightLabel.Style = th.Success
+	c.Chat.TopRightLabel.Style = th.IdentityOrSuccess()
 	c.palette.Theme = th
 	c.listPicker.Theme = th
 	c.mention.Theme = th
@@ -950,7 +950,7 @@ func newChatInput(theme components.Theme, model, cwd string) chat.ChatInput {
 		CursorStyle:    xui.Style{Reverse: true},
 		TopRightLabel: layout.BorderLabel{
 			Text:  model,
-			Style: theme.Success,
+			Style: theme.IdentityOrSuccess(),
 		},
 		BottomRightLabel: layout.BorderLabel{
 			Text:  pathutil.PathWithBranch(cwd),
