@@ -1,8 +1,11 @@
 # Phi Rust extension SDK (`ext/rust`)
 
-Zero-dependency Rust port of the Go author SDK in [`ext/go`](../go). Write
-extensions that speak the PXB binary protocol on stdin/stdout — no JSON, no
-reflection, no runtime deps.
+Rust is a **first-class language for Phi extensions** — on par with the Go SDK
+in [`ext/go`](../go). Same PXB wire protocol on stdin/stdout, same host
+features (LLM tools, slash commands, intercepts, event subscriptions, confirm
+dialogs), byte-for-byte interop, and the same install flow (`phi.yaml` + a
+binary under `~/.phi/extensions/<name>/`). This crate is the zero-dependency
+Rust authoring side: no JSON, no reflection, no runtime deps.
 
 Wire compatibility with the Go SDK is pinned byte-for-byte by golden tests
 against `ext/go/pxb/testdata/*.bin` (`tests/pxb_test.rs`).
@@ -58,6 +61,25 @@ cp target/release/examples/hello phi.yaml ~/.phi/extensions/hello/
 ```
 
 Reload in the TUI: **Ctrl+K → extensions → reload**.
+
+## Performance
+
+Codec throughput on Apple Silicon (release build, single-threaded):
+
+| Implementation | Hello payload encode+decode | Frame write+read (in-memory) | Allocs |
+|---|---|---|---|
+| Rust PXB (`phi-ext`) | ~0.12 µs | ~0.06 µs | — |
+| Go PXB (`ext/go/pxb`) | ~0.11 µs | ~0.05 µs | 3 / op |
+| Go JSON lines (marshal+unmarshal) | ~1.2 µs | — | 15 / op |
+
+The ~10× gap over JSON lines comes from the protocol itself — fixed binary
+header + tagged fields, no JSON parsing or reflection (see
+`doc/extensions.md`, "Why not JSON lines?"). The language choice is within
+noise: Rust and Go are at parity on identical codec work.
+
+Codec CPU is not the bottleneck anyway: an extension's latency is dominated
+by process spawn (~ms) and pipe round trips (~µs), identical for both SDKs.
+Re-run the probe with `cargo run --release --example bench`.
 
 ## Development
 

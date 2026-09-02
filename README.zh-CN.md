@@ -4,22 +4,21 @@
   <img src="assets/pixel-text-PHI.png" alt="phi" width="220" style="image-rendering: pixelated; image-rendering: crisp-edges;">
 </p>
 
-一个用 Go 编写的最小化终端编码代理框架（harness）——Pi 的姊妹项目。
-刻意保持清亮：一个模型循环、一组工具、一个可读的 TUI——不是塞满功能的终端 IDE。——Pi 的姊妹项目。
-刻意保持清亮：一个模型循环、一组工具、一个可读的 TUI——不是塞满功能的终端 IDE。
-
-- **子代理（Sub-agents）** — 拉起隔离任务，在 TUI / job 日志里完整看到执行过程，而不是把每一步都塞进父会话上下文
-- **Hashline 编辑** — 用整文件 `@file path#TAG` 加上行级 `LINE#HASH` 锚点改文件（思路对齐 [oh-my-pi](https://github.com/can1357/oh-my-pi)）：模型瞄锚点改，而不是整文件重写；TAG/哈希对不上就拒绝，避免过度编辑和静默写坏
-- **权限门控** — 危险工具先过 Gate / Ask；代理能碰你的代码树时，安全不是可选项
-- **MCP 不炸上下文** — 随便配多少 MCP 服务器，工具 schema **绝不**进模型 prompt。系统提示只列 **server 名**（像 Skills 目录）；Agent 用三个元工具（`mcp_list` / `mcp_inspect` / `mcp_call`）按需发现再调用；权限仍走 Gate / Ask / Hooks。详见 [MCP](#mcp)
-- **任意模型** — OpenAI 兼容或 Anthropic，无厂商锁定
-
 <p align="center">
   <a href="https://github.com/pulseaiclub/phi/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pulseaiclub/phi?style=flat&colorA=222222&colorB=58A6FF" alt="License"></a>
   <a href="https://github.com/pulseaiclub/phi/actions"><img src="https://img.shields.io/github/actions/workflow/status/pulseaiclub/phi/ci.yml?style=flat&colorA=222222&colorB=3FB950" alt="CI"></a>
   <a href="https://go.dev"><img src="https://img.shields.io/badge/Go-1.26-00ADD8?style=flat&colorA=222222&logo=go&logoColor=white" alt="Go"></a>
   <a href="https://github.com/pulseaiclub/phi/releases"><img src="https://img.shields.io/github/v/release/pulseaiclub/phi?style=flat&colorA=222222&colorB=8957E5" alt="Release"></a>
 </p>
+
+一个用 Go 编写的最小化终端编码代理框架（harness）——Pi 的姊妹项目。
+
+- **子代理（Sub-agents）** — 拉起隔离任务，在 TUI / job 日志里完整看到执行过程，而不是把每一步都塞进父会话上下文
+- **Hashline 编辑** — 用整文件 `@file path#TAG` 加上行级 `LINE#HASH` 锚点改文件（思路对齐 [oh-my-pi](https://github.com/can1357/oh-my-pi)）：模型瞄锚点改，而不是整文件重写；TAG/哈希对不上就拒绝，避免过度编辑和静默写坏
+- **权限门控** — 危险工具先过 Gate / Ask；代理能碰你的代码树时，安全不是可选项
+- **MCP 不炸上下文** — 随便配多少 MCP 服务器，工具 schema **绝不**进模型 prompt。系统提示只列 **server 名**（像 Skills 目录）；Agent 用三个元工具（`mcp_list` / `mcp_inspect` / `mcp_call`）按需发现再调用；权限仍走 Gate / Ask / Hooks。详见 [MCP](#mcp)
+- **扩展（Go 或 Rust）** — 原生二进制通过 stdin/stdout 讲 **PXB** 协议；官方作者 SDK：Go（[`ext/go`](ext/go)）+ 零依赖 Rust 移植（[`ext/rust`](ext/rust)）：LLM 工具、斜杠命令、事件拦截、确认对话框——无 JSON、无反射。详见 [Extensions（扩展）](#extensions扩展)
+- **任意模型** — OpenAI 兼容或 Anthropic，无厂商锁定
 
 ![phi 欢迎界面](assets/phi.png)
 
@@ -337,7 +336,7 @@ Instructions the agent should follow when this skill is relevant.
 
 ## Extensions（扩展）
 
-扩展是讲 **PXB** 二进制协议的原生进程（作者 SDK：Go `github.com/pulseaiclub/phi/ext/phi`）：订阅工具/会话事件、注册 LLM 工具、添加斜杠命令。
+扩展是讲 **PXB** 二进制协议的原生进程（作者 SDK：Go `github.com/pulseaiclub/phi/ext/phi` 和 Rust [`ext/rust`](ext/rust) `phi-ext`）：订阅工具/会话事件、注册 LLM 工具、添加斜杠命令。
 
 ```bash
 go get github.com/pulseaiclub/phi/ext@v0.19.0
