@@ -6,6 +6,7 @@ import (
 	"github.com/pulseaiclub/xui"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chrome"
 	"github.com/pulseaiclub/phi/internal/components/status"
 	"github.com/pulseaiclub/phi/internal/components/text"
 	"github.com/pulseaiclub/phi/internal/components/tree"
@@ -83,7 +84,7 @@ func (a *AgentBlock) CopyText() string {
 	for i, c := range a.Children {
 		b.WriteByte('\n')
 		b.WriteString(tree.PrefixForSiblings(len(a.Children), i, st))
-		b.WriteString(childIcon(c.Status))
+		b.WriteString(chrome.ChildIcon(c.Status))
 		b.WriteByte(' ')
 		b.WriteString(c.Name)
 		if c.Detail != "" {
@@ -112,7 +113,7 @@ func (a *AgentBlock) Draw(ctx components.DrawContext) components.Surface {
 		w = 40
 	}
 
-	icon, iconSt := toolIcon(a.Status, th, a.Spinner)
+	icon, iconSt := chrome.ToolIcon(a.Status, th, a.Spinner)
 	spans := []components.Span{
 		{Text: icon + " ", Style: iconSt},
 		{Text: a.Name, Style: th.ToolName},
@@ -120,18 +121,11 @@ func (a *AgentBlock) Draw(ctx components.DrawContext) components.Surface {
 	if a.Detail != "" {
 		spans = append(spans, components.Span{Text: " " + a.Detail, Style: th.Muted})
 	}
-	switch a.Status {
-	case status.ToolCancelled:
-		spans = append(spans, components.Span{Text: " (cancelled)", Style: th.Muted})
-	case status.ToolRejected:
-		spans = append(spans, components.Span{Text: " (rejected)", Style: th.Muted})
+	if suf := chrome.StatusSuffix(a.Status); suf != "" {
+		spans = append(spans, components.Span{Text: suf, Style: th.Muted})
 	}
 	if a.hasBody() {
-		arrow := " ▶"
-		if a.Expanded {
-			arrow = " ▼"
-		}
-		spans = append(spans, components.Span{Text: arrow, Style: th.Muted})
+		spans = append(spans, components.Span{Text: chrome.ExpandArrow(a.Expanded), Style: th.Muted})
 	}
 
 	titleLines := components.WrapSpans(spans, w, ctx.Method)
@@ -148,7 +142,7 @@ func (a *AgentBlock) Draw(ctx components.DrawContext) components.Surface {
 		n := len(a.Children)
 		for i, c := range a.Children {
 			prefix := tree.PrefixForSiblings(n, i, st)
-			cIcon, cSt := toolIcon(c.Status, th, a.Spinner)
+			cIcon, cSt := chrome.ToolIcon(c.Status, th, a.Spinner)
 			row := []components.Span{
 				{Text: prefix, Style: th.Muted},
 				{Text: cIcon + " ", Style: cSt},
@@ -187,37 +181,4 @@ func (a *AgentBlock) Draw(ctx components.DrawContext) components.Surface {
 		y++
 	}
 	return s
-}
-
-func toolIcon(st status.ToolStatus, th components.Theme, spin *status.Spinner) (string, xui.Style) {
-	icon := "✓"
-	iconSt := th.Success
-	switch st {
-	case status.ToolRunning, status.ToolQueued:
-		icon = "⋯"
-		iconSt = th.ToolName
-		if spin != nil {
-			icon = spin.Glyph()
-		}
-	case status.ToolError:
-		icon = "✗"
-		iconSt = th.Destructive
-	case status.ToolCancelled, status.ToolRejected:
-		icon = "⊘"
-		iconSt = th.Muted
-	}
-	return icon, iconSt
-}
-
-func childIcon(st status.ToolStatus) string {
-	switch st {
-	case status.ToolRunning, status.ToolQueued:
-		return "⋯"
-	case status.ToolError:
-		return "✗"
-	case status.ToolCancelled, status.ToolRejected:
-		return "⊘"
-	default:
-		return "✓"
-	}
 }

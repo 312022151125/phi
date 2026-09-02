@@ -34,7 +34,7 @@ func (userBlock *UserBlock) Draw(ctx components.DrawContext) components.Surface 
 	}
 	body := th.Foreground
 	body.Italic = true
-	rule := th.Success
+	rule := th.IdentityOrSuccess()
 	innerW := w - 2
 	innerW = max(innerW, 1)
 	lines := components.WrapSpans([]components.Span{{Text: userBlock.Text, Style: body}}, innerW, ctx.Method)

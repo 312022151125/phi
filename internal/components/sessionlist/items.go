@@ -4,6 +4,7 @@ package sessionlist
 import (
 	"time"
 
+	"github.com/pulseaiclub/phi/internal/components/chrome"
 	"github.com/pulseaiclub/phi/internal/components/listpicker"
 	"github.com/pulseaiclub/phi/internal/session"
 )
@@ -15,7 +16,7 @@ func Config() listpicker.ShowConfig {
 		FilterHint:  "filter id or preview…",
 		Empty:       "No sessions in this directory",
 		EmptyFilter: "No sessions match %q",
-		Hint:        " ↑↓ move  ⏎ resume  esc close ",
+		Hint:        chrome.ListHint("resume"),
 	}
 }
 

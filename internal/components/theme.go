@@ -7,10 +7,18 @@ import (
 )
 
 // Theme holds semantic colors for transcript chrome.
+//
+// Roles (do not overload):
+//   - Success / Destructive / Warning — status outcomes
+//   - Identity — speaker / model / shell prompt chrome (not "ok")
+//   - ToolName — tool titles and busy marks
+//   - Border — box edges; Warning doubles as overlay / palette titles
+//   - Selection* / Keybind / Command — palette / list pickers
 type Theme struct {
 	Foreground  xui.Style
 	Muted       xui.Style
 	Success     xui.Style
+	Identity    xui.Style // model label, user rule, bash "$"
 	Accent      xui.Style // links / "Show more"
 	Warning     xui.Style // inline highlights / palette title
 	Destructive xui.Style
@@ -37,6 +45,7 @@ func DarkTheme() Theme {
 		Foreground:  xui.Style{Fg: xui.DefaultColor()},
 		Muted:       xui.Style{Fg: xui.IndexedColor(245), Dim: true},
 		Success:     xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xa0), Bold: true},
+		Identity:    xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xa0), Bold: true},
 		Accent:      xui.Style{Fg: xui.RGBColor(0xc4, 0x8a, 0xd9), Underline: true},
 		Warning:     xui.Style{Fg: xui.RGBColor(0xe5, 0xc0, 0x7b)},
 		Destructive: xui.Style{Fg: xui.RGBColor(0xe0, 0x6c, 0x75)},
@@ -55,6 +64,7 @@ func DarculaTheme() Theme {
 		Foreground:  xui.Style{Fg: xui.RGBColor(0xa9, 0xb7, 0xc6)},
 		Muted:       xui.Style{Fg: xui.RGBColor(0x80, 0x80, 0x80), Dim: true},
 		Success:     xui.Style{Fg: xui.RGBColor(0x6a, 0x87, 0x59), Bold: true},
+		Identity:    xui.Style{Fg: xui.RGBColor(0x6a, 0x87, 0x59), Bold: true},
 		Accent:      xui.Style{Fg: xui.RGBColor(0x58, 0x9d, 0xf6), Underline: true},
 		Warning:     xui.Style{Fg: xui.RGBColor(0xcc, 0x78, 0x32)},
 		Destructive: xui.Style{Fg: xui.RGBColor(0xff, 0x6b, 0x68)},
@@ -73,6 +83,7 @@ func PinkTheme() Theme {
 		Foreground:  xui.Style{Fg: xui.DefaultColor()},
 		Muted:       xui.Style{Fg: xui.RGBColor(0xc8, 0xa0, 0xb4), Dim: true},
 		Success:     xui.Style{Fg: xui.RGBColor(0x9e, 0xd4, 0xb8), Bold: true},
+		Identity:    xui.Style{Fg: xui.RGBColor(0x9e, 0xd4, 0xb8), Bold: true},
 		Accent:      xui.Style{Fg: xui.RGBColor(0xff, 0x9e, 0xc8), Underline: true},
 		Warning:     xui.Style{Fg: xui.RGBColor(0xff, 0xb8, 0x9a)},
 		Destructive: xui.Style{Fg: xui.RGBColor(0xf0, 0x6a, 0x8a)},
@@ -91,6 +102,7 @@ func TerminalTheme() Theme {
 		Foreground:  xui.Style{Fg: xui.DefaultColor()},
 		Muted:       xui.Style{Fg: xui.IndexedColor(8), Dim: true},
 		Success:     xui.Style{Fg: xui.IndexedColor(2), Bold: true},
+		Identity:    xui.Style{Fg: xui.IndexedColor(2), Bold: true},
 		Accent:      xui.Style{Fg: xui.IndexedColor(5), Underline: true},
 		Warning:     xui.Style{Fg: xui.IndexedColor(3)},
 		Destructive: xui.Style{Fg: xui.IndexedColor(1)},
@@ -117,4 +129,12 @@ func ThemeByName(name string) (Theme, bool) {
 	default:
 		return Theme{}, false
 	}
+}
+
+// IdentityOrSuccess returns Identity when set, else Success (legacy themes / zero Theme).
+func (th Theme) IdentityOrSuccess() xui.Style {
+	if th.Identity.Fg.Kind != 0 {
+		return th.Identity
+	}
+	return th.Success
 }

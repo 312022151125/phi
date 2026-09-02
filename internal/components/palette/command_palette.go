@@ -10,6 +10,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/util"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chrome"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 )
 
@@ -452,7 +453,7 @@ func (p *CommandPalette) Draw(ctx components.DrawContext) components.Surface {
 
 	// Prompt: "> query"
 	promptY := 1
-	panel.Print(1, promptY, ">", th.Foreground, ctx.Method)
+	panel.Print(1, promptY, chrome.FilterPrompt, th.Foreground, ctx.Method)
 	q := p.Query
 	qx := 3
 	availQ := innerW - 2

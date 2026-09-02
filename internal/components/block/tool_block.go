@@ -6,6 +6,7 @@ import (
 	"github.com/pulseaiclub/xui"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chrome"
 	"github.com/pulseaiclub/phi/internal/components/status"
 )
 
@@ -89,26 +90,7 @@ func (toolBlock *ToolBlock) Draw(ctx components.DrawContext) components.Surface 
 		w = 40
 	}
 
-	icon := "✓"
-	iconSt := th.Success
-	switch toolBlock.Status {
-	case status.ToolRunning, status.ToolQueued:
-		icon = "..."
-		iconSt = th.ToolName
-		if toolBlock.Spinner != nil {
-			icon = toolBlock.Spinner.Glyph()
-		}
-	case status.ToolError:
-		icon = "✗"
-		iconSt = th.Destructive
-	case status.ToolCancelled:
-		icon = "⊘"
-		iconSt = th.Muted
-	case status.ToolRejected:
-		icon = "⊘"
-		iconSt = th.Destructive
-	}
-
+	icon, iconSt := chrome.ToolIcon(toolBlock.Status, th, toolBlock.Spinner)
 	spans := []components.Span{
 		{Text: icon + " ", Style: iconSt},
 		{Text: toolBlock.Name, Style: th.ToolName},
@@ -116,18 +98,11 @@ func (toolBlock *ToolBlock) Draw(ctx components.DrawContext) components.Surface 
 	if toolBlock.Detail != "" {
 		spans = append(spans, components.Span{Text: " " + toolBlock.Detail, Style: th.Muted})
 	}
-	switch toolBlock.Status {
-	case status.ToolCancelled:
-		spans = append(spans, components.Span{Text: " (cancelled)", Style: th.Muted})
-	case status.ToolRejected:
-		spans = append(spans, components.Span{Text: " (rejected)", Style: th.Muted})
+	if suf := chrome.StatusSuffix(toolBlock.Status); suf != "" {
+		spans = append(spans, components.Span{Text: suf, Style: th.Muted})
 	}
 	if toolBlock.hasBody() {
-		arrow := " ▶"
-		if toolBlock.Expanded {
-			arrow = " ▼"
-		}
-		spans = append(spans, components.Span{Text: arrow, Style: th.Muted})
+		spans = append(spans, components.Span{Text: chrome.ExpandArrow(toolBlock.Expanded), Style: th.Muted})
 	}
 
 	titleLines := components.WrapSpans(spans, w, ctx.Method)

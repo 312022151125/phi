@@ -112,7 +112,7 @@ func (w *Screen) Draw(ctx components.DrawContext) components.Surface {
 	if th.Foreground.Fg.Kind == xui.ColorRGB {
 		brand = xui.Style{Fg: th.Foreground.Fg, Bold: true}
 	}
-	helpKey := th.Success
+	helpKey := th.IdentityOrSuccess()
 	if helpKey == (xui.Style{}) {
 		helpKey = th.Keybind
 	}
