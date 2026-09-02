@@ -10,8 +10,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- Rust author SDK: zero-dependency `ext/rust` crate (`phi-ext`) — PXB wire protocol (`pxb`) + `Extension` API (`phi`), byte-compatible with the Go SDK via golden fixtures, plus fake-host end-to-end tests. See [doc/extensions.md](doc/extensions.md).
-
 ### Changed
 
 ### Deprecated
@@ -24,6 +22,22 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 <!-- Released section -->
 <!-- Don't change this section unless doing release -->
+
+## [0.19.2] - 2026-09-02
+
+### Added
+
+- Rust author SDK: zero-dependency `ext/rust` crate (`phi-ext`) — PXB wire protocol (`pxb`) + `Extension` API (`phi`), byte-compatible with the Go SDK via golden fixtures, plus fake-host end-to-end tests. See [doc/extensions.md](doc/extensions.md).
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
 
 ## [0.19.1] - 2026-09-01
 
@@ -258,7 +272,8 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.19.1...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.19.2...HEAD
+[0.19.2]: https://github.com/pulseaiclub/phi/releases/tag/v0.19.2
 [0.19.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.19.1
 [0.19.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.19.0
 [0.18.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.18.1
