@@ -10,6 +10,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Rust SDK: typed `phi::Schema` builder for tool parameters (replaces raw `Vec<u8>`), staying zero-dep instead of Codex-style `schemars`.
+
 ### Changed
 
 ### Deprecated

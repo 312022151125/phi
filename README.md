@@ -371,6 +371,19 @@ Install under `~/.phi/extensions/<name>/` with a `phi.yaml` pointing at the
 binary. In the TUI: `Ctrl+K` → **extensions**. Disable with
 `PHI_EXTENSIONS=off`. Full guide: [doc/extensions.md](doc/extensions.md).
 
+Codec throughput on Apple Silicon (release, single-threaded):
+
+| Implementation | Hello encode+decode | Frame write+read (in-memory) | Allocs |
+|---|---|---|---|
+| Rust PXB (`phi-ext`) | ~0.12 µs | ~0.06 µs | — |
+| Go PXB (`ext/go/pxb`) | ~0.11 µs | ~0.05 µs | 3 / op |
+| Go JSON lines | ~1.2 µs | — | 15 / op |
+
+The ~10× gap over JSON lines is the protocol (fixed header + tagged fields), not
+the language — Rust and Go are within noise on the same codec work. Real
+extension latency is dominated by process spawn and pipe RTT anyway. Re-probe:
+`cargo run --release --example bench` in [`ext/rust`](ext/rust).
+
 ## MCP
 
 **Configure 100 MCP servers. Pay ~0 schema tokens until you call one.**
