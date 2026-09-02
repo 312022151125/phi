@@ -121,6 +121,7 @@ func main() {
 	m.RegisterTool(ext.Tool{
 		Name:        "greet",
 		Description: "Greet someone",
+		TimeoutSec:  120,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
@@ -151,4 +152,41 @@ func main() {
 	res, err := tools[0].Run(t.Context(), json.RawMessage(`{"name":"phi"}`))
 	require.NoError(t, err)
 	assert.Equal(t, "Hello, phi!", res.Content)
+}
+
+func TestRegisterToolTimeoutSecPropagates(t *testing.T) {
+	root := t.TempDir()
+	extDir := filepath.Join(root, "slow")
+	src := `package main
+
+import (
+	"context"
+	"encoding/json"
+
+	"github.com/pulseaiclub/phi/ext"
+	"github.com/pulseaiclub/phi/ext/phi"
+)
+
+func main() {
+	m := phi.New("slow", "0.0.1")
+	m.RegisterTool(ext.Tool{
+		Name:        "slow",
+		Description: "Takes a while",
+		TimeoutSec:  180,
+		Parameters:  map[string]any{"type": "object"},
+		Execute: func(ctx context.Context, args json.RawMessage) (ext.ToolResult, error) {
+			return ext.ToolResult{Content: "ok"}, nil
+		},
+	})
+	_ = m.Run()
+}
+`
+	require.NoError(t, extension.Materialize(t.Context(), extDir, "slow", "0.0.1", src))
+	m, err := extension.ReadManifest(extDir)
+	require.NoError(t, err)
+	proc, err := extension.StartProc(t.Context(), m, extDir, t.TempDir(), root, "")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = proc.Close() })
+	require.Len(t, proc.Tools(), 1)
+	assert.Equal(t, uint32(180), proc.Tools()[0].TimeoutSec)
 }

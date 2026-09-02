@@ -29,9 +29,10 @@ const (
 	fRegCmdName uint16 = 1
 	fRegCmdDesc uint16 = 2
 
-	fRegToolName   uint16 = 1
-	fRegToolDesc   uint16 = 2
-	fRegToolSchema uint16 = 3
+	fRegToolName       uint16 = 1
+	fRegToolDesc       uint16 = 2
+	fRegToolSchema     uint16 = 3
+	fRegToolTimeoutSec uint16 = 4 // host RPC wait for ToolInvoke; 0 = host default
 
 	fSubEvents    uint16 = 1
 	fSubIntercept uint16 = 2
@@ -237,6 +238,9 @@ type RegisterTool struct {
 	Name        string
 	Description string
 	SchemaJSON  []byte
+	// TimeoutSec is how long the host waits for this tool's ToolResult.
+	// 0 omits the field (host default, currently 30s). Host clamps to a max.
+	TimeoutSec uint32
 }
 
 func EncodeRegisterTool(r RegisterTool) []byte {
@@ -244,6 +248,9 @@ func EncodeRegisterTool(r RegisterTool) []byte {
 	fw.PutString(fRegToolName, r.Name)
 	fw.PutString(fRegToolDesc, r.Description)
 	fw.PutBytes(fRegToolSchema, r.SchemaJSON)
+	if r.TimeoutSec > 0 {
+		fw.PutU32(fRegToolTimeoutSec, r.TimeoutSec)
+	}
 	return fw.Bytes()
 }
 
@@ -262,6 +269,10 @@ func DecodeRegisterTool(b []byte) (RegisterTool, error) {
 		case fRegToolSchema:
 			p, err := takeBytes(kind, fr)
 			r.SchemaJSON = append([]byte(nil), p...)
+			return err
+		case fRegToolTimeoutSec:
+			v, err := takeU64(kind, fr)
+			r.TimeoutSec = uint32(v) //nolint:gosec // G115: timeout seconds are u32 by protocol
 			return err
 		default:
 			return fr.Skip(kind)

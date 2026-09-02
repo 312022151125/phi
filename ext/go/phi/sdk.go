@@ -317,9 +317,13 @@ func (extension *ExtensionAPI) Run() error {
 
 	for _, t := range tools {
 		schema, _ := json.Marshal(t.def.Parameters)
-		body := pxb.EncodeRegisterTool(pxb.RegisterTool{
+		reg := pxb.RegisterTool{
 			Name: t.def.Name, Description: t.def.Description, SchemaJSON: schema,
-		})
+		}
+		if t.def.TimeoutSec > 0 {
+			reg.TimeoutSec = uint32(t.def.TimeoutSec) //nolint:gosec // G115: author-supplied seconds; host clamps
+		}
+		body := pxb.EncodeRegisterTool(reg)
 		if err := extension.wr.Write(pxb.TypeRegisterTool, 0, 0, body); err != nil {
 			return err
 		}

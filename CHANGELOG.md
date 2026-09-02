@@ -10,6 +10,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Extension tools can set `TimeoutSec` (Go SDK) / `timeout_sec` (Rust SDK) so the host waits longer than the default 30s RPC budget for slow tools (e.g. HTTP fetch). Clamped to 1–3600s.
 - Rust SDK: typed `phi::Schema` builder for tool parameters (replaces raw `Vec<u8>`), staying zero-dep instead of Codex-style `schemars`.
 
 ### Changed
