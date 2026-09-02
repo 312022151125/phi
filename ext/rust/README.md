@@ -21,16 +21,16 @@ against `ext/go/pxb/testdata/*.bin` (`tests/pxb_test.rs`).
 
 ## Authoring
 
-Add the crate from the repo. Until the first release tag that contains
-`ext/rust` exists, track `main`; once a release is cut, pin the
-corresponding `ext/vX.Y.Z` tag instead:
+The crate publishes to crates.io; release tags are `ext/rust/vX.Y.Z`. Until
+the first publish, depend on it from the repo (`main`); after a release, use
+the published version:
 
 ```toml
 [dependencies]
 # pre-release: tracks the latest main
 phi-ext = { git = "https://github.com/pulseaiclub/phi", branch = "main" }
-# release: pin the ext tag (first one containing ext/rust)
-# phi-ext = { git = "https://github.com/pulseaiclub/phi", tag = "ext/v0.19.2" }
+# release: published crate version (tagged ext/rust/vX.Y.Z)
+# phi-ext = "0.1.0"
 ```
 
 ```rust,no_run
