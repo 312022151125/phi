@@ -32,6 +32,7 @@ pub use crate::pxb::Error;
 
 type Rd = io::StdinLock<'static>;
 type Wr = io::StdoutLock<'static>;
+type EventHandlers = HashMap<u16, Box<dyn FnMut(pxb::EventNotify)>>;
 
 /// Host metadata filled by the hello handshake (and refreshed by
 /// `SessionMeta` pushes).
@@ -209,6 +210,7 @@ pub struct TurnStoppingResult {
 /// Registered intercept / subscribe handlers. Kept as one struct so `run`
 /// can destructure the [`Extension`] into independent fields (each handler
 /// borrows only what it needs, no interior mutability).
+#[derive(Default)]
 struct Handlers {
     tool_call: Option<Box<dyn FnMut(ToolCallEvent) -> Option<ToolCallResult>>>,
     tool_result: Option<Box<dyn FnMut(ToolResultEvent) -> Option<ToolResultResult>>>,
@@ -218,7 +220,7 @@ struct Handlers {
         Option<Box<dyn FnMut(SessionBeforeSwitchEvent) -> Option<SessionBeforeSwitchResult>>>,
     user_input: Option<Box<dyn FnMut(UserInputEvent) -> Option<UserInputResult>>>,
     turn_stopping: Option<Box<dyn FnMut(TurnStoppingEvent) -> Option<TurnStoppingResult>>>,
-    events: HashMap<u16, Box<dyn FnMut(pxb::EventNotify)>>,
+    events: EventHandlers,
 }
 
 /// The author-facing registration surface for a PXB extension binary.
@@ -243,15 +245,7 @@ impl Extension {
             commands: Vec::new(),
             events: Vec::new(),
             intercept: Vec::new(),
-            handlers: Handlers {
-                tool_call: None,
-                tool_result: None,
-                before_agent_start: None,
-                session_before_switch: None,
-                user_input: None,
-                turn_stopping: None,
-                events: HashMap::new(),
-            },
+            handlers: Handlers::default(),
         }
     }
 
@@ -459,25 +453,18 @@ impl Extension {
                 }
                 pxb::FrameType::ToolInvoke => {
                     let inv = pxb::decode_tool_invoke(&f.body)?;
-                    let mut tr = pxb::ToolResultMsg::default();
-                    if let Some(tool) = tools.iter_mut().find(|t| t.name == inv.name) {
-                        match (tool.execute)(&inv.args) {
-                            Ok(res) => {
-                                tr.content = res.content;
-                                tr.detail = res.detail;
-                                tr.output = res.output;
-                            }
-                            Err(e) => {
-                                tr.is_error = true;
-                                tr.error = e.clone();
-                                tr.content = e;
-                            }
-                        }
-                    } else {
-                        tr.is_error = true;
-                        tr.error = "unknown tool".into();
-                        tr.content = tr.error.clone();
-                    }
+                    let tr = match tools.iter_mut().find(|t| t.name == inv.name) {
+                        Some(tool) => match (tool.execute)(&inv.args) {
+                            Ok(res) => pxb::ToolResultMsg {
+                                content: res.content,
+                                detail: res.detail,
+                                output: res.output,
+                                ..Default::default()
+                            },
+                            Err(e) => tool_error(e),
+                        },
+                        None => tool_error("unknown tool"),
+                    };
                     let body = pxb::encode_tool_result(&tr);
                     pxb::write_frame(
                         &mut wr,
@@ -501,19 +488,12 @@ impl Extension {
                 }
                 pxb::FrameType::Event => {
                     if let Ok(ev) = pxb::decode_event_notify(&f.body) {
-                        if let Some(f) = handlers.events.get_mut(&ev.event) {
-                            f(ev);
-                        }
+                        dispatch_event(&mut handlers.events, ev);
                     }
                 }
                 pxb::FrameType::SessionMeta => {
                     if let Ok(meta) = pxb::decode_session_meta(&f.body) {
-                        if !meta.session_id.is_empty() {
-                            host.session_id = meta.session_id;
-                        }
-                        if !meta.cwd.is_empty() {
-                            host.cwd = meta.cwd;
-                        }
+                        apply_session_meta(&mut host, meta);
                     }
                 }
                 // Unknown frame types are already consumed by length; ignore.
@@ -625,6 +605,35 @@ fn handle_intercept(req: pxb::InterceptReq, handlers: &mut Handlers) -> pxb::Int
     resp
 }
 
+/// Applies a session-meta push to host info; empty fields mean "no change".
+fn apply_session_meta(host: &mut HostInfo, meta: pxb::SessionMeta) {
+    if !meta.session_id.is_empty() {
+        host.session_id = meta.session_id;
+    }
+    if !meta.cwd.is_empty() {
+        host.cwd = meta.cwd;
+    }
+}
+
+/// Dispatches an event push to its subscriber, if one is registered.
+fn dispatch_event(handlers: &mut EventHandlers, ev: pxb::EventNotify) {
+    if let Some(handler) = handlers.get_mut(&ev.event) {
+        handler(ev);
+    }
+}
+
+/// An error tool result: the message goes to both `error` and `content` so
+/// the host surfaces it whichever field it renders.
+fn tool_error(message: impl Into<String>) -> pxb::ToolResultMsg {
+    let message = message.into();
+    pxb::ToolResultMsg {
+        is_error: true,
+        error: message.clone(),
+        content: message,
+        ..Default::default()
+    }
+}
+
 /// Interaction surface handed to command handlers. All host traffic goes
 /// over the same PXB pipe the run loop owns — a handler may block the loop
 /// (e.g. [`confirm`](Context::confirm) reads nested frames).
@@ -637,7 +646,7 @@ pub struct Context<'a> {
     host: &'a mut HostInfo,
     pending_submit: &'a mut Option<String>,
     next_host_id: &'a mut u32,
-    events: &'a mut HashMap<u16, Box<dyn FnMut(pxb::EventNotify)>>,
+    events: &'a mut EventHandlers,
 }
 
 impl Context<'_> {
@@ -718,19 +727,12 @@ impl Context<'_> {
                 }
                 pxb::FrameType::SessionMeta => {
                     if let Ok(meta) = pxb::decode_session_meta(&f.body) {
-                        if !meta.session_id.is_empty() {
-                            self.host.session_id = meta.session_id;
-                        }
-                        if !meta.cwd.is_empty() {
-                            self.host.cwd = meta.cwd;
-                        }
+                        apply_session_meta(self.host, meta);
                     }
                 }
                 pxb::FrameType::Event => {
                     if let Ok(ev) = pxb::decode_event_notify(&f.body) {
-                        if let Some(f) = self.events.get_mut(&ev.event) {
-                            f(ev);
-                        }
+                        dispatch_event(self.events, ev);
                     }
                 }
                 pxb::FrameType::Shutdown => {
