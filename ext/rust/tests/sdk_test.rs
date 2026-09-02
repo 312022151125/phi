@@ -243,8 +243,10 @@ fn full_extension_confirm_tool_and_submit() {
 }
 
 /// Resolves an example binary. `CARGO_BIN_EXE_<name>` is only set for `bin`
-/// targets, so examples are located under the target dir at test runtime
-/// (integration tests run after examples are built).
+/// targets, so examples are located under the target dir at test runtime.
+/// Scoped invocations (`cargo test --test sdk_test`, or a test runner that
+/// executes the test binary directly) do not build examples, so build the
+/// one we need on demand via the `CARGO` env var cargo embeds at compile time.
 fn example_bin(name: &str) -> std::path::PathBuf {
     let manifest = env!("CARGO_MANIFEST_DIR");
     let mut dir = if let Ok(t) = std::env::var("CARGO_TARGET_DIR") {
@@ -259,6 +261,18 @@ fn example_bin(name: &str) -> std::path::PathBuf {
     };
     dir.push(profile);
     dir.push("examples");
-    dir.push(name);
+    #[cfg(windows)]
+    let file = format!("{name}.exe");
+    #[cfg(not(windows))]
+    let file = name.to_string();
+    dir.push(file);
+    if !dir.exists() {
+        let status = std::process::Command::new(env!("CARGO"))
+            .current_dir(manifest)
+            .args(["build", "--example", name])
+            .status()
+            .expect("failed to run cargo build --example");
+        assert!(status.success(), "cargo build --example {name} failed");
+    }
     dir
 }
