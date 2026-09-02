@@ -13,6 +13,8 @@
 
 一个用 Go 编写的最小化终端编码代理框架（harness）——Pi 的姊妹项目。
 
+**文档：** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
+
 - **子代理（Sub-agents）** — 拉起隔离任务，在 TUI / job 日志里完整看到执行过程，而不是把每一步都塞进父会话上下文
 - **Hashline 编辑** — 用整文件 `@file path#TAG` 加上行级 `LINE#HASH` 锚点改文件（思路对齐 [oh-my-pi](https://github.com/can1357/oh-my-pi)）：模型瞄锚点改，而不是整文件重写；TAG/哈希对不上就拒绝，避免过度编辑和静默写坏
 - **权限门控** — 危险工具先过 Gate / Ask；代理能碰你的代码树时，安全不是可选项
@@ -27,6 +29,7 @@
 你可以通过 [Skills（技能）](#skills技能)、[Hooks（钩子）](#hooks钩子)
 和 [MCP](#mcp) 扩展它——不必做成插件框架。
 
+- [文档](https://pulseaiclub.github.io/docs/getting-started/)
 - [快速开始](#快速开始)
 - [资源占用](#资源占用)
 - [配置](#配置)
