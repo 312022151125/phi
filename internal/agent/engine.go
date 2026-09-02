@@ -49,9 +49,9 @@ type Engine struct {
 	ask           permission.AskFunc
 	continueAsk   ContinueFunc
 	jobs          *job.Manager
-	extensions    *extension.Runner
-	baseTools     []tools.Tool // nil = DefaultTools; preserved across rebind
-	omitExtTools  bool         // sub-agents: emit events but skip RegisterTool merge
+	extensions    *extension.Runner // nil = disabled; all methods are nil-safe no-ops
+	baseTools     []tools.Tool      // nil = DefaultTools; preserved across rebind
+	omitExtTools  bool              // sub-agents: emit events but skip RegisterTool merge
 	mcp           *mcp.Pool
 
 	session *Session
@@ -84,10 +84,8 @@ func NewEngine(model llm.ModelConfig, sess *Session, opts ...EngineOption) (*Eng
 		engine.maxRounds = cfg.maxRounds
 	}
 	engine.baseTools = cfg.tools
-	if engine.extensions != nil {
-		engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
-		engine.extensions.SetMeta(engine.SessionID(), engine.SessionCwd())
-	}
+	engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
+	engine.extensions.SetMeta(engine.SessionID(), engine.SessionCwd())
 	toolList := engine.buildToolList(engine.baseTools)
 	engine.client = llmclient.NewClient(model, tools.Definitions(toolList), engine.systemPrompt())
 	engine.bindExecutor(tools.NewRegistry(toolList))
@@ -96,7 +94,7 @@ func NewEngine(model llm.ModelConfig, sess *Session, opts ...EngineOption) (*Eng
 
 func (engine *Engine) buildToolList(base []tools.Tool) []tools.Tool {
 	out := engine.buildCoreTools(base)
-	if engine.extensions != nil && !engine.omitExtTools {
+	if !engine.omitExtTools {
 		if extTools := engine.extensions.ExtensionTools(); len(extTools) > 0 {
 			merged := make([]tools.Tool, 0, len(out)+len(extTools))
 			merged = append(merged, out...)
@@ -157,9 +155,7 @@ func (engine *Engine) SetJobs(jobs *job.Manager) {
 }
 
 func (engine *Engine) rebindTools() {
-	if engine.extensions != nil {
-		engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
-	}
+	engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
 	toolList := engine.buildToolList(engine.baseTools)
 	engine.client = llmclient.NewClient(
 		engine.modelCfg,
@@ -316,13 +312,11 @@ type LoopOpts struct {
 // the agent turn ends (final assistant with no tool_calls) — never mid-tool-loop.
 func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) iter.Seq2[session.Event, error] {
 	return func(yield func(session.Event, error) bool) {
-		content := prompt
-		if engine.extensions != nil {
-			var handled bool
-			content, handled = engine.extensions.EmitUserInput(content)
-			if handled {
-				return
-			}
+		// The extension runner is nil-safe (nil = disabled), so calls are
+		// unconditional no-ops when no extensions are loaded.
+		content, handled := engine.extensions.EmitUserInput(prompt)
+		if handled {
+			return
 		}
 		if instr := pendingSkillsInstruction(engine.skillPath, opts.PendingSkills); instr != "" {
 			if content == "" {
@@ -331,15 +325,13 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 				content = instr + "\n\n" + content
 			}
 		}
-		if engine.extensions != nil {
-			rewritten, extra := engine.extensions.EmitBeforeAgentStart(content)
-			content = rewritten
-			if extra != "" {
-				content = content + "\n\n" + extra
-			}
-			engine.extensions.EmitAgentStart()
-			defer engine.extensions.EmitAgentEnd()
+		rewritten, extra := engine.extensions.EmitBeforeAgentStart(content)
+		content = rewritten
+		if extra != "" {
+			content = content + "\n\n" + extra
 		}
+		engine.extensions.EmitAgentStart()
+		defer engine.extensions.EmitAgentEnd()
 		if err := engine.session.Append(llm.Message{
 			Role:    llm.RoleUser,
 			Content: content,
@@ -355,9 +347,7 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 				return
 			}
 
-			if engine.extensions != nil {
-				engine.extensions.EmitTurnStart(toolRounds)
-			}
+			engine.extensions.EmitTurnStart(toolRounds)
 
 			msgs := engine.session.BuildContext()
 
@@ -397,21 +387,19 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 			}
 
 			if len(msg.ToolCalls) == 0 {
-				if engine.extensions != nil {
-					engine.extensions.EmitTurnEnd(toolRounds)
-					if cont, steer := engine.extensions.EmitTurnStopping(toolRounds); cont {
-						steerMsg := steer
-						if steerMsg == "" {
-							steerMsg = "continue"
-						}
-						if err := engine.session.Append(
-							llm.Message{Role: llm.RoleUser, Content: steerMsg},
-						); err != nil {
-							yield(nil, err)
-							return
-						}
-						continue
+				engine.extensions.EmitTurnEnd(toolRounds)
+				if cont, steer := engine.extensions.EmitTurnStopping(toolRounds); cont {
+					steerMsg := steer
+					if steerMsg == "" {
+						steerMsg = "continue"
 					}
+					if err := engine.session.Append(
+						llm.Message{Role: llm.RoleUser, Content: steerMsg},
+					); err != nil {
+						yield(nil, err)
+						return
+					}
+					continue
 				}
 				// Turn finished — compact using this assistant's usage.
 				if err := engine.maybeCompact(ctx, yield, msg.Usage.TotalTokens); err != nil {
@@ -428,9 +416,7 @@ func (engine *Engine) Loop(ctx context.Context, prompt string, opts LoopOpts) it
 				yield(nil, err)
 				return
 			}
-			if engine.extensions != nil {
-				engine.extensions.EmitTurnEnd(toolRounds - 1)
-			}
+			engine.extensions.EmitTurnEnd(toolRounds - 1)
 			if stop {
 				return
 			}
@@ -493,9 +479,7 @@ func (engine *Engine) maybeCompact(
 	if !yield(session.CompactionComplete{ID: id}, nil) {
 		return context.Canceled
 	}
-	if engine.extensions != nil {
-		engine.extensions.EmitSessionCompact("auto")
-	}
+	engine.extensions.EmitSessionCompact("auto")
 	return nil
 }
 
