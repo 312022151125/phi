@@ -27,7 +27,7 @@ type Executor struct {
 	registry  tools.Registry
 	gate      permission.Gate
 	ask       permission.AskFunc
-	ext       *extension.Runner // nil = no extensions
+	ext       *extension.Runner // nil = disabled; methods are nil-safe no-ops
 	sessionID string
 	cwd       string
 }
@@ -52,16 +52,7 @@ func (e *Executor) SetMeta(sessionID, cwd string) {
 	}
 	e.sessionID = sessionID
 	e.cwd = cwd
-	if e.ext != nil {
-		e.ext.SetMeta(sessionID, cwd)
-	}
-}
-
-func (e *Executor) activeExt() *extension.Runner {
-	if e == nil {
-		return nil
-	}
-	return e.ext
+	e.ext.SetMeta(sessionID, cwd)
 }
 
 // Run executes tool calls in order, yielding ToolData updates via emit.
@@ -112,43 +103,34 @@ func (e *Executor) runOne(
 		return e.toolMessage(call.ID, errText), false, ""
 	}
 
-	extRunner := e.activeExt()
-	if extRunner != nil {
-		extRunner.EmitToolExecutionStart(call.Function.Name, call.ID, args)
-	}
+	e.ext.EmitToolExecutionStart(call.Function.Name, call.ID, args)
 
 	// ExtensionPre → Gate → Run → ExtensionPost. Pre runs before permission Ask
 	// so org policy can deny without prompting the user.
 	var preContext string
-	if extRunner != nil {
-		newArgs, blocked, reason, ctxText := extRunner.PreTool(ctx, call.Function.Name, call.ID, args)
-		preContext = ctxText
-		if blocked {
-			if reason == "" {
-				reason = "tool execution denied by extension"
-			}
-			reason = appendExtContext(reason, preContext)
-			if extRunner != nil {
-				extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
-			}
-			return e.rejectResult(call, detail, reason, emit), false, ""
+	newArgs, blocked, reason, ctxText := e.ext.PreTool(ctx, call.Function.Name, call.ID, args)
+	preContext = ctxText
+	if blocked {
+		if reason == "" {
+			reason = "tool execution denied by extension"
 		}
-		if len(newArgs) > 0 {
-			args = newArgs
-			if tool.DetailFromArgs != nil {
-				if d := tool.DetailFromArgs(args); d != "" {
-					detail = d
-				}
-			} else {
-				detail = string(args)
+		reason = appendExtContext(reason, preContext)
+		e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
+		return e.rejectResult(call, detail, reason, emit), false, ""
+	}
+	if len(newArgs) > 0 {
+		args = newArgs
+		if tool.DetailFromArgs != nil {
+			if d := tool.DetailFromArgs(args); d != "" {
+				detail = d
 			}
+		} else {
+			detail = string(args)
 		}
 	}
 
 	if msg, rejected := e.checkPermission(ctx, call, args, detail, emit); rejected {
-		if extRunner != nil {
-			extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
-		}
+		e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
 		return msg, false, ""
 	}
 
@@ -161,9 +143,7 @@ func (e *Executor) runOne(
 	)
 	if err != nil {
 		if ctx.Err() != nil {
-			if extRunner != nil {
-				extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
-			}
+			e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, true)
 			return e.cancelResult(call, emit), false, ""
 		}
 		errText = err.Error()
@@ -184,25 +164,26 @@ func (e *Executor) runOne(
 		postStop    bool
 		postReason  string
 	)
-	if extRunner != nil {
-		newContent, ctxText, stop, reason := extRunner.PostTool(
-			ctx,
-			call.Function.Name,
-			call.ID,
-			args,
-			content,
-			err != nil,
-			errText,
-		)
-		postContext = ctxText
-		postStop = stop
-		postReason = reason
-		if newContent != "" {
-			content = newContent
-			output = newContent
-		}
-		extRunner.EmitToolExecutionEnd(call.Function.Name, call.ID, err != nil)
+	newContent, ctxText, stop, reason := e.ext.PostTool(
+		ctx,
+		call.Function.Name,
+		call.ID,
+		args,
+		content,
+		err != nil,
+		errText,
+	)
+	postContext = ctxText
+	postStop = stop
+	postReason = reason
+	// PostTool passes content through untouched when the runner is nil or no
+	// handler rewrites it; only a changed result is applied so tool Error/Output
+	// never duplicate (and nil behaves like an empty runner).
+	if newContent != "" && newContent != content {
+		content = newContent
+		output = newContent
 	}
+	e.ext.EmitToolExecutionEnd(call.Function.Name, call.ID, err != nil)
 
 	modelContent := appendExtContext(content, joinExtContexts(preContext, postContext))
 
