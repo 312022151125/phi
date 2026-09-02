@@ -22,6 +22,7 @@ import (
 const (
 	handshakeTimeout = 5 * time.Second
 	rpcTimeout       = 30 * time.Second
+	rpcTimeoutMax    = 3600 * time.Second // matches bash tool upper bound
 	shutdownWait     = 2 * time.Second
 )
 
@@ -286,6 +287,19 @@ func (p *Proc) failPending(err error) {
 }
 
 func (p *Proc) rpc(ctx context.Context, typ uint16, body []byte, want uint16) (pxb.Frame, error) {
+	return p.rpcWait(ctx, typ, body, want, 0)
+}
+
+// rpcWait is rpc with an optional per-call wait override (0 = host default).
+// When override > 0, the wait is clamp(override) capped by any ctx deadline.
+// When override == 0, legacy behavior: ctx deadline replaces the default if set.
+func (p *Proc) rpcWait(
+	ctx context.Context,
+	typ uint16,
+	body []byte,
+	want uint16,
+	override time.Duration,
+) (pxb.Frame, error) {
 	if p == nil || p.closed.Load() {
 		return pxb.Frame{}, errors.New("extension: process closed")
 	}
@@ -302,13 +316,7 @@ func (p *Proc) rpc(ctx context.Context, typ uint16, body []byte, want uint16) (p
 		return pxb.Frame{}, err
 	}
 
-	deadline := rpcTimeout
-	if d, ok := ctx.Deadline(); ok {
-		deadline = time.Until(d)
-		if deadline <= 0 {
-			deadline = time.Millisecond
-		}
-	}
+	deadline := rpcWaitDuration(ctx, override)
 	timer := time.NewTimer(deadline)
 	defer timer.Stop()
 	select {
@@ -338,10 +346,38 @@ func (p *Proc) rpc(ctx context.Context, typ uint16, body []byte, want uint16) (p
 	}
 }
 
+func rpcWaitDuration(ctx context.Context, override time.Duration) time.Duration {
+	wait := rpcTimeout
+	if override > 0 {
+		wait = min(override, rpcTimeoutMax)
+	}
+	if d, ok := ctx.Deadline(); ok {
+		rem := time.Until(d)
+		if override > 0 {
+			wait = min(wait, rem)
+		} else {
+			wait = rem
+		}
+	}
+	if wait <= 0 {
+		return time.Millisecond
+	}
+	return wait
+}
+
+func (p *Proc) toolRPCTimeout(name string) time.Duration {
+	for _, t := range p.tools {
+		if t.Name == name && t.TimeoutSec > 0 {
+			return time.Duration(t.TimeoutSec) * time.Second
+		}
+	}
+	return 0
+}
+
 // CallTool invokes a registered tool.
 func (p *Proc) CallTool(ctx context.Context, name string, args json.RawMessage) (ext.ToolResult, error) {
 	body := pxb.EncodeToolInvoke(pxb.ToolInvoke{Name: name, Args: args})
-	f, err := p.rpc(ctx, pxb.TypeToolInvoke, body, pxb.TypeToolResult)
+	f, err := p.rpcWait(ctx, pxb.TypeToolInvoke, body, pxb.TypeToolResult, p.toolRPCTimeout(name))
 	if err != nil {
 		return ext.ToolResult{}, err
 	}
@@ -464,6 +500,16 @@ func (p *Proc) Close() error {
 	}
 	p.failPending(errors.New("extension: closed"))
 	return nil
+}
+
+// Tools returns tools registered during handshake (copy).
+func (p *Proc) Tools() []pxb.RegisterTool {
+	if p == nil {
+		return nil
+	}
+	out := make([]pxb.RegisterTool, len(p.tools))
+	copy(out, p.tools)
+	return out
 }
 
 // BuildAPI installs shim handlers onto api from this process's registrations.

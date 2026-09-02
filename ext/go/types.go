@@ -146,6 +146,9 @@ type Tool struct {
 	Description string
 	// Parameters is a JSON Schema object (type/object/properties/required).
 	Parameters map[string]any
+	// TimeoutSec is how long the host waits for Execute to finish (RPC).
+	// 0 uses the host default (30s). Values are clamped to 1–3600 by the host.
+	TimeoutSec int
 	Execute    func(ctx context.Context, args json.RawMessage) (ToolResult, error)
 }
 

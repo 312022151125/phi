@@ -14,6 +14,8 @@
 
 A minimal terminal coding agent harness in Go — a sibling to Pi.
 
+**Docs:** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
+
 - **Sub-agents** — spawn isolated jobs and watch the full run unfold in the TUI / job logs, without stuffing every turn into the parent context
 - **Hashline edits** — edit by whole-file `@file path#TAG` plus line `LINE#HASH` anchors (same idea as [oh-my-pi](https://github.com/can1357/oh-my-pi)): the model points at anchors instead of rewriting whole files; stale tags/hashes are rejected so over-edits and silent corruption stop here
 - **Permission gate** — Gate / Ask before destructive tools fire; safety is not optional when an agent can touch your tree
@@ -25,6 +27,7 @@ A minimal terminal coding agent harness in Go — a sibling to Pi.
 
 ![phi TUI](assets/image.png)
 
+- [Docs](https://pulseaiclub.github.io/docs/getting-started/)
 - [Quick start](#quick-start)
 - [Footprint](#footprint)
 - [Configuration](#configuration)

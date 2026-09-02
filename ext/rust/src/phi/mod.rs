@@ -54,6 +54,8 @@ pub struct Tool {
     pub name: String,
     pub description: String,
     pub schema: Schema,
+    /// Host RPC wait for `execute`, in seconds. `0` = host default (30s).
+    pub timeout_sec: u32,
     pub execute: Box<dyn FnMut(&[u8]) -> Result<ToolResult, String>>,
 }
 
@@ -68,8 +70,15 @@ impl Tool {
             name: name.into(),
             description: description.into(),
             schema: schema.into(),
+            timeout_sec: 0,
             execute: Box::new(execute),
         }
+    }
+
+    /// Sets how long the host waits for this tool's result (1–3600; host clamps).
+    pub fn timeout_sec(mut self, secs: u32) -> Self {
+        self.timeout_sec = secs;
+        self
     }
 }
 
@@ -403,6 +412,7 @@ fn register(wr: &mut Wr, ext: &Extension) -> Result<(), Error> {
             name: tool.name.clone(),
             description: tool.description.clone(),
             schema_json: tool.schema.to_json_bytes(),
+            timeout_sec: tool.timeout_sec,
         });
         pxb::write_frame(wr, pxb::TYPE_REGISTER_TOOL, 0, 0, &body)?;
     }

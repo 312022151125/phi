@@ -73,6 +73,22 @@ go get github.com/pulseaiclub/phi/ext@v0.19.0
 
 (`scripts/bump.sh` tags both `vX.Y.Z` and `ext/vX.Y.Z`.)
 
+Slow tools (HTTP fetch, long builds, …) should set `TimeoutSec` — the host’s
+default RPC wait is **30s**. Values are clamped to 1–3600.
+
+```go
+m.RegisterTool(ext.Tool{
+	Name:        "fetch",
+	Description: "HTTP GET",
+	TimeoutSec:  120, // host waits up to 2m for this tool
+	Parameters:  map[string]any{"type": "object", /* … */},
+	Execute: func(ctx context.Context, args json.RawMessage) (ext.ToolResult, error) {
+		// …
+		return ext.ToolResult{}, nil
+	},
+})
+```
+
 ```go
 package main
 
@@ -183,6 +199,17 @@ fn main() -> Result<(), phi::Error> {
     m.subscribe(pxb::Event::SessionStart, |_ev| {});
     m.run()
 }
+```
+
+Slow tools should chain `.timeout_sec(n)` (host default RPC wait is 30s; clamped to 1–3600):
+
+```rust,no_run
+m.register_tool(
+    phi::Tool::new("fetch", "HTTP GET", phi::Schema::object(), |_args| {
+        Ok(phi::ToolResult { content: "…".into(), ..Default::default() })
+    })
+    .timeout_sec(120),
+);
 ```
 
 UI surface today: **toast** (`ctx.notify`), **footer status** (`ctx.set_status`),

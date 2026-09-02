@@ -26,6 +26,7 @@ const F_REG_CMD_DESC: u16 = 2;
 const F_REG_TOOL_NAME: u16 = 1;
 const F_REG_TOOL_DESC: u16 = 2;
 const F_REG_TOOL_SCHEMA: u16 = 3;
+const F_REG_TOOL_TIMEOUT_SEC: u16 = 4;
 
 const F_SUB_EVENTS: u16 = 1;
 const F_SUB_INTERCEPT: u16 = 2;
@@ -223,6 +224,9 @@ pub struct RegisterTool {
     pub name: String,
     pub description: String,
     pub schema_json: Vec<u8>,
+    /// Host RPC wait for this tool's result, in seconds. `0` omits the field
+    /// (host default). Host clamps to a maximum.
+    pub timeout_sec: u32,
 }
 
 pub fn encode_register_tool(r: &RegisterTool) -> Vec<u8> {
@@ -230,6 +234,9 @@ pub fn encode_register_tool(r: &RegisterTool) -> Vec<u8> {
     fw.put_string(F_REG_TOOL_NAME, &r.name);
     fw.put_string(F_REG_TOOL_DESC, &r.description);
     fw.put_bytes(F_REG_TOOL_SCHEMA, &r.schema_json);
+    if r.timeout_sec > 0 {
+        fw.put_u32(F_REG_TOOL_TIMEOUT_SEC, r.timeout_sec);
+    }
     fw.into_vec()
 }
 
@@ -240,6 +247,7 @@ pub fn decode_register_tool(b: &[u8]) -> Result<RegisterTool, Error> {
             F_REG_TOOL_NAME => r.name = take_string(kind, fr)?,
             F_REG_TOOL_DESC => r.description = take_string(kind, fr)?,
             F_REG_TOOL_SCHEMA => r.schema_json = take_bytes(kind, fr)?.to_vec(),
+            F_REG_TOOL_TIMEOUT_SEC => r.timeout_sec = take_u64(kind, fr)? as u32,
             _ => fr.skip(kind)?,
         }
         Ok(())
@@ -739,6 +747,7 @@ mod tests {
                     name: "t".into(),
                     description: "d".into(),
                     schema_json: br#"{"type":"object"}"#.to_vec(),
+                    timeout_sec: 120,
                 }),
                 |b| Ok(encode_register_tool(&decode_register_tool(b)?)),
             ),
