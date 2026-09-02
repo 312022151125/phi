@@ -32,22 +32,34 @@ clean:
 
 test:
 	$(GO) test ./...
+	$(GO) test -C ext/go ./...
+
+# Rust extension SDK (ext/rust): build + test.
+test-rust:
+	cd ext/rust && cargo test --all-targets
 
 # Apply gofumpt / goimports / golines via .golangci.yml formatters.
 fmt:
 	golangci-lint fmt ./...
+	cd ext/go && golangci-lint fmt ./...
 
 # Fail if formatting would change files (used by CI).
 fmt-check:
 	golangci-lint fmt --diff ./...
+	cd ext/go && golangci-lint fmt --diff ./...
 
 lint:
 	golangci-lint run ./...
+	cd ext/go && golangci-lint run ./...
 
 deadcode:
 	./scripts/deadcode-check.sh
 
 check: fmt-check lint deadcode
+
+# Rust extension SDK checks: format + lint (CI mirrors this).
+check-rust:
+	cd ext/rust && cargo fmt --check && cargo clippy --all-targets -- -D warnings
 
 help:
 	@echo "Usage:"
@@ -55,9 +67,11 @@ help:
 	@echo "  make install  - build & install to \$$GOBIN ($(GOBIN))"
 	@echo "  make run      - build & run"
 	@echo "  make clean    - remove binary & cache"
-	@echo "  make test     - run all tests"
+	@echo "  make test     - run all tests (root + nested ext module)"
 	@echo "  make fmt      - format Go sources (gofumpt/goimports/golines)"
 	@echo "  make fmt-check - check formatting without writing (CI)"
 	@echo "  make lint     - run golangci-lint"
 	@echo "  make deadcode - unreachable func check (deadcode -test vs baseline)"
 	@echo "  make check    - fmt-check + lint + deadcode (CI)"
+	@echo "  make test-rust - test Rust extension SDK (ext/rust)"
+	@echo "  make check-rust - format + lint Rust extension SDK (CI)"

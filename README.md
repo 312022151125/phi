@@ -4,14 +4,6 @@
   <img src="assets/pixel-text-PHI.png" alt="phi" width="220" style="image-rendering: pixelated; image-rendering: crisp-edges;">
 </p>
 
-A minimal terminal coding agent harness in Go — a sibling to Pi.
-
-- **Sub-agents** — spawn isolated jobs and watch the full run unfold in the TUI / job logs, without stuffing every turn into the parent context
-- **Hashline edits** — edit by whole-file `@file path#TAG` plus line `LINE#HASH` anchors (same idea as [oh-my-pi](https://github.com/can1357/oh-my-pi)): the model points at anchors instead of rewriting whole files; stale tags/hashes are rejected so over-edits and silent corruption stop here
-- **Permission gate** — Gate / Ask before destructive tools fire; safety is not optional when an agent can touch your tree
-- **MCP without context death** — configure as many MCP servers as you want; their tool schemas **never** enter the model prompt. The system prompt lists **server names** only (like the Skills catalog); the agent uses three meta-tools (`mcp_list` / `mcp_inspect` / `mcp_call`) to discover and call on demand. Same Gate / Ask / Hooks path as built-in tools. See [MCP](#mcp)
-- **Any model** — OpenAI-compatible or Anthropic, no vendor lock-in
-
 <p align="center">
   <a href="https://github.com/pulseaiclub/phi/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pulseaiclub/phi?style=flat&colorA=222222&colorB=58A6FF" alt="License"></a>
   <a href="https://github.com/pulseaiclub/phi/actions"><img src="https://img.shields.io/github/actions/workflow/status/pulseaiclub/phi/ci.yml?style=flat&colorA=222222&colorB=3FB950" alt="CI"></a>
@@ -19,6 +11,15 @@ A minimal terminal coding agent harness in Go — a sibling to Pi.
   <a href="https://github.com/pulseaiclub/phi/releases"><img src="https://img.shields.io/github/v/release/pulseaiclub/phi?style=flat&colorA=222222&colorB=8957E5" alt="Release"></a>
   <a href="https://getmerged.abhishekco.de/pulseaiclub/phi"><img src="https://getmerged.abhishekco.de/api/badge/pulseaiclub/phi" alt="GetMerged Scorecard"></a>
 </p>
+
+A minimal terminal coding agent harness in Go — a sibling to Pi.
+
+- **Sub-agents** — spawn isolated jobs and watch the full run unfold in the TUI / job logs, without stuffing every turn into the parent context
+- **Hashline edits** — edit by whole-file `@file path#TAG` plus line `LINE#HASH` anchors (same idea as [oh-my-pi](https://github.com/can1357/oh-my-pi)): the model points at anchors instead of rewriting whole files; stale tags/hashes are rejected so over-edits and silent corruption stop here
+- **Permission gate** — Gate / Ask before destructive tools fire; safety is not optional when an agent can touch your tree
+- **MCP without context death** — configure as many MCP servers as you want; their tool schemas **never** enter the model prompt. The system prompt lists **server names** only (like the Skills catalog); the agent uses three meta-tools (`mcp_list` / `mcp_inspect` / `mcp_call`) to discover and call on demand. Same Gate / Ask / Hooks path as built-in tools. See [MCP](#mcp)
+- **Extensions (Go or Rust)** — native binaries speak the **PXB** binary protocol over stdin/stdout; official author SDKs for Go ([`ext/go`](ext/go)) and a zero-dependency Rust port ([`ext/rust`](ext/rust)): LLM tools, slash commands, event intercepts, confirm dialogs — no JSON, no reflection. See [Extensions](#extensions)
+- **Any model** — OpenAI-compatible or Anthropic, no vendor lock-in
 
 ![phi welcome](assets/phi.png)
 
@@ -340,8 +341,13 @@ palette's settings → permissions entry toggles session-wide bypass.
 ## Extensions
 
 Extensions are native binaries speaking the **PXB** binary protocol over
-stdin/stdout (author SDK: `ext/phi`). They subscribe to tool/session events,
-register LLM tools, and add slash commands.
+stdin/stdout (author SDKs: Go `github.com/pulseaiclub/phi/ext/phi` and Rust
+[`ext/rust`](ext/rust), `phi-ext`). They
+subscribe to tool/session events, register LLM tools, and add slash commands.
+
+```bash
+go get github.com/pulseaiclub/phi/ext@v0.19.0
+```
 
 ```go
 package main

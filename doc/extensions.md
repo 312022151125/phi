@@ -37,7 +37,7 @@ Tool loop order remains **ExtensionPre → Gate/Ask → Run → ExtensionPost**.
 PXB uses a fixed 16-byte little-endian header (`PXB\x01` + type + flags + id +
 length) and **tagged-field** payloads (`tag u16 | kind u8 | value`). Decoders
 skip unknown tags; new events are new `Ev*` codes; new frame types are skipped
-by `payload_len`. See `ext/pxb` package doc for the full evolution rules.
+by `payload_len`. See `ext/go/pxb` package doc for the full evolution rules.
 
 ## Layout
 
@@ -59,6 +59,14 @@ enabled: true          # optional, default true
 ```
 
 ## Authoring (Go SDK)
+
+Lightweight module (no TUI deps):
+
+```bash
+go get github.com/pulseaiclub/phi/ext@v0.19.0
+```
+
+(`scripts/bump.sh` tags both `vX.Y.Z` and `ext/vX.Y.Z`.)
 
 ```go
 package main
@@ -124,6 +132,77 @@ cp hello phi.yaml ~/.phi/extensions/hello/
 
 Reload: **Ctrl+K → extensions → reload**.
 
+## Authoring (Rust SDK)
+
+Zero-dependency crate under [`ext/rust`](../ext/rust) — same wire protocol,
+byte-for-byte compatible with the Go SDK (golden-tested against the Go
+fixtures). Requires Rust ≥ 1.75.
+
+```bash
+# pre-release: tracks the latest main (first ext tag containing ext/rust
+# is ext/v0.19.2+; pin it once a release is cut)
+cargo add phi-ext --git https://github.com/pulseaiclub/phi --branch main
+```
+
+```rust,no_run
+use phi_ext::{phi, pxb};
+
+fn main() -> Result<(), phi::Error> {
+    let mut m = phi::Extension::new("hello", "0.1.0");
+    m.register_command(
+        "hello",
+        phi::Command::new("Say hi", |_args, ctx| {
+            ctx.notify("info", "Hello!");
+            // ctx.submit("follow-up"); // after /hello returns
+            // ctx.send_user_message("…"); // enqueue a turn anytime
+            Ok(())
+        }),
+    );
+    m.on_user_input(|_ev| {
+        // Some(phi::UserInputResult { handled: true, ..Default::default() }) swallows
+        // Some(phi::UserInputResult { text: Some("rewritten".into()), ..Default::default() }) transforms
+        None
+    });
+    m.on_tool_call(|_ev| {
+        // Some(phi::ToolCallResult { block: true, reason: "…".into(), ..Default::default() }) denies
+        None
+    });
+    m.on_tool_result(|_ev| {
+        // Some(phi::ToolResultResult { stop: true, ..Default::default() }) ends the agent loop
+        None
+    });
+    m.on_turn_stopping(|_ev| {
+        // Some(phi::TurnStoppingResult { continue_: true, message: "check X".into(), ..Default::default() }) steers
+        None
+    });
+    m.subscribe(pxb::Event::SessionStart, |_ev| {});
+    m.run()
+}
+```
+
+UI surface today: **toast** (`ctx.notify`), **footer status** (`ctx.set_status`),
+**Submit** (`ctx.submit`), **SendUserMessage** (`ctx.send_user_message`),
+**Confirm / ConfirmOpts** (`ctx.confirm` / `ctx.confirm_opts`).
+
+```rust,no_run
+let reply = ctx.confirm_opts(phi::ConfirmRequest {
+    title: "Delete?".into(), message: "Remove /tmp/x".into(),
+    yes: "Delete".into(), no: "Cancel".into(), danger: true,
+    ..Default::default()
+});
+```
+
+Build and install (see `ext/rust/examples/` for runnable extensions):
+
+```bash
+cd ext/rust
+cargo build --release --example hello
+mkdir -p ~/.phi/extensions/hello
+cp target/release/examples/hello phi.yaml ~/.phi/extensions/hello/
+```
+
+Reload: **Ctrl+K → extensions → reload**.
+
 ## Install from GitHub
 
 ```bash
@@ -146,9 +225,10 @@ release asset layout that includes it). Source-only yaegi repos no longer load.
 
 | Path | Role |
 |------|------|
-| `ext/` | Shared types (`Tool`, events) |
-| `ext/pxb` | Binary wire protocol |
-| `ext/phi` | Author SDK (`ExtensionAPI.Run`) |
+| `ext/go/` (module `github.com/pulseaiclub/phi/ext`) | Shared types (`Tool`, events) |
+| `ext/go/pxb` | Binary wire protocol |
+| `ext/go/phi` | Go author SDK (`ExtensionAPI.Run`) |
+| `ext/rust` (crate `phi-ext`) | Rust author SDK (`pxb` + `phi` modules, zero deps) |
 | `internal/extension` | Discover, spawn, Runner shims |
 
 ## Migration from yaegi

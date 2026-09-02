@@ -1,0 +1,37 @@
+//! Richer example: a tool, a confirm dialog, and a queued follow-up.
+
+use phi_ext::phi;
+
+fn main() -> Result<(), phi::Error> {
+    let mut m = phi::Extension::new("full", "0.1.0");
+
+    m.register_tool(phi::Tool::new(
+        "echo",
+        "Echo the input back",
+        br#"{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"#
+            .to_vec(),
+        |args| {
+            let text = String::from_utf8_lossy(args);
+            Ok(phi::ToolResult {
+                content: format!("echo: {text}"),
+                ..Default::default()
+            })
+        },
+    ));
+
+    m.register_command(
+        "ask",
+        phi::Command::new("Ask a yes/no question", |_args, ctx| {
+            let reply = ctx.confirm("Confirm?", "Proceed with /tmp/x?");
+            if reply.ok {
+                ctx.notify("info", "Confirmed!");
+            } else {
+                ctx.notify("warning", "Declined.");
+            }
+            ctx.submit("follow-up from ask");
+            Ok(())
+        }),
+    );
+
+    m.run()
+}
