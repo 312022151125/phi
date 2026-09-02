@@ -336,171 +336,228 @@ impl Extension {
         let mut rd = stdin.lock();
         let mut wr = stdout.lock();
 
-        let mut caps = 0u32;
-        if !self.commands.is_empty() {
-            caps |= pxb::CAP_COMMANDS;
-        }
-        if !self.tools.is_empty() {
-            caps |= pxb::CAP_TOOLS;
-        }
-        if !self.events.is_empty() {
-            caps |= pxb::CAP_EVENTS;
-        }
-        if !self.intercept.is_empty() {
-            caps |= pxb::CAP_INTERCEPT;
-        }
+        let host = handshake(&mut rd, &mut wr, &self)?;
+        register(&mut wr, &self)?;
 
-        let hello = pxb::encode_hello(&pxb::Hello {
-            name: self.name,
-            version: self.version,
-            caps,
-            protocol: pxb::PROTOCOL_VERSION,
-        });
-        pxb::write_frame(&mut wr, pxb::TYPE_HELLO, 0, 0, &hello)?;
-
-        let f = pxb::read_frame(&mut rd)?;
-        if f.header.typ != pxb::TYPE_HELLO_ACK {
-            return Err(Error::UnexpectedFrame {
-                want: "hello_ack",
-                got: f.header.typ,
-            });
-        }
-        let ack = pxb::decode_hello_ack(&f.body)?;
-        let mut host = HostInfo {
-            cwd: ack.cwd,
-            session_id: ack.session_id,
-            extension_dir: ack.extension_dir,
-            phi_version: ack.phi_version,
-        };
-
-        for tool in &self.tools {
-            let body = pxb::encode_register_tool(&pxb::RegisterTool {
-                name: tool.name.clone(),
-                description: tool.description.clone(),
-                schema_json: tool.schema.clone(),
-            });
-            pxb::write_frame(&mut wr, pxb::TYPE_REGISTER_TOOL, 0, 0, &body)?;
-        }
-        for (name, cmd) in &self.commands {
-            let body = pxb::encode_register_command(&pxb::RegisterCommand {
-                name: name.clone(),
-                description: cmd.description.clone(),
-            });
-            pxb::write_frame(&mut wr, pxb::TYPE_REGISTER_COMMAND, 0, 0, &body)?;
-        }
-        if !self.events.is_empty() || !self.intercept.is_empty() {
-            let body = pxb::encode_subscribe(&pxb::Subscribe {
-                events: self.events.iter().map(|e| e.code()).collect(),
-                intercept: self.intercept.iter().map(|e| e.code()).collect(),
-            });
-            pxb::write_frame(&mut wr, pxb::TYPE_SUBSCRIBE, 0, 0, &body)?;
-        }
-        pxb::write_frame(&mut wr, pxb::TYPE_READY, 0, 0, &[])?;
-
-        // Destructure so handler calls can borrow the pieces they need
-        // without aliasing `self` (the command handlers take `&mut` state).
+        // Destructure so each handler owns only the state it mutates,
+        // instead of aliasing `self` (command handlers take `&mut` state).
         let Extension {
-            mut tools,
-            mut commands,
-            mut handlers,
+            tools,
+            commands,
+            handlers,
             ..
         } = self;
-        let mut pending_submit: Option<String> = None;
-        let mut next_host_id: u32 = 0;
+        serve(&mut rd, &mut wr, host, tools, commands, handlers)
+    }
+}
 
-        loop {
-            let f = pxb::read_frame(&mut rd)?;
-            match pxb::FrameType::from_u16(f.header.typ) {
-                pxb::FrameType::Shutdown => {
-                    pxb::write_frame(&mut wr, pxb::TYPE_SHUTDOWN_ACK, 0, 0, &[])?;
-                    return Ok(());
-                }
-                pxb::FrameType::CommandInvoked => {
-                    let inv = pxb::decode_command_invoked(&f.body)?;
-                    let mut resp = pxb::CommandResponse {
-                        ok: true,
-                        ..Default::default()
-                    };
-                    if let Some((_, cmd)) = commands.iter_mut().find(|(n, _)| *n == inv.name) {
-                        let mut ctx = Context {
-                            cwd: host.cwd.clone(),
-                            session_id: host.session_id.clone(),
-                            has_ui: true,
-                            rd: &mut rd,
-                            wr: &mut wr,
-                            host: &mut host,
-                            pending_submit: &mut pending_submit,
-                            next_host_id: &mut next_host_id,
-                            events: &mut handlers.events,
-                        };
-                        if let Err(e) = (cmd.handler)(&inv.args, &mut ctx) {
-                            resp.ok = false;
-                            resp.error = e;
-                        }
-                    } else {
-                        resp.ok = false;
-                        resp.error = "unknown command".into();
-                    }
-                    resp.submit = pending_submit.take().unwrap_or_default();
-                    let body = pxb::encode_command_response(&resp);
-                    pxb::write_frame(
-                        &mut wr,
-                        pxb::TYPE_COMMAND_RESPONSE,
-                        f.header.flags,
-                        f.header.id,
-                        &body,
-                    )?;
-                }
-                pxb::FrameType::ToolInvoke => {
-                    let inv = pxb::decode_tool_invoke(&f.body)?;
-                    let tr = match tools.iter_mut().find(|t| t.name == inv.name) {
-                        Some(tool) => match (tool.execute)(&inv.args) {
-                            Ok(res) => pxb::ToolResultMsg {
-                                content: res.content,
-                                detail: res.detail,
-                                output: res.output,
-                                ..Default::default()
-                            },
-                            Err(e) => tool_error(e),
-                        },
-                        None => tool_error("unknown tool"),
-                    };
-                    let body = pxb::encode_tool_result(&tr);
-                    pxb::write_frame(
-                        &mut wr,
-                        pxb::TYPE_TOOL_RESULT,
-                        f.header.flags,
-                        f.header.id,
-                        &body,
-                    )?;
-                }
-                pxb::FrameType::Intercept => {
-                    let req = pxb::decode_intercept_req(&f.body)?;
-                    let resp = handle_intercept(req, &mut handlers);
-                    let body = pxb::encode_intercept_resp(&resp);
-                    pxb::write_frame(
-                        &mut wr,
-                        pxb::TYPE_INTERCEPT_RESPONSE,
-                        f.header.flags,
-                        f.header.id,
-                        &body,
-                    )?;
-                }
-                pxb::FrameType::Event => {
-                    if let Ok(ev) = pxb::decode_event_notify(&f.body) {
-                        dispatch_event(&mut handlers.events, ev);
-                    }
-                }
-                pxb::FrameType::SessionMeta => {
-                    if let Ok(meta) = pxb::decode_session_meta(&f.body) {
-                        apply_session_meta(&mut host, meta);
-                    }
-                }
-                // Unknown frame types are already consumed by length; ignore.
-                _ => {}
+// ── Handshake, registration, and frame dispatch ──────────────────────────
+
+/// Exchanges the HELLO handshake and fills [`HostInfo`] from the host's ack.
+fn handshake(rd: &mut Rd, wr: &mut Wr, ext: &Extension) -> Result<HostInfo, Error> {
+    let mut caps = 0u32;
+    if !ext.commands.is_empty() {
+        caps |= pxb::CAP_COMMANDS;
+    }
+    if !ext.tools.is_empty() {
+        caps |= pxb::CAP_TOOLS;
+    }
+    if !ext.events.is_empty() {
+        caps |= pxb::CAP_EVENTS;
+    }
+    if !ext.intercept.is_empty() {
+        caps |= pxb::CAP_INTERCEPT;
+    }
+
+    let hello = pxb::encode_hello(&pxb::Hello {
+        name: ext.name.clone(),
+        version: ext.version.clone(),
+        caps,
+        protocol: pxb::PROTOCOL_VERSION,
+    });
+    pxb::write_frame(wr, pxb::TYPE_HELLO, 0, 0, &hello)?;
+
+    let f = pxb::read_frame(rd)?;
+    if f.header.typ != pxb::TYPE_HELLO_ACK {
+        return Err(Error::UnexpectedFrame {
+            want: "hello_ack",
+            got: f.header.typ,
+        });
+    }
+    let ack = pxb::decode_hello_ack(&f.body)?;
+    Ok(HostInfo {
+        cwd: ack.cwd,
+        session_id: ack.session_id,
+        extension_dir: ack.extension_dir,
+        phi_version: ack.phi_version,
+    })
+}
+
+/// Announces tools, commands, and subscription interest, then signals READY.
+fn register(wr: &mut Wr, ext: &Extension) -> Result<(), Error> {
+    for tool in &ext.tools {
+        let body = pxb::encode_register_tool(&pxb::RegisterTool {
+            name: tool.name.clone(),
+            description: tool.description.clone(),
+            schema_json: tool.schema.clone(),
+        });
+        pxb::write_frame(wr, pxb::TYPE_REGISTER_TOOL, 0, 0, &body)?;
+    }
+    for (name, cmd) in &ext.commands {
+        let body = pxb::encode_register_command(&pxb::RegisterCommand {
+            name: name.clone(),
+            description: cmd.description.clone(),
+        });
+        pxb::write_frame(wr, pxb::TYPE_REGISTER_COMMAND, 0, 0, &body)?;
+    }
+    if !ext.events.is_empty() || !ext.intercept.is_empty() {
+        let body = pxb::encode_subscribe(&pxb::Subscribe {
+            events: ext.events.iter().map(|e| e.code()).collect(),
+            intercept: ext.intercept.iter().map(|e| e.code()).collect(),
+        });
+        pxb::write_frame(wr, pxb::TYPE_SUBSCRIBE, 0, 0, &body)?;
+    }
+    pxb::write_frame(wr, pxb::TYPE_READY, 0, 0, &[])
+}
+
+/// Dispatches frames until the host shuts down, handing each frame type to a
+/// focused handler that borrows only the state it mutates.
+fn serve(
+    rd: &mut Rd,
+    wr: &mut Wr,
+    mut host: HostInfo,
+    mut tools: Vec<Tool>,
+    mut commands: Vec<(String, Command)>,
+    mut handlers: Handlers,
+) -> Result<(), Error> {
+    let mut pending_submit: Option<String> = None;
+    let mut next_host_id: u32 = 0;
+
+    loop {
+        let f = pxb::read_frame(rd)?;
+        match pxb::FrameType::from_u16(f.header.typ) {
+            pxb::FrameType::Shutdown => {
+                pxb::write_frame(wr, pxb::TYPE_SHUTDOWN_ACK, 0, 0, &[])?;
+                return Ok(());
             }
+            pxb::FrameType::CommandInvoked => serve_command(
+                rd,
+                wr,
+                &f,
+                &mut host,
+                &mut commands,
+                &mut handlers.events,
+                &mut pending_submit,
+                &mut next_host_id,
+            )?,
+            pxb::FrameType::ToolInvoke => serve_tool(wr, &f, &mut tools)?,
+            pxb::FrameType::Intercept => serve_intercept(wr, &f, &mut handlers)?,
+            pxb::FrameType::Event => {
+                if let Ok(ev) = pxb::decode_event_notify(&f.body) {
+                    dispatch_event(&mut handlers.events, ev);
+                }
+            }
+            pxb::FrameType::SessionMeta => {
+                if let Ok(meta) = pxb::decode_session_meta(&f.body) {
+                    apply_session_meta(&mut host, meta);
+                }
+            }
+            // Unknown frame types are already consumed by length; ignore.
+            _ => {}
         }
     }
+}
+
+/// Invokes a registered slash-command handler and replies with its outcome.
+/// An unknown command fails with "unknown command".
+#[allow(clippy::too_many_arguments)] // the loop lends each state piece separately
+fn serve_command(
+    rd: &mut Rd,
+    wr: &mut Wr,
+    frame: &pxb::Frame,
+    host: &mut HostInfo,
+    commands: &mut [(String, Command)],
+    events: &mut EventHandlers,
+    pending_submit: &mut Option<String>,
+    next_host_id: &mut u32,
+) -> Result<(), Error> {
+    let inv = pxb::decode_command_invoked(&frame.body)?;
+    let mut resp = pxb::CommandResponse {
+        ok: true,
+        ..Default::default()
+    };
+    if let Some((_, cmd)) = commands.iter_mut().find(|(n, _)| *n == inv.name) {
+        let mut ctx = Context {
+            cwd: host.cwd.clone(),
+            session_id: host.session_id.clone(),
+            has_ui: true,
+            rd,
+            wr,
+            host,
+            pending_submit,
+            next_host_id,
+            events,
+        };
+        if let Err(e) = (cmd.handler)(&inv.args, &mut ctx) {
+            resp.ok = false;
+            resp.error = e;
+        }
+    } else {
+        resp.ok = false;
+        resp.error = "unknown command".into();
+    }
+    resp.submit = pending_submit.take().unwrap_or_default();
+    let body = pxb::encode_command_response(&resp);
+    pxb::write_frame(
+        wr,
+        pxb::TYPE_COMMAND_RESPONSE,
+        frame.header.flags,
+        frame.header.id,
+        &body,
+    )?;
+    Ok(())
+}
+
+/// Executes a tool and replies with its result, or an error result when the
+/// tool is unknown or its handler failed.
+fn serve_tool(wr: &mut Wr, frame: &pxb::Frame, tools: &mut [Tool]) -> Result<(), Error> {
+    let inv = pxb::decode_tool_invoke(&frame.body)?;
+    let tr = match tools.iter_mut().find(|t| t.name == inv.name) {
+        Some(tool) => match (tool.execute)(&inv.args) {
+            Ok(res) => pxb::ToolResultMsg {
+                content: res.content,
+                detail: res.detail,
+                output: res.output,
+                ..Default::default()
+            },
+            Err(e) => tool_error(e),
+        },
+        None => tool_error("unknown tool"),
+    };
+    let body = pxb::encode_tool_result(&tr);
+    pxb::write_frame(
+        wr,
+        pxb::TYPE_TOOL_RESULT,
+        frame.header.flags,
+        frame.header.id,
+        &body,
+    )?;
+    Ok(())
+}
+
+/// Replies to one intercept request with the registered handler's result.
+fn serve_intercept(wr: &mut Wr, frame: &pxb::Frame, handlers: &mut Handlers) -> Result<(), Error> {
+    let req = pxb::decode_intercept_req(&frame.body)?;
+    let resp = handle_intercept(req, handlers);
+    let body = pxb::encode_intercept_resp(&resp);
+    pxb::write_frame(
+        wr,
+        pxb::TYPE_INTERCEPT_RESPONSE,
+        frame.header.flags,
+        frame.header.id,
+        &body,
+    )?;
+    Ok(())
 }
 
 /// Dispatches one intercept request to the registered handler. A missing
@@ -700,47 +757,67 @@ impl Context<'_> {
 
     /// [`confirm`](Self::confirm) with labels / danger styling.
     pub fn confirm_opts(&mut self, req: ConfirmRequest) -> ConfirmReply {
-        *self.next_host_id = self.next_host_id.wrapping_add(1);
-        let id = *self.next_host_id;
-        let body = pxb::encode_host_request(&pxb::HostRequest {
-            method: "confirm".into(),
-            arg: confirm_request_json(&req),
-        });
-        if pxb::write_frame(self.wr, pxb::TYPE_HOST_REQUEST, pxb::FLAG_HAS_ID, id, &body).is_err() {
+        let Some(id) = self.send_host_request("confirm", &confirm_request_json(&req)) else {
             return ConfirmReply::default();
-        }
+        };
         // Nested read: keep servicing SessionMeta pushes and subscribed
         // events while waiting for the HostResult that matches our id.
         loop {
             let Ok(f) = pxb::read_frame(self.rd) else {
                 return ConfirmReply::default();
             };
-            match pxb::FrameType::from_u16(f.header.typ) {
-                pxb::FrameType::HostResult => {
-                    if f.header.flags & pxb::FLAG_HAS_ID == 0 || f.header.id != id {
-                        continue;
-                    }
-                    let Ok(res) = pxb::decode_host_result(&f.body) else {
-                        return ConfirmReply::default();
-                    };
-                    return ConfirmReply { ok: res.ok };
-                }
-                pxb::FrameType::SessionMeta => {
-                    if let Ok(meta) = pxb::decode_session_meta(&f.body) {
-                        apply_session_meta(self.host, meta);
-                    }
-                }
-                pxb::FrameType::Event => {
-                    if let Ok(ev) = pxb::decode_event_notify(&f.body) {
-                        dispatch_event(self.events, ev);
-                    }
-                }
-                pxb::FrameType::Shutdown => {
-                    let _ = pxb::write_frame(self.wr, pxb::TYPE_SHUTDOWN_ACK, 0, 0, &[]);
-                    return ConfirmReply::default();
-                }
-                _ => {}
+            if let Some(reply) = self.nested_reply(f, id) {
+                return reply;
             }
+        }
+    }
+
+    /// Writes a host request carrying a fresh id; returns that id. `None`
+    /// means the write failed — treat the host as gone.
+    fn send_host_request(&mut self, method: &str, arg: &str) -> Option<u32> {
+        *self.next_host_id = self.next_host_id.wrapping_add(1);
+        let id = *self.next_host_id;
+        let body = pxb::encode_host_request(&pxb::HostRequest {
+            method: method.into(),
+            arg: arg.into(),
+        });
+        if pxb::write_frame(self.wr, pxb::TYPE_HOST_REQUEST, pxb::FLAG_HAS_ID, id, &body).is_err() {
+            return None;
+        }
+        Some(id)
+    }
+
+    /// Handles one frame read while waiting on a host result. Returns the
+    /// [`ConfirmReply`] that ends the wait (a matching HostResult, Shutdown,
+    /// or a broken pipe); `None` means the frame was consumed internally.
+    fn nested_reply(&mut self, f: pxb::Frame, want_id: u32) -> Option<ConfirmReply> {
+        match pxb::FrameType::from_u16(f.header.typ) {
+            pxb::FrameType::HostResult => {
+                if f.header.flags & pxb::FLAG_HAS_ID == 0 || f.header.id != want_id {
+                    return None;
+                }
+                let Ok(res) = pxb::decode_host_result(&f.body) else {
+                    return Some(ConfirmReply::default());
+                };
+                Some(ConfirmReply { ok: res.ok })
+            }
+            pxb::FrameType::SessionMeta => {
+                if let Ok(meta) = pxb::decode_session_meta(&f.body) {
+                    apply_session_meta(self.host, meta);
+                }
+                None
+            }
+            pxb::FrameType::Event => {
+                if let Ok(ev) = pxb::decode_event_notify(&f.body) {
+                    dispatch_event(self.events, ev);
+                }
+                None
+            }
+            pxb::FrameType::Shutdown => {
+                let _ = pxb::write_frame(self.wr, pxb::TYPE_SHUTDOWN_ACK, 0, 0, &[]);
+                Some(ConfirmReply::default())
+            }
+            _ => None,
         }
     }
 }
