@@ -8,8 +8,9 @@ fn main() -> Result<(), phi::Error> {
     m.register_tool(phi::Tool::new(
         "echo",
         "Echo the input back",
-        br#"{"type":"object","properties":{"text":{"type":"string"}},"required":["text"]}"#
-            .to_vec(),
+        phi::Schema::object()
+            .property("text", phi::Schema::string())
+            .required(["text"]),
         |args| {
             let text = String::from_utf8_lossy(args);
             Ok(phi::ToolResult {

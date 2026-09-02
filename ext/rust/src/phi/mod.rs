@@ -30,6 +30,9 @@ use crate::pxb;
 
 pub use crate::pxb::Error;
 
+mod schema;
+pub use schema::Schema;
+
 type Rd = io::StdinLock<'static>;
 type Wr = io::StdoutLock<'static>;
 type EventHandlers = HashMap<u16, Box<dyn FnMut(pxb::EventNotify)>>;
@@ -44,13 +47,13 @@ pub struct HostInfo {
     pub phi_version: String,
 }
 
-/// An LLM-callable tool. `schema` is raw JSON Schema bytes
-/// (`type`/`object`/`properties`/`required`).
+/// An LLM-callable tool. `schema` is a typed JSON Schema for parameters
+/// (same role as Go's `Parameters` / Codex's schemars-generated input schema).
 #[allow(clippy::type_complexity)] // execute signature mirrors the Go SDK contract
 pub struct Tool {
     pub name: String,
     pub description: String,
-    pub schema: Vec<u8>,
+    pub schema: Schema,
     pub execute: Box<dyn FnMut(&[u8]) -> Result<ToolResult, String>>,
 }
 
@@ -58,13 +61,13 @@ impl Tool {
     pub fn new(
         name: impl Into<String>,
         description: impl Into<String>,
-        schema: Vec<u8>,
+        schema: impl Into<Schema>,
         execute: impl FnMut(&[u8]) -> Result<ToolResult, String> + 'static,
     ) -> Self {
         Self {
             name: name.into(),
             description: description.into(),
-            schema,
+            schema: schema.into(),
             execute: Box::new(execute),
         }
     }
@@ -399,7 +402,7 @@ fn register(wr: &mut Wr, ext: &Extension) -> Result<(), Error> {
         let body = pxb::encode_register_tool(&pxb::RegisterTool {
             name: tool.name.clone(),
             description: tool.description.clone(),
-            schema_json: tool.schema.clone(),
+            schema_json: tool.schema.to_json_bytes(),
         });
         pxb::write_frame(wr, pxb::TYPE_REGISTER_TOOL, 0, 0, &body)?;
     }

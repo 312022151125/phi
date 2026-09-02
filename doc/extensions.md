@@ -39,6 +39,11 @@ length) and **tagged-field** payloads (`tag u16 | kind u8 | value`). Decoders
 skip unknown tags; new events are new `Ev*` codes; new frame types are skipped
 by `payload_len`. See `ext/go/pxb` package doc for the full evolution rules.
 
+On Apple Silicon (release), Hello encode+decode is ~0.11–0.12 µs for Go and
+Rust PXB vs ~1.2 µs for a comparable JSON-lines object — see the table in the
+root [README](../README.md#extensions). Re-probe with
+`cargo run --release --example bench` under `ext/rust`.
+
 ## Layout
 
 | Location | Scope |
