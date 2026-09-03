@@ -36,6 +36,7 @@ ext/go/pxb/msg.go DecodeHostResult
 ext/go/pxb/msg.go DecodeInterceptReq
 ext/go/pxb/msg.go DecodeSessionMeta
 ext/go/pxb/msg.go DecodeToolInvoke
+ext/go/pxb/msg.go EncodeToolDetailResult
 ext/go/pxb/msg.go EncodeCommandResponse
 ext/go/pxb/msg.go EncodeHello
 ext/go/pxb/msg.go EncodeHostRequest
