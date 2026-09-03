@@ -331,7 +331,7 @@ func (extension *ExtensionAPI) Run() error {
 	}
 	for _, c := range cmds {
 		body := pxb.EncodeRegisterCommand(pxb.RegisterCommand{
-			Name: c.name, Description: c.def.Description,
+			Name: c.name, Description: c.def.Description, NeedsArgs: c.def.NeedsArgs,
 		})
 		if err := extension.wr.Write(pxb.TypeRegisterCommand, 0, 0, body); err != nil {
 			return err

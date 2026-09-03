@@ -527,6 +527,16 @@ func (p *Proc) Tools() []pxb.RegisterTool {
 	return out
 }
 
+// Commands returns slash commands registered during handshake (copy).
+func (p *Proc) Commands() []pxb.RegisterCommand {
+	if p == nil {
+		return nil
+	}
+	out := make([]pxb.RegisterCommand, len(p.cmds))
+	copy(out, p.cmds)
+	return out
+}
+
 // BuildAPI installs shim handlers onto api from this process's registrations.
 func (p *Proc) BuildAPI(api *ext.API) {
 	if p == nil || api == nil {
@@ -561,8 +571,10 @@ func (p *Proc) BuildAPI(api *ext.API) {
 	for _, c := range p.cmds {
 		name := c.Name
 		desc := c.Description
+		needsArgs := c.NeedsArgs
 		api.RegisterCommand(name, ext.Command{
 			Description: desc,
+			NeedsArgs:   needsArgs,
 			Handler: func(args string, _ *ext.Context) error {
 				resp, err := p.CallCommand(context.Background(), name, args)
 				if err != nil {

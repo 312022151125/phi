@@ -10,6 +10,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Slash commands can declare `NeedsArgs` (Go) / `needs_args` (Rust). Picker accept or bare submit of `/name` leaves `/name ` in the composer so the user can type arguments instead of auto-running and toasting usage. Built-in `/resume` uses this.
+
 ### Changed
 
 - Go author SDK nested module now publishes under `github.com/pulseaiclub/phi/ext/go` (imports `…/ext/go/phi`, `…/ext/go/pxb`; tags `ext/go/vX.Y.Z`), matching its repo location `ext/go/` so proxies can resolve it.

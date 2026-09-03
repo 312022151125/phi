@@ -3,11 +3,9 @@ package commands
 import (
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/palette"
-	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/extension"
 	"github.com/pulseaiclub/phi/internal/llm/skills"
 )
@@ -36,10 +34,10 @@ func registerBuiltinCommands(r *CommandRegistry) {
 		Name:        "resume",
 		Description: "Resume a session in this directory — /resume <id>",
 		Slash:       true,
+		NeedsArgs:   true,
 		Insert:      "/resume ",
 		Run: func(ctx CommandContext) error {
 			if len(ctx.Args) < 1 {
-				ctx.toast("Usage: /resume <session-id>", toast.ToastWarning, 3*time.Second)
 				return nil
 			}
 			if ctx.ResumeSession != nil {

@@ -85,6 +85,26 @@ func TestSubscribeRoundTrip(t *testing.T) {
 	assert.Equal(t, in.Intercept, out.Intercept)
 }
 
+func TestRegisterCommandNeedsArgsRoundTrip(t *testing.T) {
+	in := pxb.RegisterCommand{Name: "plan", Description: "toggle plan", NeedsArgs: true}
+	out, err := pxb.DecodeRegisterCommand(pxb.EncodeRegisterCommand(in))
+	require.NoError(t, err)
+	assert.Equal(t, in.Name, out.Name)
+	assert.Equal(t, in.Description, out.Description)
+	assert.True(t, out.NeedsArgs)
+
+	// false omits the wire field (backward compatible with old hosts).
+	raw := pxb.EncodeRegisterCommand(pxb.RegisterCommand{Name: "x", Description: "d"})
+	var fw pxb.FieldWriter
+	fw.PutString(1, "x")
+	fw.PutString(2, "d")
+	assert.Equal(t, fw.Bytes(), raw)
+
+	old, err := pxb.DecodeRegisterCommand(fw.Bytes())
+	require.NoError(t, err)
+	assert.False(t, old.NeedsArgs)
+}
+
 func TestRegisterToolTimeoutSecRoundTrip(t *testing.T) {
 	in := pxb.RegisterTool{
 		Name: "fetch", Description: "HTTP GET", SchemaJSON: []byte(`{"type":"object"}`), TimeoutSec: 120,

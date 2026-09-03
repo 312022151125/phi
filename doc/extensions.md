@@ -119,6 +119,15 @@ func main() {
 			return nil
 		},
 	})
+	// NeedsArgs: picker accept / bare "/plan" leaves "/plan " in the composer.
+	m.RegisterCommand("plan", ext.Command{
+		Description: "Enter/exit plan mode — /plan on|off|status",
+		NeedsArgs:   true,
+		Handler: func(args string, ctx *ext.Context) error {
+			_ = args
+			return nil
+		},
+	})
 	m.OnUserInput(func(ev ext.UserInputEvent) *ext.UserInputResult {
 		// return &ext.UserInputResult{Handled: true} to swallow
 		// return &ext.UserInputResult{Text: "rewritten"} to transform
@@ -190,6 +199,15 @@ fn main() -> Result<(), phi::Error> {
             // ctx.send_user_message("…"); // enqueue a turn anytime
             Ok(())
         }),
+    );
+    // needs_args: picker accept / bare "/plan" leaves "/plan " in the composer.
+    m.register_command(
+        "plan",
+        phi::Command::new("Enter/exit plan mode — /plan on|off|status", |args, _ctx| {
+            let _ = args;
+            Ok(())
+        })
+        .needs_args(),
     );
     m.on_user_input(|_ev| {
         // Some(phi::UserInputResult { handled: true, ..Default::default() }) swallows

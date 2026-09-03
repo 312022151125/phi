@@ -104,6 +104,8 @@ pub struct ToolResult {
 #[allow(clippy::type_complexity)] // handler signature mirrors the Go SDK contract
 pub struct Command {
     pub description: String,
+    /// Leave `/name ` in the composer on picker accept / bare submit.
+    pub needs_args: bool,
     pub handler: Box<dyn FnMut(&str, &mut Context<'_>) -> Result<(), String>>,
 }
 
@@ -114,8 +116,16 @@ impl Command {
     ) -> Self {
         Self {
             description: description.into(),
+            needs_args: false,
             handler: Box::new(handler),
         }
+    }
+
+    /// Mark this command as requiring arguments so the host fills the
+    /// composer instead of auto-submitting an empty invocation.
+    pub fn needs_args(mut self) -> Self {
+        self.needs_args = true;
+        self
     }
 }
 
@@ -430,6 +440,7 @@ fn register(wr: &mut Wr, ext: &Extension) -> Result<(), Error> {
         let body = pxb::encode_register_command(&pxb::RegisterCommand {
             name: name.clone(),
             description: cmd.description.clone(),
+            needs_args: cmd.needs_args,
         });
         pxb::write_frame(wr, pxb::TYPE_REGISTER_COMMAND, 0, 0, &body)?;
     }
