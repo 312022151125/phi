@@ -34,6 +34,23 @@ type Release struct {
 // FetchLatest queries the latest published release for owner/repo.
 func FetchLatest(ctx context.Context, repo string) (Release, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo)
+	return fetchRelease(ctx, repo, url, fmt.Sprintf(
+		"no published release for %s (publish one with ./scripts/bump.sh vX.Y.Z && git push --follow-tags)",
+		repo,
+	))
+}
+
+// FetchTag queries a release by tag name (with or without a leading "v").
+func FetchTag(ctx context.Context, repo, tag string) (Release, error) {
+	tag = strings.TrimSpace(tag)
+	if tag == "" {
+		return Release{}, fmt.Errorf("empty release tag for %s", repo)
+	}
+	url := fmt.Sprintf("https://api.github.com/repos/%s/releases/tags/%s", repo, tag)
+	return fetchRelease(ctx, repo, url, fmt.Sprintf("no release tagged %q for %s", tag, repo))
+}
+
+func fetchRelease(ctx context.Context, repo, url, notFoundMsg string) (Release, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return Release{}, fmt.Errorf("create request for %q: %w", repo, err)
@@ -46,17 +63,11 @@ func FetchLatest(ctx context.Context, repo string) (Release, error) {
 
 	resp, err := util.DefaultHTTPClient().Do(req)
 	if err != nil {
-		return Release{}, fmt.Errorf("fetch latest release from %q: %w", repo, err)
+		return Release{}, fmt.Errorf("fetch release from %q: %w", repo, err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusNotFound {
-		// GitHub returns 404 both for missing repos and for repos with no
-		// published releases. For public pulseaiclub/phi the latter is common
-		// before the first tag-triggered GoReleaser run.
-		return Release{}, fmt.Errorf(
-			"no published release for %s (publish one with ./scripts/bump.sh vX.Y.Z && git push --follow-tags)",
-			repo,
-		)
+		return Release{}, fmt.Errorf("%s", notFoundMsg)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return Release{}, fmt.Errorf("github api %s: status %d", repo, resp.StatusCode)

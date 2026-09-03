@@ -8,7 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
+
+	"github.com/pulseaiclub/phi/internal/util/githubrelease"
 )
 
 // InstallOptions configures Install.
@@ -22,6 +25,11 @@ type InstallOptions struct {
 	Git string
 	// RunGit, if set, replaces the real git invocation (tests).
 	RunGit func(ctx context.Context, gitBin string, args ...string) error
+	// FetchRelease overrides GitHub Releases lookup (tests).
+	// ref empty means "latest". Returning an error skips to git clone.
+	FetchRelease func(ctx context.Context, ownerRepo, ref string) (githubrelease.Release, error)
+	// DownloadFile overrides asset downloads (tests).
+	DownloadFile func(ctx context.Context, url, dest string) error
 }
 
 func (o InstallOptions) out() io.Writer {
@@ -31,8 +39,13 @@ func (o InstallOptions) out() io.Writer {
 	return io.Discard
 }
 
-// Install clones a GitHub repo into Dir/<repo>/ and verifies it ships
-// phi.yaml plus the compiled exec binary.
+func printf(w io.Writer, format string, args ...any) {
+	_, _ = fmt.Fprintf(w, format, args...)
+}
+
+// Install installs a GitHub extension into Dir/<repo>/.
+// Prefer a platform release archive (same naming as phi update); fall back to
+// a shallow git clone when no matching release asset exists.
 func Install(ctx context.Context, opts InstallOptions) error {
 	if opts.Dir == "" {
 		return errors.New("extensions directory is required")
@@ -52,12 +65,141 @@ func Install(ctx context.Context, opts InstallOptions) error {
 		return fmt.Errorf("create extensions dir %s: %w", opts.Dir, err)
 	}
 
+	relErr := installFromRelease(ctx, opts, dest)
+	if relErr == nil {
+		return nil
+	}
+	printf(opts.out(), "plugin install: release path unavailable (%v); trying git clone\n", relErr)
+
+	if err := installFromGit(ctx, opts, dest); err != nil {
+		return fmt.Errorf("git clone fallback failed after release error (%w): %w", relErr, err)
+	}
+	return nil
+}
+
+func installFromRelease(ctx context.Context, opts InstallOptions, dest string) error {
+	ownerRepo := opts.Spec.Owner + "/" + opts.Spec.Repo
+	fetch := opts.FetchRelease
+	if fetch == nil {
+		fetch = defaultFetchRelease
+	}
+	rel, err := fetch(ctx, ownerRepo, opts.Spec.Ref)
+	if err != nil {
+		return err
+	}
+
+	asset, format, err := pickPlatformAsset(rel, opts.Spec.Repo)
+	if err != nil {
+		return err
+	}
+	if asset.BrowserDownloadURL == "" {
+		return fmt.Errorf("release asset %q has no download URL", asset.Name)
+	}
+
+	tmp, err := os.MkdirTemp("", "phi-plugin-")
+	if err != nil {
+		return fmt.Errorf("create temp dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(tmp) }()
+
+	download := opts.DownloadFile
+	if download == nil {
+		download = githubrelease.DownloadFile
+	}
+
+	printf(opts.out(), "plugin install: downloading %s (%s)\n", asset.Name, rel.TagName)
+	archivePath := filepath.Join(tmp, asset.Name)
+	if err := download(ctx, asset.BrowserDownloadURL, archivePath); err != nil {
+		return fmt.Errorf("download %s: %w", asset.Name, err)
+	}
+
+	if sumAsset, ok := findChecksumAsset(rel); ok && sumAsset.BrowserDownloadURL != "" {
+		printf(opts.out(), "plugin install: verifying checksum...\n")
+		sumsPath := filepath.Join(tmp, sumAsset.Name)
+		if err := download(ctx, sumAsset.BrowserDownloadURL, sumsPath); err != nil {
+			return fmt.Errorf("download checksums: %w", err)
+		}
+		want, err := lookupChecksum(sumsPath, asset.Name)
+		if err != nil {
+			return err
+		}
+		got, err := sha256File(archivePath)
+		if err != nil {
+			return fmt.Errorf("hash archive: %w", err)
+		}
+		if !strings.EqualFold(got, want) {
+			return fmt.Errorf("checksum mismatch for %s: got %s, want %s", asset.Name, got, want)
+		}
+	}
+
+	extractDir := filepath.Join(tmp, "extracted")
+	if err := os.MkdirAll(extractDir, 0o755); err != nil {
+		return fmt.Errorf("mkdir extract: %w", err)
+	}
+	printf(opts.out(), "plugin install: extracting...\n")
+	if err := extractArchive(ctx, archivePath, format, extractDir); err != nil {
+		return fmt.Errorf("extract archive: %w", err)
+	}
+	root, err := unwrapExtractRoot(extractDir)
+	if err != nil {
+		return err
+	}
+
+	staging := filepath.Join(tmp, "staging")
+	if err := copyTree(root, staging); err != nil {
+		return fmt.Errorf("stage extracted files: %w", err)
+	}
+	entry, err := findInstallEntry(staging)
+	if err != nil {
+		return err
+	}
+	if err := ensureExecMode(entry); err != nil {
+		return err
+	}
+
+	if err := os.Rename(staging, dest); err != nil {
+		// Cross-device rename: copy into place.
+		if err2 := copyTree(staging, dest); err2 != nil {
+			_ = os.RemoveAll(dest)
+			return fmt.Errorf("install to %s: rename: %w; copy: %w", dest, err, err2)
+		}
+	}
+
+	finalEntry, err := findInstallEntry(dest)
+	if err != nil {
+		_ = os.RemoveAll(dest)
+		return err
+	}
+
+	refNote := rel.TagName
+	printf(opts.out(), "installed %s/%s (%s) → %s\n", opts.Spec.Owner, opts.Spec.Repo, refNote, dest)
+	printf(opts.out(), "entry: %s\n", finalEntry)
+	printf(opts.out(), "source: release asset %s\n", asset.Name)
+	printInstallWarnings(opts.out())
+	return nil
+}
+
+func ensureExecMode(path string) error {
+	if runtime.GOOS == "windows" {
+		return nil
+	}
+	return os.Chmod(path, 0o755)
+}
+
+func defaultFetchRelease(ctx context.Context, ownerRepo, ref string) (githubrelease.Release, error) {
+	if ref == "" {
+		return githubrelease.FetchLatest(ctx, ownerRepo)
+	}
+	return githubrelease.FetchTag(ctx, ownerRepo, ref)
+}
+
+func installFromGit(ctx context.Context, opts InstallOptions, dest string) error {
 	gitBin := opts.Git
 	if gitBin == "" {
 		var err error
 		gitBin, err = exec.LookPath("git")
 		if err != nil {
-			return errors.New("git not found in PATH (required to install plugins)")
+			return errors.New("git not found in PATH (required to install plugins without a release)")
 		}
 	}
 
@@ -86,14 +228,16 @@ func Install(ctx context.Context, opts InstallOptions) error {
 	if opts.Spec.Ref != "" {
 		refNote = opts.Spec.Ref
 	}
-	_, _ = fmt.Fprintf(opts.out(), "installed %s/%s (%s) → %s\n", opts.Spec.Owner, opts.Spec.Repo, refNote, dest)
-	_, _ = fmt.Fprintf(opts.out(), "entry: %s\n", entry)
-	_, _ = fmt.Fprintln(
-		opts.out(),
-		"warning: extensions run with your full process permissions; only install from sources you trust",
-	)
-	_, _ = fmt.Fprintln(opts.out(), "reload: Ctrl+K → extensions → reload (or restart phi)")
+	printf(opts.out(), "installed %s/%s (%s) → %s\n", opts.Spec.Owner, opts.Spec.Repo, refNote, dest)
+	printf(opts.out(), "entry: %s\n", entry)
+	printf(opts.out(), "source: git clone\n")
+	printInstallWarnings(opts.out())
 	return nil
+}
+
+func printInstallWarnings(w io.Writer) {
+	printf(w, "warning: extensions run with your full process permissions; only install from sources you trust\n")
+	printf(w, "reload: Ctrl+K → extensions → reload (or restart phi)\n")
 }
 
 func defaultRunGit(ctx context.Context, gitBin string, args ...string) error {

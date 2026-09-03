@@ -1,15 +1,23 @@
 package extension_test
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/extension"
+	"github.com/pulseaiclub/phi/internal/util/githubrelease"
 )
 
 func TestParseSpec(t *testing.T) {
@@ -64,7 +72,7 @@ func TestDiscoverIgnoresSubdirWithoutManifest(t *testing.T) {
 	assert.Empty(t, warns)
 }
 
-func TestInstallClonesAndValidates(t *testing.T) {
+func TestInstallClonesWhenReleaseUnavailable(t *testing.T) {
 	dir := t.TempDir()
 	spec := extension.Spec{Owner: "alice", Repo: "greet", Ref: "v1"}
 	var sawArgs []string
@@ -72,6 +80,9 @@ func TestInstallClonesAndValidates(t *testing.T) {
 		Dir:  dir,
 		Spec: spec,
 		Git:  "git",
+		FetchRelease: func(context.Context, string, string) (githubrelease.Release, error) {
+			return githubrelease.Release{}, fmt.Errorf("no published release")
+		},
 		RunGit: func(_ context.Context, gitBin string, args ...string) error {
 			assert.Equal(t, "git", gitBin)
 			sawArgs = append([]string{}, args...)
@@ -97,12 +108,71 @@ func TestInstallClonesAndValidates(t *testing.T) {
 	assert.Equal(t, "greet", found[0].ID)
 }
 
+func TestInstallFromReleaseArchive(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("tar.gz release path covered on unix CI")
+	}
+	dir := t.TempDir()
+	assetName := fmt.Sprintf("greet_1.2.3_%s_%s.tar.gz", runtime.GOOS, runtime.GOARCH)
+	archivePath := filepath.Join(t.TempDir(), assetName)
+	require.NoError(t, writePluginTarGz(archivePath, map[string]string{
+		"phi.yaml": "name: greet\nexec: ./greet\n",
+		"greet":    "#!/bin/true\n",
+	}))
+	sum := mustSHA256(t, archivePath)
+	sumsBody := sum + "  " + assetName + "\n"
+	sumsName := "checksums_1.2.3.txt"
+
+	files := map[string]string{
+		assetName: string(mustRead(t, archivePath)),
+		sumsName:  sumsBody,
+	}
+
+	err := extension.Install(t.Context(), extension.InstallOptions{
+		Dir:  dir,
+		Spec: extension.Spec{Owner: "alice", Repo: "greet", Ref: "v1.2.3"},
+		FetchRelease: func(_ context.Context, ownerRepo, ref string) (githubrelease.Release, error) {
+			assert.Equal(t, "alice/greet", ownerRepo)
+			assert.Equal(t, "v1.2.3", ref)
+			return githubrelease.Release{
+				TagName: "v1.2.3",
+				HTMLURL: "https://github.com/alice/greet/releases/tag/v1.2.3",
+				Assets: []githubrelease.Asset{
+					{Name: assetName, BrowserDownloadURL: "https://example.test/" + assetName},
+					{Name: sumsName, BrowserDownloadURL: "https://example.test/" + sumsName},
+				},
+			}, nil
+		},
+		DownloadFile: func(_ context.Context, url, dest string) error {
+			name := filepath.Base(url)
+			body, ok := files[name]
+			require.True(t, ok, "unexpected download %s", url)
+			require.NoError(t, os.MkdirAll(filepath.Dir(dest), 0o755))
+			return os.WriteFile(dest, []byte(body), 0o644)
+		},
+		RunGit: func(context.Context, string, ...string) error {
+			t.Fatal("git should not run when release succeeds")
+			return nil
+		},
+	})
+	require.NoError(t, err)
+
+	found, _, err := extension.Discover(dir, "")
+	require.NoError(t, err)
+	require.Len(t, found, 1)
+	assert.Equal(t, "greet", found[0].ID)
+	assert.FileExists(t, filepath.Join(dir, "greet", "greet"))
+}
+
 func TestInstallRejectsMissingEntry(t *testing.T) {
 	dir := t.TempDir()
 	err := extension.Install(t.Context(), extension.InstallOptions{
 		Dir:  dir,
 		Spec: extension.Spec{Owner: "alice", Repo: "empty"},
 		Git:  "git",
+		FetchRelease: func(context.Context, string, string) (githubrelease.Release, error) {
+			return githubrelease.Release{}, fmt.Errorf("no release")
+		},
 		RunGit: func(_ context.Context, _ string, args ...string) error {
 			dest := args[len(args)-1]
 			return os.MkdirAll(dest, 0o755)
@@ -122,6 +192,10 @@ func TestInstallRejectsExisting(t *testing.T) {
 		Dir:  dir,
 		Spec: extension.Spec{Owner: "alice", Repo: "greet"},
 		Git:  "git",
+		FetchRelease: func(context.Context, string, string) (githubrelease.Release, error) {
+			t.Fatal("release should not be queried when dest exists")
+			return githubrelease.Release{}, nil
+		},
 		RunGit: func(context.Context, string, ...string) error {
 			t.Fatal("git should not run")
 			return nil
@@ -129,4 +203,44 @@ func TestInstallRejectsExisting(t *testing.T) {
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "already exists")
+}
+
+func writePluginTarGz(path string, files map[string]string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	gz := gzip.NewWriter(f)
+	defer gz.Close()
+	tw := tar.NewWriter(gz)
+	defer tw.Close()
+	for name, body := range files {
+		hdr := &tar.Header{
+			Name: name,
+			Mode: 0o755,
+			Size: int64(len(body)),
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(tw, body); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func mustRead(t *testing.T, path string) []byte {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	require.NoError(t, err)
+	return b
+}
+
+func mustSHA256(t *testing.T, path string) string {
+	t.Helper()
+	b := mustRead(t, path)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
 }

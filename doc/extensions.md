@@ -252,10 +252,23 @@ Reload: **Ctrl+K → extensions → reload**.
 
 ```bash
 phi plugin install alice/greet
+phi plugin install alice/greet@v1.2.3
 ```
 
-The repo must ship `phi.yaml` **and** the compiled `exec` binary (or a
-release asset layout that includes it). Source-only yaegi repos no longer load.
+Install prefers a **GitHub Release** asset for the current OS/arch (same
+naming as `phi update`):
+
+```text
+{repo}_{version}_{goos}_{goarch}.tar.gz   # .zip on Windows
+```
+
+Example: `greet_1.2.3_darwin_arm64.tar.gz`. The archive must contain
+`phi.yaml` and the compiled `exec` binary (optionally nested one directory
+deep). If a `checksums_{version}.txt` asset is present, SHA-256 is verified.
+
+When no matching release asset exists, install falls back to a shallow
+`git clone` — the cloned tree must already include the binary (source-only
+repos will fail). Source-only yaegi repos no longer load.
 
 ## Lifecycle (process)
 
