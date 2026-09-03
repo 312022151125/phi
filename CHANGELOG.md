@@ -10,6 +10,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Extension tools can set `DetailFromArgs` (Go) / `detail_from_args` (Rust) so the TUI shows a one-line summary instead of raw JSON args before execution.
+
 ### Changed
 
 ### Deprecated

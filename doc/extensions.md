@@ -76,12 +76,23 @@ go get github.com/pulseaiclub/phi/ext@v0.19.0
 Slow tools (HTTP fetch, long builds, …) should set `TimeoutSec` — the host’s
 default RPC wait is **30s**. Values are clamped to 1–3600.
 
+Set `DetailFromArgs` so the TUI tool row shows a one-line summary (path, URL, …)
+instead of raw JSON while the tool is in progress. The host RPCs the extension
+with a short default timeout (not `TimeoutSec`).
+
 ```go
 m.RegisterTool(ext.Tool{
 	Name:        "fetch",
 	Description: "HTTP GET",
 	TimeoutSec:  120, // host waits up to 2m for this tool
 	Parameters:  map[string]any{"type": "object", /* … */},
+	DetailFromArgs: func(input json.RawMessage) string {
+		var in struct {
+			URL string `json:"url"`
+		}
+		_ = json.Unmarshal(input, &in)
+		return in.URL // TUI row shows this instead of raw JSON
+	},
 	Execute: func(ctx context.Context, args json.RawMessage) (ext.ToolResult, error) {
 		// …
 		return ext.ToolResult{}, nil
@@ -201,14 +212,16 @@ fn main() -> Result<(), phi::Error> {
 }
 ```
 
-Slow tools should chain `.timeout_sec(n)` (host default RPC wait is 30s; clamped to 1–3600):
+Slow tools should chain `.timeout_sec(n)` (host default RPC wait is 30s; clamped to 1–3600).
+Chain `.detail_from_args(|args| …)` so the TUI shows a one-line summary instead of raw JSON:
 
 ```rust,no_run
 m.register_tool(
     phi::Tool::new("fetch", "HTTP GET", phi::Schema::object(), |_args| {
         Ok(phi::ToolResult { content: "…".into(), ..Default::default() })
     })
-    .timeout_sec(120),
+    .timeout_sec(120)
+    .detail_from_args(|args| String::from_utf8_lossy(args).into_owned()),
 );
 ```
 

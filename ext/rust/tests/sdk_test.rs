@@ -239,6 +239,22 @@ fn full_extension_confirm_tool_and_submit() {
     assert_eq!(tr.content, r#"echo: {"text":"hi"}"#);
     assert!(tr.error.is_empty());
 
+    // DetailFromArgs RPC (same invoke body, lighter reply).
+    h.write(
+        pxb::TYPE_TOOL_DETAIL_INVOKE,
+        pxb::FLAG_HAS_ID,
+        10,
+        &pxb::encode_tool_invoke(&pxb::ToolInvoke {
+            name: "echo".into(),
+            args: br#"{"text":"hi"}"#.to_vec(),
+        }),
+    );
+    let f = h.read();
+    assert_eq!(f.header.typ, pxb::TYPE_TOOL_DETAIL_RESULT);
+    assert_eq!(f.header.id, 10);
+    let detail = pxb::decode_tool_detail_result(&f.body).unwrap();
+    assert_eq!(detail.detail, r#"{"text":"hi"}"#);
+
     h.shutdown();
 }
 
