@@ -26,8 +26,9 @@ const (
 	fAckSessionID  uint16 = 4
 	fAckExtDir     uint16 = 5
 
-	fRegCmdName uint16 = 1
-	fRegCmdDesc uint16 = 2
+	fRegCmdName      uint16 = 1
+	fRegCmdDesc      uint16 = 2
+	fRegCmdNeedsArgs uint16 = 3 // slash picker fills composer instead of auto-submit
 
 	fRegToolName       uint16 = 1
 	fRegToolDesc       uint16 = 2
@@ -208,12 +209,19 @@ func DecodeHelloAck(b []byte) (HelloAck, error) {
 type RegisterCommand struct {
 	Name        string
 	Description string
+	// NeedsArgs means the host should leave "/name " in the composer when
+	// the user accepts the slash picker or submits the bare command, so they
+	// can type arguments. false omits the wire field (backward compatible).
+	NeedsArgs bool
 }
 
 func EncodeRegisterCommand(r RegisterCommand) []byte {
 	var fw FieldWriter
 	fw.PutString(fRegCmdName, r.Name)
 	fw.PutString(fRegCmdDesc, r.Description)
+	if r.NeedsArgs {
+		fw.PutBool(fRegCmdNeedsArgs, true)
+	}
 	return fw.Bytes()
 }
 
@@ -228,6 +236,10 @@ func DecodeRegisterCommand(b []byte) (RegisterCommand, error) {
 		case fRegCmdDesc:
 			s, err := takeString(kind, fr)
 			r.Description = s
+			return err
+		case fRegCmdNeedsArgs:
+			v, err := takeU64(kind, fr)
+			r.NeedsArgs = v != 0
 			return err
 		default:
 			return fr.Skip(kind)

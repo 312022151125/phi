@@ -44,6 +44,11 @@ fn main() -> Result<(), phi::Error> {
         // ctx.send_user_message("…");   // enqueue a turn anytime
         Ok(())
     }));
+    // .needs_args() → picker/bare "/plan" fills "/plan " for the user to finish
+    m.register_command(
+        "plan",
+        phi::Command::new("plan mode — /plan on|off|status", |_args, _ctx| Ok(())).needs_args(),
+    );
     m.on_user_input(|_ev| None);   // return Some(UserInputResult { handled: true, .. }) to swallow
     m.on_tool_call(|_ev| None);    // return Some(ToolCallResult { block: true, reason: "…", .. }) to deny
     m.on_tool_result(|_ev| None);  // return Some(ToolResultResult { stop: true, .. }) to end the loop

@@ -114,7 +114,7 @@ func (a *API) CommandEntries() []CommandEntry {
 	cmds := a.Commands()
 	out := make([]CommandEntry, 0, len(cmds))
 	for name, c := range cmds {
-		out = append(out, CommandEntry{Name: name, Description: c.Description})
+		out = append(out, CommandEntry{Name: name, Description: c.Description, NeedsArgs: c.NeedsArgs})
 	}
 	return out
 }

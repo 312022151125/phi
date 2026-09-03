@@ -59,7 +59,7 @@ func (h *ExtCommands) Sync() {
 			if desc == "" {
 				desc = "extension command"
 			}
-			if !h.Registry.registerExt(h.slashCommand(name, desc)) {
+			if !h.Registry.registerExt(h.slashCommand(name, desc, entry.NeedsArgs)) {
 				debuglog.Logf("extension: command %q skipped (name already registered)", name)
 			}
 		}
@@ -71,12 +71,12 @@ func (h *ExtCommands) Sync() {
 	h.Composer.SetPaletteCommands(h.Registry.BuildPalette(ctx))
 }
 
-func (h *ExtCommands) slashCommand(name, desc string) Command {
+func (h *ExtCommands) slashCommand(name, desc string, needsArgs bool) Command {
 	return Command{
 		Name:        name,
 		Description: desc,
 		Slash:       true,
-		Insert:      "/" + name,
+		NeedsArgs:   needsArgs,
 		Run: func(ctx CommandContext) error {
 			if h.running.Load() {
 				ctx.toast("An extension command is already running", toast.ToastWarning, 3*time.Second)

@@ -47,8 +47,12 @@ type Command struct {
 	Description string
 	Slash       bool
 	// Insert is written into the composer on slash-picker accept.
-	// Empty defaults to "/"+Name.
+	// Empty defaults to "/"+Name (or "/"+Name+" " when NeedsArgs).
+	// A trailing space means "fill composer, do not auto-submit".
 	Insert string
+	// NeedsArgs means bare "/name" (picker accept or submit) should leave
+	// Insert in the composer so the user can type arguments.
+	NeedsArgs bool
 
 	// Run handles slash dispatch (and may be unused for palette-only trees).
 	Run func(ctx CommandContext) error
@@ -71,6 +75,23 @@ func NewCommandRegistry() *CommandRegistry {
 	return &CommandRegistry{by: make(map[string]int)}
 }
 
+func finalizeSlashInsert(cmd *Command) {
+	if !cmd.Slash {
+		return
+	}
+	if cmd.Insert == "" {
+		cmd.Insert = "/" + cmd.Name
+		if cmd.NeedsArgs {
+			cmd.Insert += " "
+		}
+	} else if cmd.NeedsArgs && !strings.HasSuffix(cmd.Insert, " ") {
+		cmd.Insert += " "
+	}
+	if strings.HasSuffix(cmd.Insert, " ") {
+		cmd.NeedsArgs = true
+	}
+}
+
 // Register adds cmd. Duplicate names (case-insensitive) replace the prior entry.
 func (r *CommandRegistry) Register(cmd Command) {
 	name := strings.ToLower(strings.TrimSpace(cmd.Name))
@@ -78,9 +99,7 @@ func (r *CommandRegistry) Register(cmd Command) {
 		return
 	}
 	cmd.Name = strings.TrimSpace(cmd.Name)
-	if cmd.Slash && cmd.Insert == "" {
-		cmd.Insert = "/" + cmd.Name
-	}
+	finalizeSlashInsert(&cmd)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -104,9 +123,7 @@ func (r *CommandRegistry) registerExt(cmd Command) bool {
 	}
 	cmd.Name = strings.TrimSpace(cmd.Name)
 	cmd.fromExt = true
-	if cmd.Slash && cmd.Insert == "" {
-		cmd.Insert = "/" + cmd.Name
-	}
+	finalizeSlashInsert(&cmd)
 
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -185,6 +202,24 @@ func (r *CommandRegistry) LookupInsert(name string) string {
 		return ""
 	}
 	return cmd.Insert
+}
+
+// IncompleteSlash reports whether text is a known NeedsArgs slash with no
+// arguments. insert is the composer value to leave for the user to finish.
+func (r *CommandRegistry) IncompleteSlash(text string) (insert string, ok bool) {
+	fields := strings.Fields(text)
+	if len(fields) != 1 {
+		return "", false
+	}
+	name := strings.TrimPrefix(fields[0], "/")
+	if name == "" || name == fields[0] {
+		return "", false
+	}
+	cmd, found := r.lookup(name)
+	if !found || !cmd.Slash || !cmd.NeedsArgs {
+		return "", false
+	}
+	return cmd.Insert, true
 }
 
 // BuildPalette returns Ctrl+K root commands in registration order.

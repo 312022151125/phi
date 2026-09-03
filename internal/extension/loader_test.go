@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	ext "github.com/pulseaiclub/phi/ext/go"
+	"github.com/pulseaiclub/phi/ext/go/pxb"
 	"github.com/pulseaiclub/phi/internal/extension"
 )
 
@@ -242,4 +244,58 @@ func main() {
 	detail, err := proc.CallToolDetail(t.Context(), "ping", json.RawMessage(`{}`))
 	require.NoError(t, err)
 	assert.Equal(t, "ping-detail", detail)
+}
+
+func TestRegisterCommandNeedsArgsPropagates(t *testing.T) {
+	root := t.TempDir()
+	extDir := filepath.Join(root, "plan")
+	src := `package main
+
+import (
+	"github.com/pulseaiclub/phi/ext/go"
+	"github.com/pulseaiclub/phi/ext/go/phi"
+)
+
+func main() {
+	m := phi.New("plan", "0.0.1")
+	m.RegisterCommand("plan", ext.Command{
+		Description: "Enter/exit plan mode — /plan on|off|status",
+		NeedsArgs:   true,
+		Handler: func(args string, ctx *ext.Context) error {
+			return nil
+		},
+	})
+	m.RegisterCommand("hello", ext.Command{
+		Description: "Say hi",
+		Handler: func(args string, ctx *ext.Context) error {
+			return nil
+		},
+	})
+	_ = m.Run()
+}
+`
+	require.NoError(t, extension.Materialize(t.Context(), extDir, "plan", "0.0.1", src))
+	m, err := extension.ReadManifest(extDir)
+	require.NoError(t, err)
+	proc, err := extension.StartProc(t.Context(), m, extDir, t.TempDir(), root, "")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = proc.Close() })
+	cmds := proc.Commands()
+	require.Len(t, cmds, 2)
+	byName := map[string]pxb.RegisterCommand{}
+	for _, c := range cmds {
+		byName[c.Name] = c
+	}
+	assert.True(t, byName["plan"].NeedsArgs)
+	assert.False(t, byName["hello"].NeedsArgs)
+
+	api := ext.NewAPI()
+	proc.BuildAPI(api)
+	entries := api.CommandEntries()
+	entryBy := map[string]ext.CommandEntry{}
+	for _, e := range entries {
+		entryBy[e.Name] = e
+	}
+	assert.True(t, entryBy["plan"].NeedsArgs)
+	assert.False(t, entryBy["hello"].NeedsArgs)
 }

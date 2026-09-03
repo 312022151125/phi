@@ -230,6 +230,15 @@ func (c *ComposerPane) ClearInput() {
 	c.Chat.Cursor = 0
 }
 
+// SetInput replaces the composer text and places the cursor at the end.
+func (c *ComposerPane) SetInput(text string) {
+	if c == nil {
+		return
+	}
+	c.Chat.Value = text
+	c.Chat.Cursor = len(text)
+}
+
 // PendingSkills returns attached skill names awaiting submit.
 func (c *ComposerPane) PendingSkills() []string {
 	if c == nil {
