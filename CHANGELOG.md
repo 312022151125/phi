@@ -10,9 +10,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- Extension tools can set `DetailFromArgs` (Go) / `detail_from_args` (Rust) so the TUI shows a one-line summary instead of raw JSON args before execution.
-- `phi plugin install` prefers a GitHub Release archive for the current OS/arch (`{repo}_{version}_{goos}_{goarch}.tar.gz`, same layout as `phi update`), with optional checksum verification; falls back to shallow git clone when no matching asset exists.
-
 ### Changed
 
 ### Deprecated
@@ -25,6 +22,23 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 <!-- Released section -->
 <!-- Don't change this section unless doing release -->
+
+## [0.21.0] - 2026-09-03
+
+### Added
+
+- Extension tools can set `DetailFromArgs` (Go) / `detail_from_args` (Rust) so the TUI shows a one-line summary instead of raw JSON args before execution.
+- `phi plugin install` prefers a GitHub Release archive for the current OS/arch (`{repo}_{version}_{goos}_{goarch}.tar.gz`, same layout as `phi update`), with optional checksum verification; falls back to shallow git clone when no matching asset exists.
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
 
 ## [0.20.0] - 2026-09-02
 
