@@ -9,8 +9,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/pxb"
+	"github.com/pulseaiclub/phi/ext/go"
+	"github.com/pulseaiclub/phi/ext/go/pxb"
 	"github.com/pulseaiclub/phi/internal/debuglog"
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/tools"

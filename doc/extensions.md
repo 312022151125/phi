@@ -68,10 +68,10 @@ enabled: true          # optional, default true
 Lightweight module (no TUI deps):
 
 ```bash
-go get github.com/pulseaiclub/phi/ext@v0.19.0
+go get github.com/pulseaiclub/phi/ext/go@v0.21.0
 ```
 
-(`scripts/bump.sh` tags both `vX.Y.Z` and `ext/vX.Y.Z`.)
+(`scripts/bump.sh` tags both `vX.Y.Z` and `ext/go/vX.Y.Z`.)
 
 Slow tools (HTTP fetch, long builds, …) should set `TimeoutSec` — the host’s
 default RPC wait is **30s**. Values are clamped to 1–3600.
@@ -104,8 +104,8 @@ m.RegisterTool(ext.Tool{
 package main
 
 import (
-	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/phi"
+	"github.com/pulseaiclub/phi/ext/go"
+	"github.com/pulseaiclub/phi/ext/go/phi"
 )
 
 func main() {
@@ -143,7 +143,7 @@ func main() {
 }
 ```
 
-Requires `import "github.com/pulseaiclub/phi/ext/pxb"` for `SubscribeEvent` payloads.
+Requires `import "github.com/pulseaiclub/phi/ext/go/pxb"` for `SubscribeEvent` payloads.
 
 UI surface today: **toast** (`Notify`), **footer status** (`SetStatus`), **Submit** / **SendUserMessage**,
 **Confirm** / **ConfirmOpts**.
@@ -284,7 +284,7 @@ repos will fail). Source-only yaegi repos no longer load.
 
 | Path | Role |
 |------|------|
-| `ext/go/` (module `github.com/pulseaiclub/phi/ext`) | Shared types (`Tool`, events) |
+| `ext/go/` (module `github.com/pulseaiclub/phi/ext/go`) | Shared types (`Tool`, events) |
 | `ext/go/pxb` | Binary wire protocol |
 | `ext/go/phi` | Go author SDK (`ExtensionAPI.Run`) |
 | `ext/rust` (crate `phi-ext`) | Rust author SDK (`pxb` + `phi` modules, zero deps) |

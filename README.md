@@ -344,20 +344,20 @@ palette's settings → permissions entry toggles session-wide bypass.
 ## Extensions
 
 Extensions are native binaries speaking the **PXB** binary protocol over
-stdin/stdout (author SDKs: Go `github.com/pulseaiclub/phi/ext/phi` and Rust
+stdin/stdout (author SDKs: Go `github.com/pulseaiclub/phi/ext/go/phi` and Rust
 [`ext/rust`](ext/rust), `phi-ext`). They
 subscribe to tool/session events, register LLM tools, and add slash commands.
 
 ```bash
-go get github.com/pulseaiclub/phi/ext@v0.19.0
+go get github.com/pulseaiclub/phi/ext/go@v0.21.0
 ```
 
 ```go
 package main
 
 import (
-	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/phi"
+	"github.com/pulseaiclub/phi/ext/go"
+	"github.com/pulseaiclub/phi/ext/go/phi"
 )
 
 func main() {

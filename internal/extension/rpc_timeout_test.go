@@ -7,7 +7,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/pulseaiclub/phi/ext/pxb"
+	"github.com/pulseaiclub/phi/ext/go/pxb"
 )
 
 func TestRPCWaitDurationDefault(t *testing.T) {

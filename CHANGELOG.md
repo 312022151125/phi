@@ -12,6 +12,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Go author SDK nested module now publishes under `github.com/pulseaiclub/phi/ext/go` (imports `…/ext/go/phi`, `…/ext/go/pxb`; tags `ext/go/vX.Y.Z`), matching its repo location `ext/go/` so proxies can resolve it.
+
 ### Deprecated
 
 ### Removed

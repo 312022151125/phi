@@ -2,7 +2,7 @@ name: Publish Rust crate
 
 # The Rust crate owns the ext/rust/v* tag namespace: crates.io rejects a
 # re-published version, so the crate must bump independently of the Go SDK
-# (which keeps releasing under ext/v*, untouched) and of the phi binaries.
+# (which keeps releasing under ext/go/v*, untouched) and of the phi binaries.
 on:
   push:
     tags:

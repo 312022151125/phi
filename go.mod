@@ -4,7 +4,7 @@ go 1.26.3
 
 require (
 	github.com/alecthomas/chroma/v2 v2.27.0
-	github.com/pulseaiclub/phi/ext v0.21.0
+	github.com/pulseaiclub/phi/ext/go v0.21.0
 	github.com/pulseaiclub/pli v0.1.0
 	github.com/pulseaiclub/xui v0.1.5
 	github.com/stretchr/testify v1.12.1
@@ -17,4 +17,4 @@ require (
 	go.yaml.in/yaml/v3 v3.0.5 // indirect
 )
 
-replace github.com/pulseaiclub/phi/ext => ./ext/go
+replace github.com/pulseaiclub/phi/ext/go => ./ext/go
