@@ -394,6 +394,21 @@ func (p *Proc) CallTool(ctx context.Context, name string, args json.RawMessage) 
 	return ext.ToolResult{Content: tr.Content, Detail: tr.Detail, Output: tr.Output}, nil
 }
 
+// CallToolDetail asks the extension for a one-line TUI detail for raw args.
+// Uses the default RPC budget (not the tool's TimeoutSec); detail must be cheap.
+func (p *Proc) CallToolDetail(ctx context.Context, name string, args json.RawMessage) (string, error) {
+	body := pxb.EncodeToolInvoke(pxb.ToolInvoke{Name: name, Args: args})
+	f, err := p.rpcWait(ctx, pxb.TypeToolDetailInvoke, body, pxb.TypeToolDetailResult, 0)
+	if err != nil {
+		return "", err
+	}
+	tr, err := pxb.DecodeToolDetailResult(f.Body)
+	if err != nil {
+		return "", err
+	}
+	return tr.Detail, nil
+}
+
 // CallCommand runs a slash command.
 func (p *Proc) CallCommand(ctx context.Context, name, args string) (pxb.CommandResponse, error) {
 	body := pxb.EncodeCommandInvoked(pxb.CommandInvoked{Name: name, Args: args})
@@ -523,10 +538,21 @@ func (p *Proc) BuildAPI(api *ext.API) {
 		if len(t.SchemaJSON) > 0 {
 			_ = json.Unmarshal(t.SchemaJSON, &params)
 		}
+		var detailFn func(json.RawMessage) string
+		if t.HasDetail {
+			detailFn = func(args json.RawMessage) string {
+				d, err := p.CallToolDetail(context.Background(), name, args)
+				if err != nil {
+					return ""
+				}
+				return d
+			}
+		}
 		api.RegisterTool(ext.Tool{
-			Name:        name,
-			Description: t.Description,
-			Parameters:  params,
+			Name:           name,
+			Description:    t.Description,
+			Parameters:     params,
+			DetailFromArgs: detailFn,
 			Execute: func(ctx context.Context, args json.RawMessage) (ext.ToolResult, error) {
 				return p.CallTool(ctx, name, args)
 			},

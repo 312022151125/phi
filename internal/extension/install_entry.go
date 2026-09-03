@@ -24,7 +24,7 @@ func findInstallEntry(dir string) (string, error) {
 	}
 	if st, err := os.Stat(execPath); err != nil {
 		return "", fmt.Errorf(
-			"phi.yaml exec %q not found (build the binary before install, or ship it in the repo): %w",
+			"phi.yaml exec %q not found (ship a release archive or include the binary in the repo): %w",
 			m.Exec,
 			err,
 		)

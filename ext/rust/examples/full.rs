@@ -5,20 +5,23 @@ use phi_ext::phi;
 fn main() -> Result<(), phi::Error> {
     let mut m = phi::Extension::new("full", "0.1.0");
 
-    m.register_tool(phi::Tool::new(
-        "echo",
-        "Echo the input back",
-        phi::Schema::object()
-            .property("text", phi::Schema::string())
-            .required(["text"]),
-        |args| {
-            let text = String::from_utf8_lossy(args);
-            Ok(phi::ToolResult {
-                content: format!("echo: {text}"),
-                ..Default::default()
-            })
-        },
-    ));
+    m.register_tool(
+        phi::Tool::new(
+            "echo",
+            "Echo the input back",
+            phi::Schema::object()
+                .property("text", phi::Schema::string())
+                .required(["text"]),
+            |args| {
+                let text = String::from_utf8_lossy(args);
+                Ok(phi::ToolResult {
+                    content: format!("echo: {text}"),
+                    ..Default::default()
+                })
+            },
+        )
+        .detail_from_args(|args| String::from_utf8_lossy(args).into_owned()),
+    );
 
     m.register_command(
         "ask",

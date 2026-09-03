@@ -105,6 +105,30 @@ func TestRegisterToolTimeoutSecRoundTrip(t *testing.T) {
 	old, err := pxb.DecodeRegisterTool(fw.Bytes())
 	require.NoError(t, err)
 	assert.Equal(t, uint32(0), old.TimeoutSec)
+	assert.False(t, old.HasDetail)
+}
+
+func TestRegisterToolHasDetailRoundTrip(t *testing.T) {
+	in := pxb.RegisterTool{
+		Name: "t", Description: "d", SchemaJSON: []byte(`{}`), HasDetail: true,
+	}
+	out, err := pxb.DecodeRegisterTool(pxb.EncodeRegisterTool(in))
+	require.NoError(t, err)
+	assert.True(t, out.HasDetail)
+
+	// False omits the field.
+	raw := pxb.EncodeRegisterTool(pxb.RegisterTool{Name: "x", Description: "d"})
+	var fw pxb.FieldWriter
+	fw.PutString(1, "x")
+	fw.PutString(2, "d")
+	assert.Equal(t, fw.Bytes(), raw)
+}
+
+func TestToolDetailResultRoundTrip(t *testing.T) {
+	in := pxb.ToolDetailResult{Detail: "foo.go"}
+	out, err := pxb.DecodeToolDetailResult(pxb.EncodeToolDetailResult(in))
+	require.NoError(t, err)
+	assert.Equal(t, in.Detail, out.Detail)
 }
 
 func TestUnknownEventCodeMapsEmpty(t *testing.T) {

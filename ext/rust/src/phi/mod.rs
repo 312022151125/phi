@@ -49,13 +49,15 @@ pub struct HostInfo {
 
 /// An LLM-callable tool. `schema` is a typed JSON Schema for parameters
 /// (same role as Go's `Parameters` / Codex's schemars-generated input schema).
-#[allow(clippy::type_complexity)] // execute signature mirrors the Go SDK contract
+#[allow(clippy::type_complexity)] // execute / detail signatures mirror the Go SDK
 pub struct Tool {
     pub name: String,
     pub description: String,
     pub schema: Schema,
     /// Host RPC wait for `execute`, in seconds. `0` = host default (30s).
     pub timeout_sec: u32,
+    /// Optional one-line TUI detail from raw JSON args (before execute).
+    pub detail_from_args: Option<Box<dyn FnMut(&[u8]) -> String>>,
     pub execute: Box<dyn FnMut(&[u8]) -> Result<ToolResult, String>>,
 }
 
@@ -71,6 +73,7 @@ impl Tool {
             description: description.into(),
             schema: schema.into(),
             timeout_sec: 0,
+            detail_from_args: None,
             execute: Box::new(execute),
         }
     }
@@ -78,6 +81,12 @@ impl Tool {
     /// Sets how long the host waits for this tool's result (1–3600; host clamps).
     pub fn timeout_sec(mut self, secs: u32) -> Self {
         self.timeout_sec = secs;
+        self
+    }
+
+    /// Sets a one-line TUI detail formatter for raw JSON arguments.
+    pub fn detail_from_args(mut self, f: impl FnMut(&[u8]) -> String + 'static) -> Self {
+        self.detail_from_args = Some(Box::new(f));
         self
     }
 }
@@ -413,6 +422,7 @@ fn register(wr: &mut Wr, ext: &Extension) -> Result<(), Error> {
             description: tool.description.clone(),
             schema_json: tool.schema.to_json_bytes(),
             timeout_sec: tool.timeout_sec,
+            has_detail: tool.detail_from_args.is_some(),
         });
         pxb::write_frame(wr, pxb::TYPE_REGISTER_TOOL, 0, 0, &body)?;
     }
@@ -464,6 +474,7 @@ fn serve(
                 &mut next_host_id,
             )?,
             pxb::FrameType::ToolInvoke => serve_tool(wr, &f, &mut tools)?,
+            pxb::FrameType::ToolDetailInvoke => serve_tool_detail(wr, &f, &mut tools)?,
             pxb::FrameType::Intercept => serve_intercept(wr, &f, &mut handlers)?,
             pxb::FrameType::Event => {
                 if let Ok(ev) = pxb::decode_event_notify(&f.body) {
@@ -551,6 +562,26 @@ fn serve_tool(wr: &mut Wr, frame: &pxb::Frame, tools: &mut [Tool]) -> Result<(),
     pxb::write_frame(
         wr,
         pxb::TYPE_TOOL_RESULT,
+        frame.header.flags,
+        frame.header.id,
+        &body,
+    )?;
+    Ok(())
+}
+
+/// Returns a one-line TUI detail for raw tool args (or empty when unset/unknown).
+fn serve_tool_detail(wr: &mut Wr, frame: &pxb::Frame, tools: &mut [Tool]) -> Result<(), Error> {
+    let inv = pxb::decode_tool_invoke(&frame.body)?;
+    let detail = tools
+        .iter_mut()
+        .find(|t| t.name == inv.name)
+        .and_then(|t| t.detail_from_args.as_mut())
+        .map(|f| f(&inv.args))
+        .unwrap_or_default();
+    let body = pxb::encode_tool_detail_result(&pxb::ToolDetailResult { detail });
+    pxb::write_frame(
+        wr,
+        pxb::TYPE_TOOL_DETAIL_RESULT,
         frame.header.flags,
         frame.header.id,
         &body,

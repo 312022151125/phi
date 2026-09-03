@@ -149,7 +149,10 @@ type Tool struct {
 	// TimeoutSec is how long the host waits for Execute to finish (RPC).
 	// 0 uses the host default (30s). Values are clamped to 1–3600 by the host.
 	TimeoutSec int
-	Execute    func(ctx context.Context, args json.RawMessage) (ToolResult, error)
+	// DetailFromArgs extracts a one-line TUI detail before Execute runs.
+	// When set, the host RPCs the extension instead of showing raw JSON args.
+	DetailFromArgs func(input json.RawMessage) string
+	Execute        func(ctx context.Context, args json.RawMessage) (ToolResult, error)
 }
 
 // ToolInfo describes a configured tool for GetAllTools.
