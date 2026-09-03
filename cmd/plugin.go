@@ -17,7 +17,13 @@ var (
 		Desc: "manage extensions (install from GitHub)",
 		Long: `Install a PXB extension from a GitHub repo into ~/.phi/extensions/<repo>/.
 
-The repo root must contain phi.yaml and the compiled exec binary it references.
+Prefers a GitHub Release archive for this OS/arch (same layout as phi update):
+
+  {repo}_{version}_{goos}_{goarch}.tar.gz   # .zip on Windows
+
+The archive must contain phi.yaml and the compiled exec binary. If no matching
+release asset exists, falls back to a shallow git clone (repo must already ship
+the binary).
 
 Examples:
   phi plugin install alice/greet
@@ -30,7 +36,7 @@ Security: extension processes run with your full permissions.`,
 	pluginInstallCommand = cli.Command{
 		Name:    "install",
 		ArgsUse: "<github-repo[@tag]>",
-		Desc:    "git clone a GitHub repo into ~/.phi/extensions",
+		Desc:    "install an extension from a GitHub release (git clone fallback)",
 	}
 )
 

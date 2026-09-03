@@ -25,6 +25,7 @@ pub const TYPE_INTERCEPT_RESPONSE: u16 = 8;
 pub const TYPE_SHUTDOWN_ACK: u16 = 9;
 pub const TYPE_NOTIFY: u16 = 10;
 pub const TYPE_HOST_REQUEST: u16 = 11;
+pub const TYPE_TOOL_DETAIL_RESULT: u16 = 12;
 
 pub const TYPE_HELLO_ACK: u16 = 100;
 pub const TYPE_COMMAND_INVOKED: u16 = 101;
@@ -34,6 +35,7 @@ pub const TYPE_INTERCEPT: u16 = 104;
 pub const TYPE_SHUTDOWN: u16 = 105;
 pub const TYPE_HOST_RESULT: u16 = 106;
 pub const TYPE_SESSION_META: u16 = 107;
+pub const TYPE_TOOL_DETAIL_INVOKE: u16 = 108;
 
 /// Flag bits in the header.
 pub const FLAG_HAS_ID: u16 = 1 << 0; // id field is meaningful (RPC correlation)
@@ -59,6 +61,7 @@ pub enum FrameType {
     ShutdownAck,
     Notify,
     HostRequest,
+    ToolDetailResult,
     HelloAck,
     CommandInvoked,
     ToolInvoke,
@@ -67,6 +70,7 @@ pub enum FrameType {
     Shutdown,
     HostResult,
     SessionMeta,
+    ToolDetailInvoke,
     Unknown(u16),
 }
 
@@ -84,6 +88,7 @@ impl FrameType {
             TYPE_SHUTDOWN_ACK => Self::ShutdownAck,
             TYPE_NOTIFY => Self::Notify,
             TYPE_HOST_REQUEST => Self::HostRequest,
+            TYPE_TOOL_DETAIL_RESULT => Self::ToolDetailResult,
             TYPE_HELLO_ACK => Self::HelloAck,
             TYPE_COMMAND_INVOKED => Self::CommandInvoked,
             TYPE_TOOL_INVOKE => Self::ToolInvoke,
@@ -92,6 +97,7 @@ impl FrameType {
             TYPE_SHUTDOWN => Self::Shutdown,
             TYPE_HOST_RESULT => Self::HostResult,
             TYPE_SESSION_META => Self::SessionMeta,
+            TYPE_TOOL_DETAIL_INVOKE => Self::ToolDetailInvoke,
             other => Self::Unknown(other),
         }
     }
@@ -109,6 +115,7 @@ impl FrameType {
             Self::ShutdownAck => TYPE_SHUTDOWN_ACK,
             Self::Notify => TYPE_NOTIFY,
             Self::HostRequest => TYPE_HOST_REQUEST,
+            Self::ToolDetailResult => TYPE_TOOL_DETAIL_RESULT,
             Self::HelloAck => TYPE_HELLO_ACK,
             Self::CommandInvoked => TYPE_COMMAND_INVOKED,
             Self::ToolInvoke => TYPE_TOOL_INVOKE,
@@ -117,6 +124,7 @@ impl FrameType {
             Self::Shutdown => TYPE_SHUTDOWN,
             Self::HostResult => TYPE_HOST_RESULT,
             Self::SessionMeta => TYPE_SESSION_META,
+            Self::ToolDetailInvoke => TYPE_TOOL_DETAIL_INVOKE,
             Self::Unknown(v) => v,
         }
     }

@@ -6,6 +6,7 @@ import (
 	"github.com/pulseaiclub/xui"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chrome"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 )
 
@@ -142,10 +143,10 @@ func (t *Toast) Draw(ctx components.DrawContext) components.Surface {
 func toastChrome(kind ToastKind, th components.Theme) (border xui.Style, icon string) {
 	switch kind {
 	case ToastError:
-		return th.Destructive, "✕"
+		return th.Destructive, chrome.Err
 	case ToastWarning:
 		return th.Warning, ""
 	default:
-		return th.Success, "✓"
+		return th.Success, chrome.Ok
 	}
 }

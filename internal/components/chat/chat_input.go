@@ -691,7 +691,7 @@ func (c *ChatInput) paintPendingSkills(s *components.Surface, x, y, width int, m
 	}
 	labelSt := th.Muted
 	labelSt.Dim = true
-	nameSt := th.Success
+	nameSt := th.IdentityOrSuccess()
 	nameSt.Bold = false
 	nameSt.Underline = true
 

@@ -6,6 +6,7 @@ import (
 	"github.com/pulseaiclub/xui"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chrome"
 	"github.com/pulseaiclub/phi/internal/components/status"
 )
 
@@ -64,11 +65,11 @@ func (t *ThinkingBlock) Draw(ctx components.DrawContext) components.Surface {
 		w = 40
 	}
 
-	icon := "✓"
+	icon := chrome.Ok
 	iconSt := th.Success
 	labelSt := th.Muted
 	if t.Streaming {
-		icon = "..."
+		icon = chrome.Busy
 		iconSt = th.ToolName
 		if t.Spinner != nil {
 			icon = t.Spinner.Glyph()
@@ -76,7 +77,7 @@ func (t *ThinkingBlock) Draw(ctx components.DrawContext) components.Surface {
 		labelSt = th.ToolName
 	}
 	if t.Interrupted {
-		icon = "⊘"
+		icon = chrome.Stop
 		iconSt = th.Warning
 		labelSt = th.Warning
 	}
@@ -88,11 +89,7 @@ func (t *ThinkingBlock) Draw(ctx components.DrawContext) components.Surface {
 	if t.Interrupted {
 		spans = append(spans, components.Span{Text: " (interrupted)", Style: th.Warning})
 	}
-	arrow := " ▶"
-	if t.Expanded {
-		arrow = " ▼"
-	}
-	spans = append(spans, components.Span{Text: arrow, Style: th.Muted})
+	spans = append(spans, components.Span{Text: chrome.ExpandArrow(t.Expanded), Style: th.Muted})
 
 	titleLines := components.WrapSpans(spans, w, ctx.Method)
 	t.titleH = len(titleLines)
@@ -102,7 +99,11 @@ func (t *ThinkingBlock) Draw(ctx components.DrawContext) components.Surface {
 		body := th.Muted
 		body.Italic = true
 		body.Dim = true
-		bodyLines = components.WrapSpans([]components.Span{{Text: t.Text, Style: body}}, w, ctx.Method)
+		bodyW := w
+		if bodyW > 2 {
+			bodyW -= 2
+		}
+		bodyLines = components.WrapSpans([]components.Span{{Text: t.Text, Style: body}}, bodyW, ctx.Method)
 	}
 
 	h := len(titleLines) + len(bodyLines)
@@ -114,7 +115,7 @@ func (t *ThinkingBlock) Draw(ctx components.DrawContext) components.Surface {
 		y++
 	}
 	for _, line := range bodyLines {
-		components.PaintSpans(&s, 0, y, line, ctx.Method)
+		components.PaintSpans(&s, 2, y, line, ctx.Method)
 		y++
 	}
 	return s

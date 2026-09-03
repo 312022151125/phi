@@ -15,22 +15,22 @@ against `ext/go/pxb/testdata/*.bin` (`tests/pxb_test.rs`).
 | Path | Role |
 |------|------|
 | `src/pxb/` | Wire protocol: frames (`codec`), tagged fields (`fields`), message codecs (`msg`), types/events (`types`) |
-| `src/phi/` | Author SDK: `Extension`, `Tool`, `Command`, `Context` |
+| `src/phi/` | Author SDK: `Extension`, `Tool`, `Command`, `Context`, `Schema` |
 | `examples/` | Runnable extensions: `hello` (commands, intercepts, subscribe), `full` (tool, confirm, submit) |
 | `tests/` | Golden byte-compat + end-to-end fake-host tests |
 
 ## Authoring
 
-Add the crate from the repo. Until the first release tag that contains
-`ext/rust` exists, track `main`; once a release is cut, pin the
-corresponding `ext/vX.Y.Z` tag instead:
+The crate publishes to crates.io; release tags are `ext/rust/vX.Y.Z`. Until
+the first publish, depend on it from the repo (`main`); after a release, use
+the published version:
 
 ```toml
 [dependencies]
 # pre-release: tracks the latest main
 phi-ext = { git = "https://github.com/pulseaiclub/phi", branch = "main" }
-# release: pin the ext tag (first one containing ext/rust)
-# phi-ext = { git = "https://github.com/pulseaiclub/phi", tag = "ext/v0.19.2" }
+# release: published crate version (tagged ext/rust/vX.Y.Z)
+# phi-ext = "0.1.0"
 ```
 
 ```rust,no_run
@@ -67,24 +67,9 @@ cp target/release/examples/hello phi.yaml ~/.phi/extensions/hello/
 
 Reload in the TUI: **Ctrl+K → extensions → reload**.
 
-## Performance
-
-Codec throughput on Apple Silicon (release build, single-threaded):
-
-| Implementation | Hello payload encode+decode | Frame write+read (in-memory) | Allocs |
-|---|---|---|---|
-| Rust PXB (`phi-ext`) | ~0.12 µs | ~0.06 µs | — |
-| Go PXB (`ext/go/pxb`) | ~0.11 µs | ~0.05 µs | 3 / op |
-| Go JSON lines (marshal+unmarshal) | ~1.2 µs | — | 15 / op |
-
-The ~10× gap over JSON lines comes from the protocol itself — fixed binary
-header + tagged fields, no JSON parsing or reflection (see
-`doc/extensions.md`, "Why not JSON lines?"). The language choice is within
-noise: Rust and Go are at parity on identical codec work.
-
-Codec CPU is not the bottleneck anyway: an extension's latency is dominated
-by process spawn (~ms) and pipe round trips (~µs), identical for both SDKs.
-Re-run the probe with `cargo run --release --example bench`.
+PXB codec numbers (vs Go / JSON lines) live in the root
+[README](../../README.md#extensions). Re-run the probe with
+`cargo run --release --example bench`.
 
 ## Development
 

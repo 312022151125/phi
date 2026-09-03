@@ -41,7 +41,7 @@ func (assistantBlock *AssistantBlock) Draw(ctx components.DrawContext) component
 		if len(spans) > 0 {
 			spans = append(spans, components.Span{Text: "\n", Style: th.Muted})
 		}
-		spans = append(spans, components.Span{Text: "cancelled", Style: th.Muted})
+		spans = append(spans, components.Span{Text: "(cancelled)", Style: th.Muted})
 	}
 	return components.PaintRichLines(w, components.WrapSpans(spans, w, ctx.Method), ctx.Method, assistantBlock)
 }

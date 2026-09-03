@@ -97,23 +97,6 @@ func registerBuiltinCommands(r *CommandRegistry) {
 			return SkillsCommand(ctx.SkillPath, ctx.AddSkill)
 		},
 	})
-	r.Register(Command{
-		Name: "clipboard-copy-last",
-		PaletteRoot: func(ctx CommandContext) palette.PaletteCommand {
-			return palette.PaletteCommand{
-				ID:       "clipboard-copy-last",
-				Noun:     "clipboard",
-				Verb:     "copy last message",
-				Keywords: []string{"yank", "selection"},
-				Shortcut: "Ctrl+Shift+C",
-				Run: func() {
-					if ctx.CopyLastMessage != nil {
-						ctx.CopyLastMessage()
-					}
-				},
-			}
-		},
-	})
 }
 
 // modelSettingsCommand returns settings → model submenu.

@@ -282,6 +282,7 @@ func toolFromDef(def ext.Tool) tools.Tool {
 			Description: def.Description,
 			Params:      params,
 		},
+		DetailFromArgs: def.DetailFromArgs,
 		Run: func(ctx context.Context, input json.RawMessage) (tools.Result, error) {
 			res, err := exec(ctx, input)
 			if err != nil {

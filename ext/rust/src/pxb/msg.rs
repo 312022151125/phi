@@ -26,9 +26,13 @@ const F_REG_CMD_DESC: u16 = 2;
 const F_REG_TOOL_NAME: u16 = 1;
 const F_REG_TOOL_DESC: u16 = 2;
 const F_REG_TOOL_SCHEMA: u16 = 3;
+const F_REG_TOOL_TIMEOUT_SEC: u16 = 4;
+const F_REG_TOOL_HAS_DETAIL: u16 = 5;
 
 const F_SUB_EVENTS: u16 = 1;
 const F_SUB_INTERCEPT: u16 = 2;
+
+const F_TOOL_DETAIL_RESULT: u16 = 1;
 
 const F_CMD_INV_NAME: u16 = 1;
 const F_CMD_INV_ARGS: u16 = 2;
@@ -223,6 +227,12 @@ pub struct RegisterTool {
     pub name: String,
     pub description: String,
     pub schema_json: Vec<u8>,
+    /// Host RPC wait for this tool's result, in seconds. `0` omits the field
+    /// (host default). Host clamps to a maximum.
+    pub timeout_sec: u32,
+    /// Extension can answer [`TYPE_TOOL_DETAIL_INVOKE`](crate::pxb::TYPE_TOOL_DETAIL_INVOKE).
+    /// `false` omits the wire field (backward compatible).
+    pub has_detail: bool,
 }
 
 pub fn encode_register_tool(r: &RegisterTool) -> Vec<u8> {
@@ -230,6 +240,12 @@ pub fn encode_register_tool(r: &RegisterTool) -> Vec<u8> {
     fw.put_string(F_REG_TOOL_NAME, &r.name);
     fw.put_string(F_REG_TOOL_DESC, &r.description);
     fw.put_bytes(F_REG_TOOL_SCHEMA, &r.schema_json);
+    if r.timeout_sec > 0 {
+        fw.put_u32(F_REG_TOOL_TIMEOUT_SEC, r.timeout_sec);
+    }
+    if r.has_detail {
+        fw.put_bool(F_REG_TOOL_HAS_DETAIL, true);
+    }
     fw.into_vec()
 }
 
@@ -240,6 +256,32 @@ pub fn decode_register_tool(b: &[u8]) -> Result<RegisterTool, Error> {
             F_REG_TOOL_NAME => r.name = take_string(kind, fr)?,
             F_REG_TOOL_DESC => r.description = take_string(kind, fr)?,
             F_REG_TOOL_SCHEMA => r.schema_json = take_bytes(kind, fr)?.to_vec(),
+            F_REG_TOOL_TIMEOUT_SEC => r.timeout_sec = take_u64(kind, fr)? as u32,
+            F_REG_TOOL_HAS_DETAIL => r.has_detail = take_u64(kind, fr)? != 0,
+            _ => fr.skip(kind)?,
+        }
+        Ok(())
+    })?;
+    Ok(r)
+}
+
+/// Ext→host reply for a detail-from-args request (body of tool invoke is reused).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ToolDetailResult {
+    pub detail: String,
+}
+
+pub fn encode_tool_detail_result(r: &ToolDetailResult) -> Vec<u8> {
+    let mut fw = FieldWriter::new();
+    fw.put_string(F_TOOL_DETAIL_RESULT, &r.detail);
+    fw.into_vec()
+}
+
+pub fn decode_tool_detail_result(b: &[u8]) -> Result<ToolDetailResult, Error> {
+    let mut r = ToolDetailResult::default();
+    walk_fields(b, |tag, kind, fr| {
+        match tag {
+            F_TOOL_DETAIL_RESULT => r.detail = take_string(kind, fr)?,
             _ => fr.skip(kind)?,
         }
         Ok(())
@@ -739,8 +781,16 @@ mod tests {
                     name: "t".into(),
                     description: "d".into(),
                     schema_json: br#"{"type":"object"}"#.to_vec(),
+                    timeout_sec: 120,
+                    has_detail: true,
                 }),
                 |b| Ok(encode_register_tool(&decode_register_tool(b)?)),
+            ),
+            (
+                encode_tool_detail_result(&ToolDetailResult {
+                    detail: "path/to/file".into(),
+                }),
+                |b| Ok(encode_tool_detail_result(&decode_tool_detail_result(b)?)),
             ),
             (
                 encode_subscribe(&Subscribe {

@@ -18,10 +18,50 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Publish Rust crate workflow: write `exists` to `$GITHUB_OUTPUT` so `cargo publish` actually runs when the version is new (previously the step was always skipped).
+
 ### Security
 
 <!-- Released section -->
 <!-- Don't change this section unless doing release -->
+
+## [0.21.0] - 2026-09-03
+
+### Added
+
+- Extension tools can set `DetailFromArgs` (Go) / `detail_from_args` (Rust) so the TUI shows a one-line summary instead of raw JSON args before execution.
+- `phi plugin install` prefers a GitHub Release archive for the current OS/arch (`{repo}_{version}_{goos}_{goarch}.tar.gz`, same layout as `phi update`), with optional checksum verification; falls back to shallow git clone when no matching asset exists.
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.20.0] - 2026-09-02
+
+### Added
+
+- Extension tools can set `TimeoutSec` (Go SDK) / `timeout_sec` (Rust SDK) so the host waits longer than the default 30s RPC budget for slow tools (e.g. HTTP fetch). Clamped to 1–3600s.
+- Rust SDK: typed `phi::Schema` builder for tool parameters (replaces raw `Vec<u8>`), staying zero-dep instead of Codex-style `schemars`.
+
+### Changed
+
+- TUI chrome consistency: shared glyph/hint dialect (`internal/components/chrome`), unified ask/continue/confirm option rows, `Theme.Identity` for model/user/bash chrome (separate from Success status), and aligned transcript expand indent / status suffixes. Permission/continue/confirm overlays navigate with arrows only (no Alt+N accelerators). Sessions list picker uses a wider panel (~90% / up to 112 cols) so previews truncate less.
+
+### Deprecated
+
+### Removed
+
+- Palette command `clipboard copy last message` (`Ctrl+Shift+C`); the key chord still copies selection / last message via the transcript handler.
+
+### Fixed
+
+### Security
 
 ## [0.19.2] - 2026-09-02
 

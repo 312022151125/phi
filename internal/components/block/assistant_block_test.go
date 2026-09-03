@@ -90,9 +90,9 @@ func TestAssistantBlockDraw(t *testing.T) {
 			width:         60,
 			wantWidth:     60,
 			wantMinHeight: 2,
-			wantContains:  []string{"partial", "cancelled"},
+			wantContains:  []string{"partial", "(cancelled)"},
 			wantCells: []cellCheck{
-				{x: 0, y: 1, style: th.Muted}, // "cancelled" row
+				{x: 0, y: 1, style: th.Muted}, // "(cancelled)" row
 			},
 		},
 		{

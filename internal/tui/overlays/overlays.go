@@ -7,6 +7,7 @@ import (
 	"github.com/pulseaiclub/xui"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chrome"
 	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/permission"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
@@ -268,21 +269,12 @@ func (o *Overlays) handlePermissionKey(ctx *components.EventContext, e xui.KeyEv
 		return o.handlePermissionFeedbackKey(ctx, e)
 	}
 
-	if e.Mods.Has(xui.ModAlt) && e.Code == xui.KeyRune && e.Rune >= '1' && e.Rune <= '9' {
-		idx := int(e.Rune - '1')
-		if idx < len(askOptionLabels) {
-			o.acceptPermissionOption(askOption(idx))
-			ctx.ConsumeAndRedraw()
-			return true
-		}
-	}
-
 	switch e.Code {
 	case xui.KeyEscape:
 		o.resolvePermission(controller.AskReply{})
 		ctx.ConsumeAndRedraw()
 		return true
-	case xui.KeyUp:
+	case xui.KeyUp, xui.KeyLeft:
 		if st.selected > 0 {
 			st.selected--
 		} else {
@@ -290,7 +282,7 @@ func (o *Overlays) handlePermissionKey(ctx *components.EventContext, e xui.KeyEv
 		}
 		ctx.ConsumeAndRedraw()
 		return true
-	case xui.KeyDown, xui.KeyTab:
+	case xui.KeyDown, xui.KeyRight, xui.KeyTab:
 		st.selected = (st.selected + 1) % len(askOptionLabels)
 		ctx.ConsumeAndRedraw()
 		return true
@@ -304,13 +296,13 @@ func (o *Overlays) handlePermissionKey(ctx *components.EventContext, e xui.KeyEv
 			return true
 		}
 		switch e.Rune {
-		case 'k', 'K':
+		case 'k', 'K', 'h', 'H':
 			if st.selected > 0 {
 				st.selected--
 			}
 			ctx.ConsumeAndRedraw()
 			return true
-		case 'j', 'J':
+		case 'j', 'J', 'l', 'L':
 			st.selected = (st.selected + 1) % len(askOptionLabels)
 			ctx.ConsumeAndRedraw()
 			return true
@@ -398,19 +390,12 @@ func (o *Overlays) handleContinueKey(ctx *components.EventContext, e xui.KeyEven
 		return false
 	}
 
-	if e.Mods.Has(xui.ModAlt) && e.Code == xui.KeyRune && e.Rune >= '1' && e.Rune <= '2' {
-		idx := int(e.Rune - '1')
-		o.acceptContinueOption(idx)
-		ctx.ConsumeAndRedraw()
-		return true
-	}
-
 	switch e.Code {
 	case xui.KeyEscape:
 		o.resolveContinue(controller.ContinueReply{})
 		ctx.ConsumeAndRedraw()
 		return true
-	case xui.KeyUp:
+	case xui.KeyUp, xui.KeyLeft:
 		if st.selected > 0 {
 			st.selected--
 		} else {
@@ -418,7 +403,7 @@ func (o *Overlays) handleContinueKey(ctx *components.EventContext, e xui.KeyEven
 		}
 		ctx.ConsumeAndRedraw()
 		return true
-	case xui.KeyDown, xui.KeyTab:
+	case xui.KeyDown, xui.KeyRight, xui.KeyTab:
 		st.selected = (st.selected + 1) % len(continueOptionLabels)
 		ctx.ConsumeAndRedraw()
 		return true
@@ -432,13 +417,13 @@ func (o *Overlays) handleContinueKey(ctx *components.EventContext, e xui.KeyEven
 			return true
 		}
 		switch e.Rune {
-		case 'k', 'K':
+		case 'k', 'K', 'h', 'H':
 			if st.selected > 0 {
 				st.selected--
 			}
 			ctx.ConsumeAndRedraw()
 			return true
-		case 'j', 'J':
+		case 'j', 'J', 'l', 'L':
 			st.selected = (st.selected + 1) % len(continueOptionLabels)
 			ctx.ConsumeAndRedraw()
 			return true
@@ -474,10 +459,7 @@ func (o *Overlays) drawPermissionAsk(ctx components.DrawContext, width, height i
 		innerW = width
 	}
 
-	primary := th.Success
-	if th.ToolName.Fg.Kind != 0 {
-		primary = th.ToolName
-	}
+	primary := chrome.DecisionPrimary(th)
 
 	var body []components.RichLine
 	add := func(spans ...components.Span) {
@@ -517,11 +499,7 @@ func (o *Overlays) drawContinueAsk(ctx components.DrawContext, width, height int
 		innerW = width
 	}
 
-	warn := th.Warning
-	primary := th.Success
-	if th.ToolName.Fg.Kind != 0 {
-		primary = th.ToolName
-	}
+	primary := chrome.DecisionPrimary(th)
 
 	var body []components.RichLine
 	body = append(body, components.WrapSpans([]components.Span{
@@ -533,30 +511,13 @@ func (o *Overlays) drawContinueAsk(ctx components.DrawContext, width, height int
 	body = append(body, components.RichLine{})
 
 	for i, label := range continueOptionLabels {
-		sel := i == st.selected
-		arrow := " "
-		dot := "○"
-		labelSt := th.Foreground
-		dotSt := th.Muted
-		if sel {
-			arrow = "▸"
-			dot = "●"
-			labelSt = xui.Style{Bold: true, Fg: primary.Fg}
-			dotSt = primary
-		}
-		shortcut := fmt.Sprintf(" [Alt+%d]", i+1)
-		body = append(body, components.WrapSpans([]components.Span{
-			{Text: arrow, Style: primary},
-			{Text: dot, Style: dotSt},
-			{Text: " " + label, Style: labelSt},
-			{Text: shortcut, Style: th.Muted},
-		}, innerW, ctx.Method)...)
+		body = append(body, chrome.OptionLine(th, primary, label, i == st.selected, innerW, ctx.Method)...)
 	}
 	body = append(body, components.WrapSpans([]components.Span{
-		{Text: "↑↓ navigate • Enter select • Esc stop", Style: th.Muted},
+		{Text: chrome.AskHint("↑↓ move", "select", "stop"), Style: th.Muted},
 	}, innerW, ctx.Method)...)
 
-	return paintAskPanel(body, width, height, warn, ctx.Method)
+	return paintAskPanel(body, width, height, th.Warning, ctx.Method)
 }
 
 type askOption int
@@ -685,6 +646,7 @@ func (st *permAskState) detailLines(th components.Theme, innerW int, method xui.
 	if st.detail == "" {
 		return nil
 	}
+	id := th.IdentityOrSuccess()
 	lines := strings.Split(st.detail, "\n")
 	out := make([]components.RichLine, 0, len(lines))
 	for i, line := range lines {
@@ -692,7 +654,7 @@ func (st *permAskState) detailLines(th components.Theme, innerW int, method xui.
 		switch {
 		case st.req.Action == permission.ActionBash && i == 0:
 			spans = []components.Span{
-				{Text: "$ ", Style: xui.Style{Bold: true, Fg: th.Success.Fg}},
+				{Text: chrome.BashPrompt, Style: xui.Style{Bold: true, Fg: id.Fg}},
 				{Text: line, Style: th.Foreground},
 			}
 		case st.req.Action == permission.ActionBash:
@@ -713,23 +675,10 @@ func (st *permAskState) optionLines(
 ) []components.RichLine {
 	out := make([]components.RichLine, 0, len(askOptionLabels)+1)
 	for i, label := range askOptionLabels {
-		sel := i == st.selected
-		arrow, dot := " ", "○"
-		labelSt, dotSt := th.Foreground, th.Muted
-		if sel {
-			arrow, dot = "▸", "●"
-			labelSt = xui.Style{Bold: true, Fg: primary.Fg}
-			dotSt = primary
-		}
-		out = append(out, components.WrapSpans([]components.Span{
-			{Text: arrow, Style: primary},
-			{Text: dot, Style: dotSt},
-			{Text: " " + label, Style: labelSt},
-			{Text: fmt.Sprintf(" [Alt+%d]", i+1), Style: th.Muted},
-		}, innerW, method)...)
+		out = append(out, chrome.OptionLine(th, primary, label, i == st.selected, innerW, method)...)
 	}
 	out = append(out, components.WrapSpans([]components.Span{
-		{Text: "↑↓ navigate • Enter select • Esc cancel", Style: th.Muted},
+		{Text: chrome.AskHint("↑↓ move", "select", "cancel"), Style: th.Muted},
 	}, innerW, method)...)
 	return out
 }
@@ -747,16 +696,16 @@ func (st *permAskState) feedbackLines(
 	shown := string(runes[:st.feedbackCur]) + "▎" + string(runes[st.feedbackCur:])
 	var out []components.RichLine
 	out = append(out, components.WrapSpans([]components.Span{
-		{Text: "✗ ", Style: th.Destructive},
+		{Text: chrome.Err + " ", Style: th.Destructive},
 		{Text: "Denied", Style: xui.Style{Bold: true, Fg: th.Destructive.Fg}},
 		{Text: " — tell Phi what to do instead", Style: th.Muted},
 	}, innerW, method)...)
 	out = append(out, components.WrapSpans([]components.Span{
-		{Text: "› ", Style: xui.Style{Bold: true, Fg: primary.Fg}},
+		{Text: chrome.SoftPrompt, Style: xui.Style{Bold: true, Fg: primary.Fg}},
 		{Text: shown, Style: th.Foreground},
 	}, innerW, method)...)
 	out = append(out, components.WrapSpans([]components.Span{
-		{Text: "Enter send  •  Esc cancel", Style: th.Muted},
+		{Text: chrome.FeedbackHint(), Style: th.Muted},
 	}, innerW, method)...)
 	return out
 }

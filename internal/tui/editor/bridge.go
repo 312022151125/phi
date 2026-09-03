@@ -27,7 +27,6 @@ type commandBridge struct {
 	setPermissions   func(bool)
 	setAgents        func(bool)
 	addSkill         func(string)
-	copyLastMessage  func()
 
 	modelNames []string
 	skillPath  string
@@ -49,7 +48,6 @@ func newCommandBridge(
 	setPermissions func(bool),
 	setAgents func(bool),
 	addSkill func(string),
-	copyLastMessage func(),
 ) *commandBridge {
 	return &commandBridge{
 		bus:              bus,
@@ -65,7 +63,6 @@ func newCommandBridge(
 		setPermissions:   setPermissions,
 		setAgents:        setAgents,
 		addSkill:         addSkill,
-		copyLastMessage:  copyLastMessage,
 		modelNames:       append([]string(nil), modelNames...),
 		skillPath:        skillPath,
 	}
@@ -100,7 +97,6 @@ func (b *commandBridge) context() commands.CommandContext {
 		ReloadExtensions: b.reloadExtensions,
 		ListExtensions:   b.listExtensions,
 		AddSkill:         b.addSkill,
-		CopyLastMessage:  b.copyLastMessage,
 		ModelNames:       b.modelNames,
 		SkillPath:        b.skillPath,
 	}

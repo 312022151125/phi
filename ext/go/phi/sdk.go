@@ -317,9 +317,14 @@ func (extension *ExtensionAPI) Run() error {
 
 	for _, t := range tools {
 		schema, _ := json.Marshal(t.def.Parameters)
-		body := pxb.EncodeRegisterTool(pxb.RegisterTool{
+		reg := pxb.RegisterTool{
 			Name: t.def.Name, Description: t.def.Description, SchemaJSON: schema,
-		})
+			HasDetail: t.def.DetailFromArgs != nil,
+		}
+		if t.def.TimeoutSec > 0 {
+			reg.TimeoutSec = uint32(t.def.TimeoutSec) //nolint:gosec // G115: author-supplied seconds; host clamps
+		}
+		body := pxb.EncodeRegisterTool(reg)
 		if err := extension.wr.Write(pxb.TypeRegisterTool, 0, 0, body); err != nil {
 			return err
 		}
@@ -408,6 +413,21 @@ func (extension *ExtensionAPI) Run() error {
 				tr.Error = "unknown tool"
 			}
 			_ = extension.wr.Write(pxb.TypeToolResult, fr.Flags, fr.ID, pxb.EncodeToolResult(tr))
+		case pxb.TypeToolDetailInvoke:
+			inv, err := pxb.DecodeToolInvoke(body)
+			if err != nil {
+				return err
+			}
+			var detail string
+			if tool, ok := toolByName[inv.Name]; ok && tool.DetailFromArgs != nil {
+				detail = tool.DetailFromArgs(inv.Args)
+			}
+			_ = extension.wr.Write(
+				pxb.TypeToolDetailResult,
+				fr.Flags,
+				fr.ID,
+				pxb.EncodeToolDetailResult(pxb.ToolDetailResult{Detail: detail}),
+			)
 		case pxb.TypeIntercept:
 			req, err := pxb.DecodeInterceptReq(body)
 			if err != nil {

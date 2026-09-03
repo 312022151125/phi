@@ -39,6 +39,11 @@ length) and **tagged-field** payloads (`tag u16 | kind u8 | value`). Decoders
 skip unknown tags; new events are new `Ev*` codes; new frame types are skipped
 by `payload_len`. See `ext/go/pxb` package doc for the full evolution rules.
 
+On Apple Silicon (release), Hello encode+decode is ~0.11–0.12 µs for Go and
+Rust PXB vs ~1.2 µs for a comparable JSON-lines object — see the table in the
+root [README](../README.md#extensions). Re-probe with
+`cargo run --release --example bench` under `ext/rust`.
+
 ## Layout
 
 | Location | Scope |
@@ -67,6 +72,33 @@ go get github.com/pulseaiclub/phi/ext@v0.19.0
 ```
 
 (`scripts/bump.sh` tags both `vX.Y.Z` and `ext/vX.Y.Z`.)
+
+Slow tools (HTTP fetch, long builds, …) should set `TimeoutSec` — the host’s
+default RPC wait is **30s**. Values are clamped to 1–3600.
+
+Set `DetailFromArgs` so the TUI tool row shows a one-line summary (path, URL, …)
+instead of raw JSON while the tool is in progress. The host RPCs the extension
+with a short default timeout (not `TimeoutSec`).
+
+```go
+m.RegisterTool(ext.Tool{
+	Name:        "fetch",
+	Description: "HTTP GET",
+	TimeoutSec:  120, // host waits up to 2m for this tool
+	Parameters:  map[string]any{"type": "object", /* … */},
+	DetailFromArgs: func(input json.RawMessage) string {
+		var in struct {
+			URL string `json:"url"`
+		}
+		_ = json.Unmarshal(input, &in)
+		return in.URL // TUI row shows this instead of raw JSON
+	},
+	Execute: func(ctx context.Context, args json.RawMessage) (ext.ToolResult, error) {
+		// …
+		return ext.ToolResult{}, nil
+	},
+})
+```
 
 ```go
 package main
@@ -139,9 +171,10 @@ byte-for-byte compatible with the Go SDK (golden-tested against the Go
 fixtures). Requires Rust ≥ 1.75.
 
 ```bash
-# pre-release: tracks the latest main (first ext tag containing ext/rust
-# is ext/v0.19.2+; pin it once a release is cut)
+# pre-release: tracks the latest main (crate publishes under ext/rust/vX.Y.Z tags)
 cargo add phi-ext --git https://github.com/pulseaiclub/phi --branch main
+# release: published crate version
+# cargo add phi-ext
 ```
 
 ```rust,no_run
@@ -180,6 +213,19 @@ fn main() -> Result<(), phi::Error> {
 }
 ```
 
+Slow tools should chain `.timeout_sec(n)` (host default RPC wait is 30s; clamped to 1–3600).
+Chain `.detail_from_args(|args| …)` so the TUI shows a one-line summary instead of raw JSON:
+
+```rust,no_run
+m.register_tool(
+    phi::Tool::new("fetch", "HTTP GET", phi::Schema::object(), |_args| {
+        Ok(phi::ToolResult { content: "…".into(), ..Default::default() })
+    })
+    .timeout_sec(120)
+    .detail_from_args(|args| String::from_utf8_lossy(args).into_owned()),
+);
+```
+
 UI surface today: **toast** (`ctx.notify`), **footer status** (`ctx.set_status`),
 **Submit** (`ctx.submit`), **SendUserMessage** (`ctx.send_user_message`),
 **Confirm / ConfirmOpts** (`ctx.confirm` / `ctx.confirm_opts`).
@@ -207,10 +253,23 @@ Reload: **Ctrl+K → extensions → reload**.
 
 ```bash
 phi plugin install alice/greet
+phi plugin install alice/greet@v1.2.3
 ```
 
-The repo must ship `phi.yaml` **and** the compiled `exec` binary (or a
-release asset layout that includes it). Source-only yaegi repos no longer load.
+Install prefers a **GitHub Release** asset for the current OS/arch (same
+naming as `phi update`):
+
+```text
+{repo}_{version}_{goos}_{goarch}.tar.gz   # .zip on Windows
+```
+
+Example: `greet_1.2.3_darwin_arm64.tar.gz`. The archive must contain
+`phi.yaml` and the compiled `exec` binary (optionally nested one directory
+deep). If a `checksums_{version}.txt` asset is present, SHA-256 is verified.
+
+When no matching release asset exists, install falls back to a shallow
+`git clone` — the cloned tree must already include the binary (source-only
+repos will fail). Source-only yaegi repos no longer load.
 
 ## Lifecycle (process)
 

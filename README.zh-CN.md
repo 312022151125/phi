@@ -13,6 +13,8 @@
 
 一个用 Go 编写的最小化终端编码代理框架（harness）——Pi 的姊妹项目。
 
+**文档：** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
+
 - **子代理（Sub-agents）** — 拉起隔离任务，在 TUI / job 日志里完整看到执行过程，而不是把每一步都塞进父会话上下文
 - **Hashline 编辑** — 用整文件 `@file path#TAG` 加上行级 `LINE#HASH` 锚点改文件（思路对齐 [oh-my-pi](https://github.com/can1357/oh-my-pi)）：模型瞄锚点改，而不是整文件重写；TAG/哈希对不上就拒绝，避免过度编辑和静默写坏
 - **权限门控** — 危险工具先过 Gate / Ask；代理能碰你的代码树时，安全不是可选项
@@ -27,6 +29,7 @@
 你可以通过 [Skills（技能）](#skills技能)、[Hooks（钩子）](#hooks钩子)
 和 [MCP](#mcp) 扩展它——不必做成插件框架。
 
+- [文档](https://pulseaiclub.github.io/docs/getting-started/)
 - [快速开始](#快速开始)
 - [资源占用](#资源占用)
 - [配置](#配置)
@@ -362,6 +365,18 @@ func main() {
 
 放到 `~/.phi/extensions/<name>/`，附带 `phi.yaml` 指向二进制。
 TUI：`Ctrl+K` → **extensions**。禁用：`PHI_EXTENSIONS=off`。完整指南见 [doc/extensions.md](doc/extensions.md)。
+
+Codec 吞吐（Apple Silicon，release，单线程）：
+
+| 实现 | Hello encode+decode | Frame write+read（内存） | Allocs |
+|---|---|---|---|
+| Rust PXB (`phi-ext`) | ~0.12 µs | ~0.06 µs | — |
+| Go PXB (`ext/go/pxb`) | ~0.11 µs | ~0.05 µs | 3 / op |
+| Go JSON lines | ~1.2 µs | — | 15 / op |
+
+相对 JSON lines 约 10× 来自协议本身（定长头 + tagged fields），不是语言——同套
+codec 工作下 Rust / Go 在噪声内。扩展真实延迟仍由进程 spawn 和 pipe RTT 主导。
+复测：在 [`ext/rust`](ext/rust) 里跑 `cargo run --release --example bench`。
 
 ## MCP
 

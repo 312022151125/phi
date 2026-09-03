@@ -6,9 +6,9 @@ import (
 
 	"github.com/pulseaiclub/xui"
 
-	"github.com/pulseaiclub/phi/internal/util"
-
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/chrome"
+	"github.com/pulseaiclub/phi/internal/util"
 )
 
 // BashStatus mirrors bash tool status.
@@ -133,7 +133,7 @@ func (bashBlock *BashBlock) Draw(ctx components.DrawContext) components.Surface 
 
 // titleSpans builds the "$ command [exit code] [arrow]" header spans.
 func (bashBlock *BashBlock) titleSpans(th components.Theme) []components.Span {
-	prefixStyle := th.Success
+	prefixStyle := th.IdentityOrSuccess()
 	switch bashBlock.Status {
 	case BashError:
 		prefixStyle = th.Destructive
@@ -149,7 +149,7 @@ func (bashBlock *BashBlock) titleSpans(th components.Theme) []components.Span {
 	}
 
 	title := []components.Span{
-		{Text: "$ ", Style: prefixStyle},
+		{Text: chrome.BashPrompt, Style: prefixStyle},
 		{Text: bashBlock.Command, Style: cmdStyle},
 	}
 	switch bashBlock.Status {
@@ -172,11 +172,7 @@ func (bashBlock *BashBlock) titleSpans(th components.Theme) []components.Span {
 		)
 	}
 	if bashBlock.hasBody() {
-		arrow := " ▶"
-		if bashBlock.Expanded {
-			arrow = " ▼"
-		}
-		title = append(title, components.Span{Text: arrow, Style: th.Muted})
+		title = append(title, components.Span{Text: chrome.ExpandArrow(bashBlock.Expanded), Style: th.Muted})
 	}
 	return title
 }

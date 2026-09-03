@@ -25,15 +25,17 @@ const (
 	TypeShutdownAck       uint16 = 9
 	TypeNotify            uint16 = 10
 	TypeHostRequest       uint16 = 11 // ext→host RPC (send_user_message, …)
+	TypeToolDetailResult  uint16 = 12 // ext→host reply to TypeToolDetailInvoke
 
-	TypeHelloAck       uint16 = 100
-	TypeCommandInvoked uint16 = 101
-	TypeToolInvoke     uint16 = 102
-	TypeEvent          uint16 = 103
-	TypeIntercept      uint16 = 104
-	TypeShutdown       uint16 = 105
-	TypeHostResult     uint16 = 106 // host→ext reply to TypeHostRequest
-	TypeSessionMeta    uint16 = 107 // host→ext session/cwd push
+	TypeHelloAck         uint16 = 100
+	TypeCommandInvoked   uint16 = 101
+	TypeToolInvoke       uint16 = 102
+	TypeEvent            uint16 = 103
+	TypeIntercept        uint16 = 104
+	TypeShutdown         uint16 = 105
+	TypeHostResult       uint16 = 106 // host→ext reply to TypeHostRequest
+	TypeSessionMeta      uint16 = 107 // host→ext session/cwd push
+	TypeToolDetailInvoke uint16 = 108 // host→ext DetailFromArgs
 )
 
 // Flag bits in the header.

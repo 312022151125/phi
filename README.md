@@ -14,6 +14,8 @@
 
 A minimal terminal coding agent harness in Go — a sibling to Pi.
 
+**Docs:** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
+
 - **Sub-agents** — spawn isolated jobs and watch the full run unfold in the TUI / job logs, without stuffing every turn into the parent context
 - **Hashline edits** — edit by whole-file `@file path#TAG` plus line `LINE#HASH` anchors (same idea as [oh-my-pi](https://github.com/can1357/oh-my-pi)): the model points at anchors instead of rewriting whole files; stale tags/hashes are rejected so over-edits and silent corruption stop here
 - **Permission gate** — Gate / Ask before destructive tools fire; safety is not optional when an agent can touch your tree
@@ -25,6 +27,7 @@ A minimal terminal coding agent harness in Go — a sibling to Pi.
 
 ![phi TUI](assets/image.png)
 
+- [Docs](https://pulseaiclub.github.io/docs/getting-started/)
 - [Quick start](#quick-start)
 - [Footprint](#footprint)
 - [Configuration](#configuration)
@@ -370,6 +373,19 @@ func main() {
 Install under `~/.phi/extensions/<name>/` with a `phi.yaml` pointing at the
 binary. In the TUI: `Ctrl+K` → **extensions**. Disable with
 `PHI_EXTENSIONS=off`. Full guide: [doc/extensions.md](doc/extensions.md).
+
+Codec throughput on Apple Silicon (release, single-threaded):
+
+| Implementation | Hello encode+decode | Frame write+read (in-memory) | Allocs |
+|---|---|---|---|
+| Rust PXB (`phi-ext`) | ~0.12 µs | ~0.06 µs | — |
+| Go PXB (`ext/go/pxb`) | ~0.11 µs | ~0.05 µs | 3 / op |
+| Go JSON lines | ~1.2 µs | — | 15 / op |
+
+The ~10× gap over JSON lines is the protocol (fixed header + tagged fields), not
+the language — Rust and Go are within noise on the same codec work. Real
+extension latency is dominated by process spawn and pipe RTT anyway. Re-probe:
+`cargo run --release --example bench` in [`ext/rust`](ext/rust).
 
 ## MCP
 

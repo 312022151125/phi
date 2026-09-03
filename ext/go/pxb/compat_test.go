@@ -85,6 +85,52 @@ func TestSubscribeRoundTrip(t *testing.T) {
 	assert.Equal(t, in.Intercept, out.Intercept)
 }
 
+func TestRegisterToolTimeoutSecRoundTrip(t *testing.T) {
+	in := pxb.RegisterTool{
+		Name: "fetch", Description: "HTTP GET", SchemaJSON: []byte(`{"type":"object"}`), TimeoutSec: 120,
+	}
+	out, err := pxb.DecodeRegisterTool(pxb.EncodeRegisterTool(in))
+	require.NoError(t, err)
+	assert.Equal(t, in.Name, out.Name)
+	assert.Equal(t, in.TimeoutSec, out.TimeoutSec)
+	assert.JSONEq(t, string(in.SchemaJSON), string(out.SchemaJSON))
+
+	// Zero timeout omits the wire field (backward compatible with old hosts).
+	raw := pxb.EncodeRegisterTool(pxb.RegisterTool{Name: "x", Description: "d"})
+	var fw pxb.FieldWriter
+	fw.PutString(1, "x")
+	fw.PutString(2, "d")
+	assert.Equal(t, fw.Bytes(), raw)
+
+	old, err := pxb.DecodeRegisterTool(fw.Bytes())
+	require.NoError(t, err)
+	assert.Equal(t, uint32(0), old.TimeoutSec)
+	assert.False(t, old.HasDetail)
+}
+
+func TestRegisterToolHasDetailRoundTrip(t *testing.T) {
+	in := pxb.RegisterTool{
+		Name: "t", Description: "d", SchemaJSON: []byte(`{}`), HasDetail: true,
+	}
+	out, err := pxb.DecodeRegisterTool(pxb.EncodeRegisterTool(in))
+	require.NoError(t, err)
+	assert.True(t, out.HasDetail)
+
+	// False omits the field.
+	raw := pxb.EncodeRegisterTool(pxb.RegisterTool{Name: "x", Description: "d"})
+	var fw pxb.FieldWriter
+	fw.PutString(1, "x")
+	fw.PutString(2, "d")
+	assert.Equal(t, fw.Bytes(), raw)
+}
+
+func TestToolDetailResultRoundTrip(t *testing.T) {
+	in := pxb.ToolDetailResult{Detail: "foo.go"}
+	out, err := pxb.DecodeToolDetailResult(pxb.EncodeToolDetailResult(in))
+	require.NoError(t, err)
+	assert.Equal(t, in.Detail, out.Detail)
+}
+
 func TestUnknownEventCodeMapsEmpty(t *testing.T) {
 	assert.Empty(t, pxb.EventName(999))
 	assert.Equal(t, uint16(0), pxb.EventCode("nope"))
