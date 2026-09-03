@@ -50,9 +50,9 @@ jobs:
         run: |
           if curl -sf -A "phi-publish-ci" \
             "https://crates.io/api/v1/crates/${NAME}/${VERSION}" > /dev/null; then
-            echo "exists=true"
+            echo "exists=true" | tee -a "$GITHUB_OUTPUT"
           else
-            echo "exists=false"
+            echo "exists=false" | tee -a "$GITHUB_OUTPUT"
           fi
 
       - name: Publish to crates.io

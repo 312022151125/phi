@@ -18,6 +18,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Publish Rust crate workflow: write `exists` to `$GITHUB_OUTPUT` so `cargo publish` actually runs when the version is new (previously the step was always skipped).
+
 ### Security
 
 <!-- Released section -->
