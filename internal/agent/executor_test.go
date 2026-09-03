@@ -256,8 +256,8 @@ func TestExecutorExtDenySkipsGateAsk(t *testing.T) {
 	}
 	r := loadExt(t, `package main
 import (
-  "github.com/pulseaiclub/phi/ext"
-  "github.com/pulseaiclub/phi/ext/phi"
+  "github.com/pulseaiclub/phi/ext/go"
+  "github.com/pulseaiclub/phi/ext/go/phi"
 )
 func main() {
   m := phi.New("test", "0.0.1")
@@ -308,8 +308,8 @@ func TestExecutorExtModifySeenByGateAndRun(t *testing.T) {
 	r := loadExt(t, `package main
 import (
   "encoding/json"
-  "github.com/pulseaiclub/phi/ext"
-  "github.com/pulseaiclub/phi/ext/phi"
+  "github.com/pulseaiclub/phi/ext/go"
+  "github.com/pulseaiclub/phi/ext/go/phi"
 )
 func main() {
   m := phi.New("test", "0.0.1")
@@ -348,8 +348,8 @@ func TestExecutorExtPostContextOnModelOnly(t *testing.T) {
 	}
 	r := loadExt(t, `package main
 import (
-  "github.com/pulseaiclub/phi/ext"
-  "github.com/pulseaiclub/phi/ext/phi"
+  "github.com/pulseaiclub/phi/ext/go"
+  "github.com/pulseaiclub/phi/ext/go/phi"
 )
 func main() {
   m := phi.New("test", "0.0.1")

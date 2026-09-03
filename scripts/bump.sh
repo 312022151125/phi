@@ -4,7 +4,7 @@
 #
 # Updates internal/version/version.go, keeps root go.mod's require on the nested
 # ext module in sync, commits the change, and creates annotated git tags for phi
-# (vX.Y.Z) and the nested ext module (ext/vX.Y.Z). Pushing the phi tag triggers
+# (vX.Y.Z) and the nested ext module (ext/go/vX.Y.Z). Pushing the phi tag triggers
 # .github/workflows/release.yml (GoReleaser); release notes come from the matching
 # CHANGELOG.md section (see release.yml).
 # Example: ./scripts/bump.sh v0.2.0
@@ -45,7 +45,7 @@ if ! grep -qE '^var Version = "v[^"]+"$' "$VERSION_FILE"; then
     exit 1
 fi
 
-EXT_TAG="ext/$NEW_VERSION"
+EXT_TAG="ext/go/$NEW_VERSION"
 
 # Bump the in-tree version shown on the splash screen.
 sed -i.bak -E "s|^var Version = \"v[^\"]+\"$|var Version = \"$NEW_VERSION\"|" "$VERSION_FILE"
@@ -53,7 +53,7 @@ rm -f "${VERSION_FILE}.bak"
 
 # Keep root go.mod's require on the nested ext module in sync.
 if [ -f "$ROOT_GOMOD" ]; then
-    sed -i.bak -E "s|github.com/pulseaiclub/phi/ext v[0-9][^[:space:]]*|github.com/pulseaiclub/phi/ext $NEW_VERSION|" "$ROOT_GOMOD"
+    sed -i.bak -E "s|github.com/pulseaiclub/phi/ext/go v[0-9][^[:space:]]*|github.com/pulseaiclub/phi/ext/go $NEW_VERSION|" "$ROOT_GOMOD"
     rm -f "${ROOT_GOMOD}.bak"
 fi
 

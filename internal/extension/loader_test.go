@@ -64,8 +64,8 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/phi"
+	"github.com/pulseaiclub/phi/ext/go"
+	"github.com/pulseaiclub/phi/ext/go/phi"
 )
 
 func main() {
@@ -112,8 +112,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/phi"
+	"github.com/pulseaiclub/phi/ext/go"
+	"github.com/pulseaiclub/phi/ext/go/phi"
 )
 
 func main() {
@@ -172,8 +172,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/phi"
+	"github.com/pulseaiclub/phi/ext/go"
+	"github.com/pulseaiclub/phi/ext/go/phi"
 )
 
 func main() {
@@ -210,8 +210,8 @@ import (
 	"context"
 	"encoding/json"
 
-	"github.com/pulseaiclub/phi/ext"
-	"github.com/pulseaiclub/phi/ext/phi"
+	"github.com/pulseaiclub/phi/ext/go"
+	"github.com/pulseaiclub/phi/ext/go/phi"
 )
 
 func main() {
