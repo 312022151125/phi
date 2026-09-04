@@ -721,7 +721,7 @@ func (c *ChatInput) paintPendingImages(s *components.Surface, x, y, width int, m
 	}
 	labelSt := th.Muted
 	labelSt.Dim = true
-	nameSt := th.Warning
+	nameSt := th.Title
 	nameSt.Bold = false
 	nameSt.Underline = true
 

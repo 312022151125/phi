@@ -112,12 +112,12 @@ func (w *Screen) Draw(ctx components.DrawContext) components.Surface {
 	if th.Foreground.Fg.Kind == xui.ColorRGB {
 		brand = xui.Style{Fg: th.Foreground.Fg, Bold: true}
 	}
-	helpKey := th.IdentityOrSuccess()
+	helpKey := th.ToolName
 	if helpKey == (xui.Style{}) {
-		helpKey = th.Keybind
+		helpKey = th.IdentityOrSuccess()
 	}
 	if helpKey == (xui.Style{}) {
-		helpKey = xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xa0), Bold: true}
+		helpKey = xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xff), Bold: true}
 	}
 	// Secondary copy: theme muted without Dim. ANSI Dim + bright-black
 	// (Terminal IndexedColor 8) is nearly invisible on dark backgrounds.

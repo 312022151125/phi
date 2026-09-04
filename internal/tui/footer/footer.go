@@ -251,7 +251,7 @@ func (f *FooterChrome) Draw(ctx components.DrawContext, width int) components.Su
 		hx := width - hw - 1
 		hx = max(hx, x+2)
 		if hx+hw <= width {
-			st := f.theme.Warning
+			st := f.theme.TitleOrForeground()
 			st.Bold = false
 			footer.Print(hx, 0, hint, st, ctx.Method)
 		}

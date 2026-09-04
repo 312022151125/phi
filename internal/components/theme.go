@@ -6,112 +6,129 @@ import (
 	"github.com/pulseaiclub/xui"
 )
 
-// Theme holds semantic colors for transcript chrome.
+// Theme holds semantic colors for the TUI.
 //
-// Roles (do not overload):
-//   - Success / Destructive / Warning — status outcomes
-//   - Identity — speaker / model / shell prompt chrome (not "ok")
-//   - ToolName — tool titles and busy marks
-//   - Border — box edges; Warning doubles as overlay / palette titles
-//   - Selection* / Keybind / Command — palette / list pickers
+// One job per role — do not overload:
+//
+//	Foreground — body text
+//	Muted      — secondary copy / hints (may Dim)
+//	Border     — quiet box edges
+//	Title      — panel titles, md headings (structure, never alarm)
+//	Identity   — who/where: model, user rule, bash "$" (≠ Success)
+//	ToolName   — cool action accent: tools, keybinds, busy, paths, inline code
+//	Accent     — interactive links / "Show more" only
+//	Success / Warning / Destructive — outcomes and risk only
+//	Selection* / Command — palette selection chrome
 type Theme struct {
 	Foreground  xui.Style
 	Muted       xui.Style
 	Success     xui.Style
-	Identity    xui.Style // model label, user rule, bash "$"
-	Accent      xui.Style // links / "Show more"
-	Warning     xui.Style // inline highlights / palette title
+	Identity    xui.Style
+	Title       xui.Style
+	Accent      xui.Style
+	Warning     xui.Style
 	Destructive xui.Style
 	Border      xui.Style
 	ToolName    xui.Style
-	// Command palette.
-	SelectionBg xui.Style // yellow bar behind selected row
-	SelectionFg xui.Style // black text on selection
-	Keybind     xui.Style // shortcut hints (Ctrl g)
-	Command     xui.Style // command accent
+	SelectionBg xui.Style
+	SelectionFg xui.Style
+	Keybind     xui.Style // equals ToolName; kept for call-site clarity
+	Command     xui.Style // palette command verbs; equals Title
 }
 
-// ThemeNames lists builtin theme display names in picker order.
+// ThemeNames lists builtin theme display names in picker order (default first).
 func ThemeNames() []string {
 	return []string{"Dark", "Darcula", "Pink", "Terminal"}
 }
 
-// DefaultTheme returns the terminal default palette (ANSI / terminal colors).
-func DefaultTheme() Theme { return TerminalTheme() }
+// DefaultTheme returns the curated Dark palette (product default).
+func DefaultTheme() Theme { return DarkTheme() }
 
-// DarkTheme is the fixed RGB dark palette ("Dark").
+// DarkTheme is Phi's curated dark palette — cool info, teal identity, mint success.
 func DarkTheme() Theme {
+	info := xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xff)}
+	title := xui.Style{Fg: xui.RGBColor(0xd0, 0xd4, 0xdc)}
 	return Theme{
 		Foreground:  xui.Style{Fg: xui.DefaultColor()},
 		Muted:       xui.Style{Fg: xui.IndexedColor(245), Dim: true},
 		Success:     xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xa0), Bold: true},
-		Identity:    xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xa0), Bold: true},
+		Identity:    xui.Style{Fg: xui.RGBColor(0x5e, 0xc4, 0xb4), Bold: true}, // teal ≠ success mint
+		Title:       title,
 		Accent:      xui.Style{Fg: xui.RGBColor(0xc4, 0x8a, 0xd9), Underline: true},
 		Warning:     xui.Style{Fg: xui.RGBColor(0xe5, 0xc0, 0x7b)},
 		Destructive: xui.Style{Fg: xui.RGBColor(0xe0, 0x6c, 0x75)},
 		Border:      xui.Style{Fg: xui.IndexedColor(240)},
-		ToolName:    xui.Style{Fg: xui.RGBColor(0x7d, 0xc3, 0xff)},
-		SelectionBg: xui.Style{Bg: xui.RGBColor(0xe5, 0xc0, 0x7b)},
-		SelectionFg: xui.Style{Fg: xui.RGBColor(0x00, 0x00, 0x00), Bold: true},
-		Keybind:     xui.Style{Fg: xui.RGBColor(0x61, 0xaf, 0xef), Bold: true},
-		Command:     xui.Style{Fg: xui.RGBColor(0xe5, 0xc0, 0x7b)},
+		ToolName:    info,
+		SelectionBg: xui.Style{Bg: xui.RGBColor(0x2a, 0x3f, 0x5f)},
+		SelectionFg: xui.Style{Fg: xui.RGBColor(0xf0, 0xf3, 0xf8), Bold: true},
+		Keybind:     info,
+		Command:     title,
 	}
 }
 
-// DarculaTheme follows IntelliJ IDEA Darcula (warm orange accents, cool text).
+// DarculaTheme follows IntelliJ Darcula temperatures with Phi role separation.
 func DarculaTheme() Theme {
+	info := xui.Style{Fg: xui.RGBColor(0x68, 0x97, 0xbb)}
+	title := xui.Style{Fg: xui.RGBColor(0xbb, 0xbb, 0xbb)}
 	return Theme{
 		Foreground:  xui.Style{Fg: xui.RGBColor(0xa9, 0xb7, 0xc6)},
 		Muted:       xui.Style{Fg: xui.RGBColor(0x80, 0x80, 0x80), Dim: true},
 		Success:     xui.Style{Fg: xui.RGBColor(0x6a, 0x87, 0x59), Bold: true},
-		Identity:    xui.Style{Fg: xui.RGBColor(0x6a, 0x87, 0x59), Bold: true},
+		Identity:    xui.Style{Fg: xui.RGBColor(0x52, 0x94, 0xe2), Bold: true}, // blue identity ≠ olive success
+		Title:       title,
 		Accent:      xui.Style{Fg: xui.RGBColor(0x58, 0x9d, 0xf6), Underline: true},
 		Warning:     xui.Style{Fg: xui.RGBColor(0xcc, 0x78, 0x32)},
 		Destructive: xui.Style{Fg: xui.RGBColor(0xff, 0x6b, 0x68)},
 		Border:      xui.Style{Fg: xui.RGBColor(0x55, 0x55, 0x55)},
-		ToolName:    xui.Style{Fg: xui.RGBColor(0x68, 0x97, 0xbb)},
+		ToolName:    info,
 		SelectionBg: xui.Style{Bg: xui.RGBColor(0x21, 0x42, 0x83)},
 		SelectionFg: xui.Style{Fg: xui.RGBColor(0xff, 0xff, 0xff), Bold: true},
-		Keybind:     xui.Style{Fg: xui.RGBColor(0x58, 0x9d, 0xf6), Bold: true},
-		Command:     xui.Style{Fg: xui.RGBColor(0xcc, 0x78, 0x32)},
+		Keybind:     info,
+		Command:     title,
 	}
 }
 
-// PinkTheme is a sakura blush palette — warm pink accents, soft and readable.
+// PinkTheme is a sakura blush palette — pink identity, cool tools, mint success.
 func PinkTheme() Theme {
+	info := xui.Style{Fg: xui.RGBColor(0xb8, 0xa0, 0xe8)} // soft lavender for tools
+	title := xui.Style{Fg: xui.RGBColor(0xe8, 0xc8, 0xd8)}
 	return Theme{
 		Foreground:  xui.Style{Fg: xui.DefaultColor()},
 		Muted:       xui.Style{Fg: xui.RGBColor(0xc8, 0xa0, 0xb4), Dim: true},
 		Success:     xui.Style{Fg: xui.RGBColor(0x9e, 0xd4, 0xb8), Bold: true},
-		Identity:    xui.Style{Fg: xui.RGBColor(0x9e, 0xd4, 0xb8), Bold: true},
+		Identity:    xui.Style{Fg: xui.RGBColor(0xf0, 0xa8, 0xd0), Bold: true},
+		Title:       title,
 		Accent:      xui.Style{Fg: xui.RGBColor(0xff, 0x9e, 0xc8), Underline: true},
 		Warning:     xui.Style{Fg: xui.RGBColor(0xff, 0xb8, 0x9a)},
 		Destructive: xui.Style{Fg: xui.RGBColor(0xf0, 0x6a, 0x8a)},
 		Border:      xui.Style{Fg: xui.RGBColor(0x8a, 0x5a, 0x70)},
-		ToolName:    xui.Style{Fg: xui.RGBColor(0xf0, 0xa8, 0xd0)},
+		ToolName:    info,
 		SelectionBg: xui.Style{Bg: xui.RGBColor(0xff, 0x9e, 0xc0)},
 		SelectionFg: xui.Style{Fg: xui.RGBColor(0x2a, 0x10, 0x1c), Bold: true},
-		Keybind:     xui.Style{Fg: xui.RGBColor(0xff, 0x8f, 0xb8), Bold: true},
-		Command:     xui.Style{Fg: xui.RGBColor(0xff, 0x7a, 0xad)},
+		Keybind:     info,
+		Command:     title,
 	}
 }
 
-// TerminalTheme follows the terminal ANSI / default colors ("Terminal").
+// TerminalTheme follows ANSI / default terminal colors (compatibility theme).
 func TerminalTheme() Theme {
+	info := xui.Style{Fg: xui.IndexedColor(4)} // blue
+	title := xui.Style{Fg: xui.DefaultColor()} // bold applied at call sites
 	return Theme{
 		Foreground:  xui.Style{Fg: xui.DefaultColor()},
 		Muted:       xui.Style{Fg: xui.IndexedColor(8), Dim: true},
 		Success:     xui.Style{Fg: xui.IndexedColor(2), Bold: true},
-		Identity:    xui.Style{Fg: xui.IndexedColor(2), Bold: true},
+		Identity:    xui.Style{Fg: xui.IndexedColor(6), Bold: true}, // cyan ≠ green success
+		Title:       title,
 		Accent:      xui.Style{Fg: xui.IndexedColor(5), Underline: true},
 		Warning:     xui.Style{Fg: xui.IndexedColor(3)},
 		Destructive: xui.Style{Fg: xui.IndexedColor(1)},
 		Border:      xui.Style{Fg: xui.IndexedColor(8)},
-		ToolName:    xui.Style{Fg: xui.IndexedColor(4)},
-		SelectionBg: xui.Style{Bg: xui.IndexedColor(3)},
+		ToolName:    info,
+		SelectionBg: xui.Style{Bg: xui.IndexedColor(4)},
 		SelectionFg: xui.Style{Fg: xui.IndexedColor(0), Bold: true},
-		Keybind:     xui.Style{Fg: xui.IndexedColor(4), Bold: true},
-		Command:     xui.Style{Fg: xui.IndexedColor(3)},
+		Keybind:     info,
+		Command:     title,
 	}
 }
 
@@ -131,10 +148,22 @@ func ThemeByName(name string) (Theme, bool) {
 	}
 }
 
-// IdentityOrSuccess returns Identity when set, else Success (legacy themes / zero Theme).
+// IdentityOrSuccess returns Identity when set, else Success (legacy / zero Theme).
 func (th Theme) IdentityOrSuccess() xui.Style {
 	if th.Identity.Fg.Kind != 0 {
 		return th.Identity
 	}
 	return th.Success
+}
+
+// TitleOrForeground returns Title when set, else bold Foreground.
+func (th Theme) TitleOrForeground() xui.Style {
+	if th.Title.Fg.Kind != 0 {
+		st := th.Title
+		st.Bold = true
+		return st
+	}
+	st := th.Foreground
+	st.Bold = true
+	return st
 }

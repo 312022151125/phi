@@ -186,10 +186,10 @@ func (o *Overlays) drawExtConfirm(ctx components.DrawContext, width, height int)
 	}
 
 	primary := chrome.DecisionPrimary(th)
-	warn := th.Warning
+	border := chrome.ModalBorder(th)
 	if st.danger {
 		primary = th.Destructive
-		warn = th.Destructive
+		border = th.Destructive
 	}
 
 	var body []components.RichLine
@@ -216,5 +216,5 @@ func (o *Overlays) drawExtConfirm(ctx components.DrawContext, width, height int)
 		{Text: chrome.ConfirmHint(), Style: th.Muted},
 	}, innerW, ctx.Method)...)
 
-	return paintAskPanel(body, width, height, warn, ctx.Method)
+	return paintAskPanel(body, width, height, border, ctx.Method)
 }

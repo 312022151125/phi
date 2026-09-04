@@ -479,7 +479,7 @@ func (o *Overlays) drawPermissionAsk(ctx components.DrawContext, width, height i
 		body = append(body, st.optionLines(th, primary, innerW, ctx.Method)...)
 	}
 
-	return paintAskPanel(body, width, height, th.Warning, ctx.Method)
+	return paintAskPanel(body, width, height, chrome.ModalBorder(th), ctx.Method)
 }
 
 func (o *Overlays) drawContinueAsk(ctx components.DrawContext, width, height int) components.Surface {
@@ -517,7 +517,7 @@ func (o *Overlays) drawContinueAsk(ctx components.DrawContext, width, height int
 		{Text: chrome.AskHint("↑↓ move", "select", "stop"), Style: th.Muted},
 	}, innerW, ctx.Method)...)
 
-	return paintAskPanel(body, width, height, th.Warning, ctx.Method)
+	return paintAskPanel(body, width, height, chrome.ModalBorder(th), ctx.Method)
 }
 
 type askOption int
