@@ -151,25 +151,31 @@ func (f *FooterChrome) SetExtensionStatus(status string) {
 	}
 }
 
-// Apply handles footer-related bus messages.
-func (f *FooterChrome) Apply(m controller.Msg) {
+// Apply handles footer bus messages.
+func (f *FooterChrome) Apply(msg controller.FooterMsg) {
 	if f == nil {
 		return
 	}
-	switch msg := m.(type) {
-	case controller.SetActivityMsg:
+	switch msg.Kind {
+	case controller.FooterSetActivity:
 		f.activity.Apply(msg.Activity)
-	case controller.ClearIfActivityMsg:
+	case controller.FooterClearIfActivity:
 		if f.activity.Current == msg.If {
 			f.activity.Apply(controller.ActivityIdle)
 		}
-	case controller.UpdateAvailableMsg:
+	case controller.FooterUpdateAvailable:
 		latest := strings.TrimPrefix(msg.Latest, "v")
 		f.updateHint = latest + " available · phi update"
-	case controller.ExtSessionEffectsMsg:
-		if msg.StatusSet {
-			f.hookStatus = msg.Status
-		}
+	}
+}
+
+// ApplySessionEffects applies toast/status from session lifecycle extensions.
+func (f *FooterChrome) ApplySessionEffects(msg controller.ExtSessionEffectsMsg) {
+	if f == nil {
+		return
+	}
+	if msg.StatusSet {
+		f.hookStatus = msg.Status
 	}
 }
 

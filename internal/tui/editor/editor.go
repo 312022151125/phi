@@ -221,18 +221,16 @@ func (e *Editor) Update(m controller.Msg) {
 		e.submitter.Cancel()
 	case controller.MentionResultsMsg:
 		e.composer.ApplyMentionResults(msg)
-	case controller.PermissionAskMsg, controller.PermissionDismissMsg,
-		controller.ContinueAskMsg, controller.ContinueDismissMsg,
-		controller.ExtConfirmMsg, controller.ExtConfirmDismissMsg:
-		e.overlays.Apply(m)
-	case controller.SetActivityMsg, controller.ClearIfActivityMsg, controller.UpdateAvailableMsg:
-		e.footer.Apply(m)
+	case controller.OverlayMsg:
+		e.overlays.Apply(msg)
+	case controller.FooterMsg:
+		e.footer.Apply(msg)
 	case controller.ToastMsg:
 		e.toast.Show(msg.Message, msg.Kind, msg.Duration)
 	case controller.ThemeMsg:
 		e.applyTheme(msg.Name)
 	case controller.ExtSessionEffectsMsg:
-		e.footer.Apply(m)
+		e.footer.ApplySessionEffects(msg)
 		if msg.Toast != "" {
 			e.toast.Show(msg.Toast, toast.ToastSuccess, 3*time.Second)
 		}
@@ -394,7 +392,11 @@ func (e *Editor) StartUpdateCheck(cacheDir string) {
 		if !ok || !info.Available {
 			return
 		}
-		e.Publish(controller.UpdateAvailableMsg{Latest: info.Latest, Current: info.Current})
+		e.Publish(controller.FooterMsg{
+			Kind:    controller.FooterUpdateAvailable,
+			Latest:  info.Latest,
+			Current: info.Current,
+		})
 	}()
 }
 

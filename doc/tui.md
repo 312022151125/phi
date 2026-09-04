@@ -127,8 +127,9 @@ app frame
 | ---------------- | ------- |
 | `SessionEventMsg`, `JobProgressMsg` | `TranscriptPane` (in `drainBus`) |
 | `SubmitMsg`, `CancelStreamMsg` | `Submitter` |
-| `PermissionAskMsg`, `PermissionDismissMsg`, `ContinueAskMsg`, `ContinueDismissMsg` | `Overlays` |
-| `SetActivityMsg`, `ClearIfActivityMsg`, `UpdateAvailableMsg`, `ExtSessionEffectsMsg` | `FooterChrome` |
+| `OverlayMsg` (permission / continue / ext-confirm ask+dismiss) | `Overlays` |
+| `FooterMsg` (activity / clear-if / update hint) | `FooterChrome` |
+| `ExtSessionEffectsMsg` | `FooterChrome` (+ toast when set) |
 | `MentionResultsMsg`, `BranchLabelMsg` | `ComposerPane` |
 | `ToastMsg` | `Editor` toast overlay |
 | `ExtCommandResultMsg` | `ExtCommands` |
@@ -147,7 +148,7 @@ User Enter in composer
        ├─ "!cmd" prefix  → BashRunner (local shell, SessionEventMsg for output)
        ├─ "/slash"       → CommandRegistry / SessionCommands / ExtCommands
        └─ plain text     → Controller.Submit → agent.Engine.Loop (background)
-                              └─ SessionEventMsg, SetActivityMsg, PermissionAskMsg, …
+                              └─ SessionEventMsg, FooterMsg, OverlayMsg, …
 ```
 
 `Submitter` clears composer input after slash/bash; agent submit passes pending skills from composer.
@@ -172,17 +173,17 @@ Controller.runLoop
 Esc / composer cancel
   → CancelStreamMsg
   → Submitter.Cancel → Controller cancels stream context
-  → ClearIfActivityMsg when activity was cancelled
+  → FooterMsg{Kind: FooterClearIfActivity} when activity was cancelled
 ```
 
 ### 4. Permission / continue ask
 
 ```text
 Engine needs approval
-  → Controller publishes PermissionAskMsg (or ContinueAskMsg)
+  → Controller publishes OverlayMsg (permission / continue / ext-confirm ask)
   → Overlays.Apply → replaces composer bottom panel
   → user keys → Overlays → Controller reply channel
-  → PermissionDismissMsg / ContinueDismissMsg
+  → OverlayMsg dismiss Kind on timeout/cancel
 ```
 
 Composer input is blocked while an overlay is active (`OverlayBlocksComposer`).
@@ -204,7 +205,7 @@ Composer input is blocked while an overlay is active (`OverlayBlocksComposer`).
 | Source | Msg | Target |
 | ------ | --- | ------ |
 | `StartBranchWatch` | `BranchLabelMsg` | composer bottom-right label |
-| `StartUpdateCheck` | `UpdateAvailableMsg` | footer update hint |
+| `StartUpdateCheck` | `FooterMsg` (update available) | footer update hint |
 | Extension session lifecycle | `ExtSessionEffectsMsg` | footer status + toast |
 
 ---

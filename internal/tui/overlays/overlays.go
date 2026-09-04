@@ -74,23 +74,23 @@ func (o *Overlays) ContinueActive() bool {
 	return o != nil && o.cont != nil
 }
 
-// Apply routes overlay-related bus messages.
-func (o *Overlays) Apply(m controller.Msg) {
+// Apply routes overlay bus messages by Kind.
+func (o *Overlays) Apply(msg controller.OverlayMsg) {
 	if o == nil {
 		return
 	}
-	switch msg := m.(type) {
-	case controller.PermissionAskMsg:
+	switch msg.Kind {
+	case controller.OverlayPermissionAsk:
 		o.beginPermissionAsk(msg)
-	case controller.PermissionDismissMsg:
+	case controller.OverlayPermissionDismiss:
 		o.dismissPermission()
-	case controller.ContinueAskMsg:
+	case controller.OverlayContinueAsk:
 		o.beginContinueAsk(msg)
-	case controller.ContinueDismissMsg:
+	case controller.OverlayContinueDismiss:
 		o.dismissContinue()
-	case controller.ExtConfirmMsg:
+	case controller.OverlayExtConfirm:
 		o.beginExtConfirm(msg)
-	case controller.ExtConfirmDismissMsg:
+	case controller.OverlayExtConfirmDismiss:
 		o.dismissExtConfirm()
 	}
 }
@@ -149,7 +149,7 @@ func (o *Overlays) DrawBottom(ctx components.DrawContext, width, height int) (co
 	return components.Surface{}, false
 }
 
-func (o *Overlays) beginPermissionAsk(msg controller.PermissionAskMsg) {
+func (o *Overlays) beginPermissionAsk(msg controller.OverlayMsg) {
 	if o.perm != nil {
 		o.resolvePermission(controller.AskReply{})
 	}
@@ -163,7 +163,7 @@ func (o *Overlays) beginPermissionAsk(msg controller.PermissionAskMsg) {
 		o.composer.HideCompleters()
 		o.composer.HidePalette()
 	}
-	o.perm = newPermAskState(msg.Request, msg.Reason, msg.Reply)
+	o.perm = newPermAskState(msg.Request, msg.Reason, msg.PermReply)
 	o.activity.Apply(controller.ActivityAwaitingApproval)
 	if o.focusEditor != nil {
 		o.focusEditor()
@@ -204,7 +204,7 @@ func (o *Overlays) resolvePermission(r controller.AskReply) {
 	}
 }
 
-func (o *Overlays) beginContinueAsk(msg controller.ContinueAskMsg) {
+func (o *Overlays) beginContinueAsk(msg controller.OverlayMsg) {
 	if o.cont != nil {
 		o.resolveContinue(controller.ContinueReply{})
 	}
@@ -218,7 +218,7 @@ func (o *Overlays) beginContinueAsk(msg controller.ContinueAskMsg) {
 		o.composer.HideCompleters()
 		o.composer.HidePalette()
 	}
-	o.cont = newContinueAskState(msg.MaxRounds, msg.Reply)
+	o.cont = newContinueAskState(msg.MaxRounds, msg.ContReply)
 	o.activity.Apply(controller.ActivityAwaitingApproval)
 	if o.focusEditor != nil {
 		o.focusEditor()

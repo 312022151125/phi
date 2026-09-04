@@ -35,7 +35,7 @@ func NewActivityHandler(spin *status.Spinner) *ActivityHandler {
 	return &ActivityHandler{spin: spin}
 }
 
-// Apply sets activity from a SetActivityMsg (or direct call on UI thread).
+// Apply sets activity from a FooterMsg (or direct call on UI thread).
 func (h *ActivityHandler) Apply(a Activity) {
 	if h == nil {
 		return
