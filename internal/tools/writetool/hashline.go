@@ -18,8 +18,6 @@ import (
 	"github.com/pulseaiclub/phi/internal/util"
 )
 
-// ---- tooldef.Tool constructor ----
-
 var editDescription = `Edit a file using a whole-file TAG from read/grep plus LINE#HASH anchors.
 
 Required hash: the 4 hex chars AFTER # in the latest @file path#TAG header
@@ -94,8 +92,6 @@ func EditTool() tooldef.Tool {
 	}
 }
 
-// ---- Wire types ----
-
 // EditInput is the edit tool payload (path + file TAG + flat edits).
 type EditInput struct {
 	Path  string     `json:"path"`
@@ -110,31 +106,11 @@ type FlatEdit struct {
 	To      string  `json:"to,omitempty"`
 }
 
-// ---- Internal parsed types ----
-
-// LineRef is a parsed LINE#HASH reference.
-type LineRef struct {
-	Line int
-	Hash string
-}
-
-// ParsedRef is a start+end pair of line references.
-type ParsedRef struct {
-	Start LineRef
-	End   LineRef
-}
-
-// ParsedEdit is a fully parsed single edit.
-type ParsedEdit struct {
-	Spec ParsedRef
-	Dst  []string
-}
-
-// Annotated pairs a parsed edit with origin metadata for sorting.
-type Annotated struct {
-	edit     ParsedEdit
-	index    int
-	sortLine int
+// parsedEdit is one validated range replace against the original snapshot.
+type parsedEdit struct {
+	start, end         int
+	startHash, endHash string
+	dst                []string
 }
 
 // HashMismatch records a line whose hash changed.
@@ -147,13 +123,10 @@ type HashMismatch struct {
 // HashlineMismatchError is returned when hashes don't match (file changed).
 type HashlineMismatchError struct {
 	mismatches []HashMismatch
-	fileLines  []string
 	msg        string
 }
 
 func (e *HashlineMismatchError) Error() string { return e.msg }
-
-// ---- Main entry points ----
 
 func runEdit(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
 	param, err := parseEditInput(ctx, input)
@@ -210,36 +183,34 @@ func runEdit(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 // ApplyHashlineEdit applies flat hashline edits to fileContent.
 func ApplyHashlineEdit(ctx context.Context, fileContent string, param EditInput) (string, error) {
 	lines := strings.Split(fileContent, "\n")
-	parsed := make([]ParsedEdit, len(param.Edits))
+	edits := make([]parsedEdit, len(param.Edits))
 	for i, fe := range param.Edits {
 		var err error
-		parsed[i], err = fe.toParsedEdit()
+		edits[i], err = fe.parse()
 		if err != nil {
 			return "", fmt.Errorf("edits[%d]: %w", i, err)
 		}
 	}
 
-	if err := validateLineReferences(parsed, lines); err != nil {
+	if err := validateLineReferences(edits, lines); err != nil {
 		return "", err
 	}
-	parsed = deduplicateParsedEdits(parsed)
+	edits = deduplicateEdits(edits)
 
-	annotated := getAnnotated(parsed)
-	sort.Sort(bySortLine(annotated))
+	// Bottom-up so earlier anchors stay valid; stable keeps original order on ties.
+	slices.SortStableFunc(edits, func(a, b parsedEdit) int {
+		return b.end - a.end
+	})
 
-	for _, anno := range annotated {
+	for _, e := range edits {
 		if ctx.Err() != nil {
 			return "", ctx.Err()
 		}
-		edit := anno.edit
-		count := edit.Spec.End.Line - edit.Spec.Start.Line + 1
-		start := edit.Spec.Start.Line - 1
-		lines = slices.Replace(lines, start, start+count, edit.Dst...)
+		start := e.start - 1
+		lines = slices.Replace(lines, start, start+(e.end-e.start+1), e.dst...)
 	}
 	return strings.Join(lines, "\n"), nil
 }
-
-// ---- Parsing ----
 
 func parseEditInput(ctx context.Context, raw json.RawMessage) (EditInput, error) {
 	var param EditInput
@@ -276,36 +247,32 @@ func normalizeFileTag(hash string) string {
 	return strings.ToUpper(strings.TrimSpace(s))
 }
 
-func (f FlatEdit) toParsedEdit() (ParsedEdit, error) {
+func (f FlatEdit) parse() (parsedEdit, error) {
 	from := strings.TrimSpace(f.From)
 	to := strings.TrimSpace(f.To)
 	if from == "" || to == "" {
-		return ParsedEdit{}, errors.New("edit requires non-empty from and to (LINE#HASH each)")
+		return parsedEdit{}, errors.New("edit requires non-empty from and to (LINE#HASH each)")
 	}
-	sl, sh, err := parseLineRef(from)
+	start, startHash, err := parseLineRef(from)
 	if err != nil {
-		return ParsedEdit{}, err
+		return parsedEdit{}, err
 	}
-	el, eh, err := parseLineRef(to)
+	end, endHash, err := parseLineRef(to)
 	if err != nil {
-		return ParsedEdit{}, err
+		return parsedEdit{}, err
 	}
-	lines := contentLines(f.Content)
-	if lines == nil {
-		lines = []string{}
-	}
-	return ParsedEdit{
-		Spec: ParsedRef{
-			Start: LineRef{Line: sl, Hash: sh},
-			End:   LineRef{Line: el, Hash: eh},
-		},
-		Dst: lines,
+	return parsedEdit{
+		start:     start,
+		end:       end,
+		startHash: startHash,
+		endHash:   endHash,
+		dst:       contentLines(f.Content),
 	}, nil
 }
 
 func contentLines(content *string) []string {
 	if content == nil {
-		return nil
+		return []string{}
 	}
 	s := util.ReplaceAll(*content, "\r", "")
 	s = strings.TrimSuffix(s, "\n")
@@ -315,12 +282,11 @@ func contentLines(content *string) []string {
 	return util.StripLinePrefixes(strings.Split(s, "\n"))
 }
 
-// ---- Line reference parsing ----
-
-var hashLen = util.LineHashLen
-
 // lineRefPattern parses "5#abc", "  5  #  abc", "> 5#abc|content", etc.
-var lineRefPattern = regexp.MustCompile(fmt.Sprintf(`^\s*[>+-]*\s*(\d+)\s*[:#]\s*([a-zA-Z]{%d})`, hashLen))
+var lineRefPattern = regexp.MustCompile(fmt.Sprintf(
+	`^\s*[>+-]*\s*(\d+)\s*[:#]\s*([a-zA-Z]{%d})`,
+	util.LineHashLen,
+))
 
 func parseLineRef(ref string) (int, string, error) {
 	if strings.ContainsAny(ref, "\n\r") {
@@ -343,54 +309,27 @@ func parseLineRef(ref string) (int, string, error) {
 	return line, match[2], nil
 }
 
-// ---- Sorting ----
-
-type bySortLine []Annotated
-
-func (a bySortLine) Len() int      { return len(a) }
-func (a bySortLine) Swap(i, j int) { a[i], a[j] = a[j], a[i] }
-func (a bySortLine) Less(i, j int) bool {
-	if a[i].sortLine != a[j].sortLine {
-		return a[i].sortLine > a[j].sortLine
-	}
-	return a[i].index < a[j].index
-}
-
-func getAnnotated(parsed []ParsedEdit) []Annotated {
-	annotated := make([]Annotated, 0, len(parsed))
-	for i, p := range parsed {
-		annotated = append(annotated, Annotated{
-			edit:     p,
-			index:    i,
-			sortLine: p.Spec.End.Line,
-		})
-	}
-	return annotated
-}
-
-// ---- Validation ----
-
-func validateLineReferences(parsed []ParsedEdit, contents []string) error {
-	l := len(contents)
+func validateLineReferences(edits []parsedEdit, contents []string) error {
+	n := len(contents)
 	var mismatches []HashMismatch
 
-	for _, p := range parsed {
-		if p.Spec.Start.Line > p.Spec.End.Line {
-			return fmt.Errorf("range start line %d must be <= end line %d", p.Spec.Start.Line, p.Spec.End.Line)
+	for _, e := range edits {
+		if e.start > e.end {
+			return fmt.Errorf("range start line %d must be <= end line %d", e.start, e.end)
 		}
-		if p.Spec.Start.Line < 1 || p.Spec.End.Line > l {
+		if e.start < 1 || e.end > n {
 			return fmt.Errorf(
 				"line range %d-%d is out of bounds (file has %d lines). Re-read the file to get valid anchors",
-				p.Spec.Start.Line,
-				p.Spec.End.Line,
-				l,
+				e.start,
+				e.end,
+				n,
 			)
 		}
-		if !util.ValidateHash(p.Spec.Start.Line, p.Spec.Start.Hash, contents) {
-			mismatches = append(mismatches, hashMismatch(contents, p.Spec.Start.Line, p.Spec.Start.Hash))
+		if !util.ValidateHash(e.start, e.startHash, contents) {
+			mismatches = append(mismatches, hashMismatch(contents, e.start, e.startHash))
 		}
-		if !util.ValidateHash(p.Spec.End.Line, p.Spec.End.Hash, contents) {
-			mismatches = append(mismatches, hashMismatch(contents, p.Spec.End.Line, p.Spec.End.Hash))
+		if !util.ValidateHash(e.end, e.endHash, contents) {
+			mismatches = append(mismatches, hashMismatch(contents, e.end, e.endHash))
 		}
 	}
 
@@ -408,46 +347,26 @@ func hashMismatch(contents []string, line int, expectedHash string) HashMismatch
 	return HashMismatch{Line: line, Expected: expectedHash, Actual: actual}
 }
 
-// ---- Dedup ----
-
-func deduplicateParsedEdits(parsed []ParsedEdit) []ParsedEdit {
-	if len(parsed) <= 1 {
-		return parsed
+func deduplicateEdits(edits []parsedEdit) []parsedEdit {
+	if len(edits) <= 1 {
+		return edits
 	}
 	type key struct {
-		loc string
-		dst string
+		start, end int
+		dst        string
 	}
-	seen := make(map[key]int, len(parsed))
-	dedupe := make(map[int]struct{})
-
-	for i, p := range parsed {
-		k := key{
-			loc: fmt.Sprintf("r:%d:%d", p.Spec.Start.Line, p.Spec.End.Line),
-			dst: strings.Join(p.Dst, "\n"),
-		}
+	seen := make(map[key]struct{}, len(edits))
+	out := edits[:0]
+	for _, e := range edits {
+		k := key{start: e.start, end: e.end, dst: strings.Join(e.dst, "\n")}
 		if _, ok := seen[k]; ok {
-			dedupe[i] = struct{}{}
-		} else {
-			seen[k] = i
-		}
-	}
-
-	if len(dedupe) == 0 {
-		return parsed
-	}
-
-	filtered := make([]ParsedEdit, 0, len(parsed)-len(dedupe))
-	for i, p := range parsed {
-		if _, drop := dedupe[i]; drop {
 			continue
 		}
-		filtered = append(filtered, p)
+		seen[k] = struct{}{}
+		out = append(out, e)
 	}
-	return filtered
+	return out
 }
-
-// ---- Mismatch error formatting ----
 
 func newHashlineMismatchError(mismatches []HashMismatch, fileLines []string) *HashlineMismatchError {
 	const contextLines = 2
@@ -481,9 +400,9 @@ func newHashlineMismatchError(mismatches []HashMismatch, fileLines []string) *Ha
 	)
 	b.WriteString("\n\n")
 
-	mismatchByLine := make(map[int]HashMismatch, len(mismatches))
+	mismatchLines := make(map[int]struct{}, len(mismatches))
 	for _, m := range mismatches {
-		mismatchByLine[m.Line] = m
+		mismatchLines[m.Line] = struct{}{}
 	}
 
 	prev := -1
@@ -497,10 +416,8 @@ func newHashlineMismatchError(mismatches []HashMismatch, fileLines []string) *Ha
 		if ln-1 >= 0 && ln-1 < len(fileLines) {
 			text = fileLines[ln-1]
 		}
-		hash := util.ComputeLineHash(text)
-		prefix := fmt.Sprintf("%d#%s", ln, hash)
-
-		if _, ok := mismatchByLine[ln]; ok {
+		prefix := fmt.Sprintf("%d#%s", ln, util.ComputeLineHash(text))
+		if _, ok := mismatchLines[ln]; ok {
 			fmt.Fprintf(&b, ">>> %s|%s\n", prefix, text)
 		} else {
 			fmt.Fprintf(&b, "    %s|%s\n", prefix, text)
@@ -509,7 +426,6 @@ func newHashlineMismatchError(mismatches []HashMismatch, fileLines []string) *Ha
 
 	return &HashlineMismatchError{
 		mismatches: mismatches,
-		fileLines:  fileLines,
 		msg:        b.String(),
 	}
 }
