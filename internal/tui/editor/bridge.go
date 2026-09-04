@@ -151,7 +151,11 @@ func (b *commandBridge) reloadExtensions() {
 	}
 	msg := fmt.Sprintf("Extensions: reloaded %d", n)
 	if len(warns) > 0 {
-		b.toast(fmt.Sprintf("Extensions: reloaded %d (%d warning(s))", n, len(warns)), toast.ToastWarning, 3*time.Second)
+		b.toast(
+			fmt.Sprintf("Extensions: reloaded %d (%d warning(s))", n, len(warns)),
+			toast.ToastWarning,
+			3*time.Second,
+		)
 		return
 	}
 	b.toast(msg, toast.ToastSuccess, 2*time.Second)
