@@ -557,16 +557,16 @@ func (c *ChatInput) Draw(ctx components.DrawContext) components.Surface {
 
 	s := components.NewSurface(w, h, c)
 	var tl, tr, bl, br *layout.BorderLabel
-	if c.TopLeftLabel.Text != "" {
+	if c.TopLeftLabel.Visible() {
 		tl = &c.TopLeftLabel
 	}
-	if c.TopRightLabel.Text != "" {
+	if c.TopRightLabel.Visible() {
 		tr = &c.TopRightLabel
 	}
-	if c.BottomLeftLabel.Text != "" {
+	if c.BottomLeftLabel.Visible() {
 		bl = &c.BottomLeftLabel
 	}
-	if c.BottomRightLabel.Text != "" {
+	if c.BottomRightLabel.Visible() {
 		br = &c.BottomRightLabel
 	}
 	layout.DrawRoundedBorder(&s, layout.BorderRounded, borderSt, tl, tr, bl, br, ctx.Method)

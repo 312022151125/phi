@@ -12,6 +12,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- TUI: composer bottom-left status slot now toggles between activity/spinner (busy) and token stats (idle); busy state animates a highlight through the activity text (no block-glyph scan bar); the bottom footer row is reserved for extension status, live jobs, and update hints.
+
 ### Deprecated
 
 ### Removed

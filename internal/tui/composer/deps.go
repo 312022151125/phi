@@ -36,7 +36,7 @@ type OverlayComposer interface {
 	HidePalette()
 }
 
-// LabelComposer receives footer token/context labels.
+// LabelComposer receives the composer status slot (activity or token labels).
 type LabelComposer interface {
 	SetBottomLeftLabel(layout.BorderLabel)
 	ClearBottomLeftLabel()
