@@ -8,6 +8,7 @@ import (
 	"github.com/pulseaiclub/xui"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/layout"
 	"github.com/pulseaiclub/phi/internal/session"
 )
 
@@ -120,15 +121,25 @@ func formatUsageStats(usage session.TokenUsage) string {
 	return b.String()
 }
 
-// PathLabelStyle styles the cwd path label on the composer border.
+// PathLabelStyle styles ambient composer-border embeds (path, idle tokens, activity).
+// Alias of ChromeLabelStyle — kept for call-site clarity at the cwd label.
 func PathLabelStyle(th components.Theme) xui.Style {
-	// Muted without Dim so the cwd stays readable on dark borders.
+	return ChromeLabelStyle(th)
+}
+
+// ChromeLabelStyle is the single ambient voice for chat-input border chrome.
+// Model Identity stays the frame's only accent; Warning/Destructive escalate
+// only under context pressure.
+func ChromeLabelStyle(th components.Theme) xui.Style {
+	// Muted without Dim so labels stay readable on dark borders.
 	st := th.Muted
 	st.Dim = false
 	return st
 }
 
-func contextLabelStyle(th components.Theme, usage session.TokenUsage, window int) xui.Style {
+// contextPressureStyle colors only the context-fill fragment under pressure.
+// At rest it matches ChromeLabelStyle so usage stats never shout ToolName cyan.
+func contextPressureStyle(th components.Theme, usage session.TokenUsage, window int) xui.Style {
 	used := usage.ContextTokens()
 	ratio := contextFillRatio(used, window)
 	switch contextFillLevelFor(ratio, window) {
@@ -136,15 +147,34 @@ func contextLabelStyle(th components.Theme, usage session.TokenUsage, window int
 		return th.Destructive
 	case contextFillWarning:
 		return th.Warning
-	case contextFillRecommend:
-		st := th.Accent
-		st.Underline = false
-		return st
 	default:
-		st := th.ToolName
-		st.Bold = false
-		return st
+		return ChromeLabelStyle(th)
 	}
+}
+
+// tokenStatusLabel builds the idle bottom-left label: usage always ambient,
+// context % escalates alone when the window is under pressure.
+func tokenStatusLabel(th components.Theme, usage session.TokenUsage, window int) layout.BorderLabel {
+	stats := formatUsageStats(usage)
+	ctx := formatContextLabel(usage, window)
+	chrome := ChromeLabelStyle(th)
+	if stats == "" && ctx == "" {
+		return layout.BorderLabel{}
+	}
+	if ctx == "" {
+		return layout.BorderLabel{Text: stats, Style: chrome}
+	}
+	pressure := contextPressureStyle(th, usage, window)
+	if stats == "" {
+		return layout.BorderLabel{Text: ctx, Style: pressure}
+	}
+	if contextFillLevelFor(contextFillRatio(usage.ContextTokens(), window), window) <= contextFillRecommend {
+		return layout.BorderLabel{Text: joinBorderParts(stats, ctx), Style: chrome}
+	}
+	return layout.BorderLabel{Spans: []layout.BorderSpan{
+		{Text: stats + " ", Style: chrome},
+		{Text: ctx, Style: pressure},
+	}}
 }
 
 // joinBorderParts concatenates non-empty label fragments with a single space.

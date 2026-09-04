@@ -189,21 +189,18 @@ func (f *FooterChrome) syncStatusSlot() {
 		f.composer.ClearBottomLeftLabel()
 		return
 	}
-	combined := joinBorderParts(formatUsageStats(f.lastUsage), formatContextLabel(f.lastUsage, f.contextWindow))
-	if combined == "" {
+	label := tokenStatusLabel(f.theme, f.lastUsage, f.contextWindow)
+	if !label.Visible() {
 		f.composer.ClearBottomLeftLabel()
 		return
 	}
-	f.composer.SetBottomLeftLabel(layout.BorderLabel{
-		Text:  combined,
-		Style: contextLabelStyle(f.theme, f.lastUsage, f.contextWindow),
-	})
+	f.composer.SetBottomLeftLabel(label)
 }
 
 func (f *FooterChrome) activityStatusLabel(msg string) layout.BorderLabel {
-	// Same family as the path label: muted base, foreground shimmer — avoids
-	// ToolName cyan flashing against the border.
-	dim := PathLabelStyle(f.theme)
+	// Ambient chrome + typing-color sheen: one frame dialect, motion without a
+	// competing brand hue (no ToolName cyan on the border).
+	dim := ChromeLabelStyle(f.theme)
 	if !f.activity.ShowSpinner() || f.spin == nil {
 		return layout.BorderLabel{Text: msg, Style: dim}
 	}

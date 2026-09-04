@@ -123,21 +123,21 @@ func (h *ActivityHandler) Label(snap session.Snapshot) string {
 func activityMessage(a Activity) string {
 	switch a {
 	case ActivitySubmitting:
-		return "Sending"
+		return "Sending…"
 	case ActivityWaiting:
-		return "Awaiting reply"
+		return "Awaiting reply…"
 	case ActivityStreaming:
-		return "Generating"
+		return "Generating…"
 	case ActivityTools:
-		return "Calling tools"
+		return "Calling tools…"
 	case ActivityCompacting:
-		return "Auto-compacting"
+		return "Auto-compacting…"
 	case ActivityRetrying:
-		return "Retrying after disconnect"
+		return "Retrying after disconnect…"
 	case ActivityCancelled:
 		return "Stopped"
 	case ActivityAwaitingApproval:
-		return "Waiting for approval"
+		return "Waiting for approval…"
 	default:
 		return ""
 	}

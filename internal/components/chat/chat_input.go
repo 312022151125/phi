@@ -18,13 +18,18 @@ import (
 
 // ChatInput is a composer: rounded border, edge labels, multiline editor.
 //
+// Color dialect (one frame, few voices):
+//   - Border + ambient labels (path, idle tokens, activity) → ChromeLabelStyle
+//   - Model name (top-right) → Identity — sole accent on the frame
+//   - Context % → Warning/Destructive only under pressure
+//
 // Layout (minBodyRows=3 → total height 5; +1 when PendingSkills set):
 //
-//	╭────────────────────────────── model-name───────╮
+//	╭────────────────────────────── model-name ──────╮
 //	│ Skills: building-plugins                       │
 //	│█                                               │
 //	│                                                │
-//	╰─ ↑1.2k ↓800 C900 Σ2.0k 5% of 128k ── ~/path ───╯
+//	╰─ ↑1.2k ↓800 Σ2.0k 5%/128k ────────── ~/path ───╯
 type ChatInput struct {
 	// Value is the current editor text (may contain newlines).
 	Value string
