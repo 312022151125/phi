@@ -346,14 +346,14 @@ func (c *ComposerPane) SetBranchLabel(text string) {
 	}
 }
 
-// ClearBottomLeftLabel clears token/context stats in the composer footer.
+// ClearBottomLeftLabel clears the composer status slot (activity or tokens).
 func (c *ComposerPane) ClearBottomLeftLabel() {
 	if c != nil {
 		c.Chat.BottomLeftLabel = layout.BorderLabel{}
 	}
 }
 
-// SetBottomLeftLabel sets token/context stats in the composer footer.
+// SetBottomLeftLabel sets the composer status slot (activity or tokens).
 func (c *ComposerPane) SetBottomLeftLabel(label layout.BorderLabel) {
 	if c != nil {
 		c.Chat.BottomLeftLabel = label

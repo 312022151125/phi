@@ -28,7 +28,7 @@ func TestRenderMarkdown_Basics(t *testing.T) {
 			check: func(t *testing.T, spans []components.Span) {
 				require.NotEmpty(t, spans)
 				assert.True(t, spans[0].Style.Bold)
-				assert.Equal(t, th.Success.Fg, spans[0].Style.Fg)
+				assert.Equal(t, th.Title.Fg, spans[0].Style.Fg)
 			},
 		},
 		{
@@ -41,10 +41,10 @@ func TestRenderMarkdown_Basics(t *testing.T) {
 				for _, s := range spans {
 					if s.Text == "go test" {
 						found = true
-						assert.True(t, s.Style.Equal(th.Warning))
+						assert.True(t, s.Style.Equal(th.ToolName))
 					}
 				}
-				assert.True(t, found, "expected warning-styled code span")
+				assert.True(t, found, "expected toolName-styled code span")
 			},
 		},
 		{
@@ -110,7 +110,7 @@ func TestRenderMarkdown_Basics(t *testing.T) {
 			check: func(t *testing.T, spans []components.Span) {
 				for _, s := range spans {
 					if strings.Contains(s.Text, "internal/") {
-						assert.True(t, s.Style.Equal(th.Warning), "path style")
+						assert.True(t, s.Style.Equal(th.ToolName), "path style")
 						return
 					}
 				}

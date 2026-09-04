@@ -447,8 +447,7 @@ func (p *CommandPalette) Draw(ctx components.DrawContext) components.Surface {
 	tw := xui.StringWidth(title, ctx.Method)
 	tx := (boxW - tw) / 2
 	tx = max(tx, 1)
-	titleSt := th.Warning
-	titleSt.Bold = true
+	titleSt := chrome.PanelTitle(th)
 	panel.Print(tx, 0, title, titleSt, ctx.Method)
 
 	// Prompt: "> query"
@@ -481,7 +480,7 @@ func (p *CommandPalette) Draw(ctx components.DrawContext) components.Surface {
 			y := listY + row
 			rowStyle := th.Foreground
 			nounStyle := th.Muted
-			shortcutStyle := th.Keybind
+			shortcutStyle := th.ToolName
 			if sel {
 				bg := th.SelectionBg.Bg
 				for x := 1; x < boxW-1; x++ {

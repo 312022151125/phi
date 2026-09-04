@@ -70,7 +70,7 @@ func TestAssistantBlockDraw(t *testing.T) {
 			wantNotContain: []string{"`"},
 			wantCells: []cellCheck{
 				{x: 0, y: 0, style: th.Foreground}, // "run "
-				{x: 4, y: 0, style: th.Warning},    // code token
+				{x: 4, y: 0, style: th.ToolName},   // code token
 			},
 		},
 		{
@@ -80,7 +80,7 @@ func TestAssistantBlockDraw(t *testing.T) {
 			wantWidth:    60,
 			wantContains: []string{"internal/components/block.go"},
 			wantCells: []cellCheck{
-				{x: 4, y: 0, style: th.Warning}, // path token start
+				{x: 4, y: 0, style: th.ToolName}, // path token start
 			},
 		},
 		{

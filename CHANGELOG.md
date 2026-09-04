@@ -12,6 +12,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- TUI: composer bottom-left status slot now toggles between activity/spinner (busy) and token stats (idle); busy state animates a highlight through the activity text (no block-glyph scan bar); the bottom footer row is reserved for extension status, live jobs, and update hints.
+- TUI: chat-input border chrome speaks one ambient voice (path, idle tokens, activity); model Identity remains the sole frame accent; context % escalates to Warning/Destructive only under pressure.
+- TUI color dialect: Identity ≠ Success; Title for panel/md structure; ToolName is the sole cool action accent (tools, keybinds, paths, code); Warning/Destructive reserved for risk; default theme is Dark (Terminal stays a compatibility option).
+
 ### Deprecated
 
 ### Removed

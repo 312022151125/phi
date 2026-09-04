@@ -231,7 +231,7 @@ Anthropic Messages API；其余走 OpenAI 兼容的 `/chat/completions` 路径�
 | `Ctrl+U` | 清空输入框（含图片和技能） |
 | `Ctrl+Shift+C` | 复制选中的对话文本 |
 
-主题：`Dark`、`Darcula`、`Pink` 和 `Terminal`（默认），可在面板的
+主题：`Dark`（默认）、`Darcula`、`Pink` 和 `Terminal`，可在面板的
 设置 → 主题中切换。
 
 ## 命令

@@ -7,10 +7,10 @@ import (
 	"github.com/pulseaiclub/phi/internal/session"
 )
 
-// Activity mirrors footer session status (driven by the stream pipeline).
+// Activity mirrors session status for the composer status slot (driven by the stream pipeline).
 type Activity int
 
-// Activity values map to footer status messages shown while the pipeline runs.
+// Activity values map to status-slot messages shown while the pipeline runs.
 const (
 	ActivityIdle Activity = iota
 	ActivitySubmitting
@@ -26,13 +26,27 @@ const (
 // ActivityHandler owns footer/stream activity state.
 // It only mutates itself when Apply / SyncFromSnap are called on the UI goroutine.
 type ActivityHandler struct {
-	Current Activity
-	spin    *status.Spinner
+	Current  Activity
+	spin     *status.Spinner
+	onChange func()
 }
 
 // NewActivityHandler builds an ActivityHandler that owns the given spinner.
 func NewActivityHandler(spin *status.Spinner) *ActivityHandler {
 	return &ActivityHandler{spin: spin}
+}
+
+// SetOnChange registers a UI-thread callback after activity changes.
+func (h *ActivityHandler) SetOnChange(fn func()) {
+	if h != nil {
+		h.onChange = fn
+	}
+}
+
+func (h *ActivityHandler) notify() {
+	if h != nil && h.onChange != nil {
+		h.onChange()
+	}
 }
 
 // Apply sets activity from a FooterMsg (or direct call on UI thread).
@@ -44,14 +58,17 @@ func (h *ActivityHandler) Apply(a Activity) {
 	if h.spin != nil {
 		h.spin.Frame = 0
 	}
+	h.notify()
 }
 
 // SyncFromSnap derives activity from the session snapshot after model updates.
+// Upgrades (Idle→Streaming/Tools/…) go through Apply, which notifies.
+// The Idle fallback below sets Current directly, so it notifies explicitly.
 func (h *ActivityHandler) SyncFromSnap(snap session.Snapshot) {
 	if h == nil {
 		return
 	}
-	// Don't clobber the approval footer while the confirmation UI is up.
+	// Don't clobber approval activity while the confirmation UI is up.
 	if h.Current == ActivityAwaitingApproval {
 		return
 	}
@@ -77,6 +94,7 @@ func (h *ActivityHandler) SyncFromSnap(snap session.Snapshot) {
 	switch h.Current {
 	case ActivityStreaming, ActivityWaiting, ActivitySubmitting, ActivityTools, ActivityCompacting:
 		h.Current = ActivityIdle
+		h.notify()
 	}
 }
 
@@ -88,7 +106,7 @@ func (h *ActivityHandler) ShowSpinner() bool {
 	return h.Current.showSpinner()
 }
 
-// Label returns the footer text for the current activity and session snapshot.
+// Label returns the status-slot text for the current activity and session snapshot.
 func (h *ActivityHandler) Label(snap session.Snapshot) string {
 	if h == nil {
 		return ""

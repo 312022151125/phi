@@ -28,15 +28,98 @@ func borderGlyphs(s BorderStyle) borderChars {
 	return borderChars{tl: "╭", tr: "╮", bl: "╰", br: "╯", h: "─", v: "│"}
 }
 
-// BorderLabel is text embedded into a border edge.
-type BorderLabel struct {
+// BorderSpan is a styled fragment inside a BorderLabel.
+type BorderSpan struct {
 	Text  string
 	Style xui.Style
 }
 
+// BorderLabel is text embedded into a border edge.
+// When Spans is non-empty it paints instead of Text/Style (multi-style embeds).
+type BorderLabel struct {
+	Text  string
+	Style xui.Style
+	Spans []BorderSpan
+}
+
+// Visible reports whether the label has anything to paint.
+func (l BorderLabel) Visible() bool {
+	if len(l.Spans) > 0 {
+		return true
+	}
+	return l.Text != ""
+}
+
+func borderLabelWidth(l *BorderLabel, method xui.WidthMethod) int {
+	if l == nil {
+		return 0
+	}
+	if len(l.Spans) > 0 {
+		w := 0
+		for _, sp := range l.Spans {
+			w += xui.StringWidth(sp.Text, method)
+		}
+		return w
+	}
+	return xui.StringWidth(l.Text, method)
+}
+
+type fittedSpan struct {
+	Text  string
+	Style xui.Style
+}
+
+// fitBorderLabel truncates a label into maxW columns once; paintBorderLabel reuses the result.
+func fitBorderLabel(l *BorderLabel, maxW int, method xui.WidthMethod) (spans []fittedSpan, width int) {
+	if l == nil || maxW <= 0 {
+		return nil, 0
+	}
+	if len(l.Spans) == 0 {
+		if l.Text == "" {
+			return nil, 0
+		}
+		text := TruncateToWidth(l.Text, maxW, method)
+		return []fittedSpan{{Text: text, Style: l.Style}}, xui.StringWidth(text, method)
+	}
+	remain := maxW
+	out := make([]fittedSpan, 0, len(l.Spans))
+	for _, sp := range l.Spans {
+		if remain <= 0 {
+			break
+		}
+		text := TruncateToWidth(sp.Text, remain, method)
+		if text == "" {
+			// Budget too small for this grapheme; stop so later spans don't jump ahead.
+			break
+		}
+		tw := xui.StringWidth(text, method)
+		out = append(out, fittedSpan{Text: text, Style: sp.Style})
+		width += tw
+		remain -= tw
+	}
+	return out, width
+}
+
+func paintFittedSpans(s *components.Surface, x, y int, spans []fittedSpan, method xui.WidthMethod) {
+	if s == nil {
+		return
+	}
+	for _, sp := range spans {
+		s.Print(x, y, sp.Text, sp.Style, method)
+		x += xui.StringWidth(sp.Text, method)
+	}
+}
+
+// paintBorderLabel draws a label capped to maxW and returns the painted column width.
+func paintBorderLabel(s *components.Surface, x, y, maxW int, l *BorderLabel, method xui.WidthMethod) int {
+	spans, width := fitBorderLabel(l, maxW, method)
+	paintFittedSpans(s, x, y, spans, method)
+	return width
+}
+
 // DrawRoundedBorder paints a rounded (or square) box onto s and embeds labels
-// into the top/bottom edges. Labels on the right are right-aligned with a 1-cell
-// gap from the corner; left labels leave a 1-cell gap from the left corner.
+// into the top/bottom edges. Left and right labels keep a 1-cell border gap
+// from the corners so text is not glued to ╭╮╰╯.
 func DrawRoundedBorder(
 	s *components.Surface,
 	style BorderStyle,
@@ -69,37 +152,42 @@ func DrawRoundedBorder(
 		put(w-1, y, g.v, bs)
 	}
 
+	const cornerGap = 1 // border cells between corner and label text
 	embed := func(y int, left, right *BorderLabel) {
 		avail := w - 2 // between corners
 		if avail < 1 {
 			return
 		}
-		leftW, rightW := 0, 0
-		if left != nil && left.Text != "" {
-			leftW = xui.StringWidth(left.Text, method)
+		leftW := borderLabelWidth(left, method)
+		rightW := borderLabelWidth(right, method)
+		content := avail
+		if left != nil && leftW > 0 {
+			content -= cornerGap
 		}
-		if right != nil && right.Text != "" {
-			rightW = xui.StringWidth(right.Text, method)
+		if right != nil && rightW > 0 {
+			content -= cornerGap
+		}
+		if content < 0 {
+			content = 0
 		}
 		// Prefer right label if they collide.
-		if leftW+rightW > avail {
-			if rightW >= avail {
-				rightW = avail
+		if leftW+rightW > content {
+			if rightW >= content {
+				rightW = content
 				leftW = 0
 			} else {
-				leftW = avail - rightW
+				leftW = content - rightW
 			}
 		}
 		if left != nil && leftW > 0 {
-			text := TruncateToWidth(left.Text, leftW, method)
-			s.Print(1, y, text, left.Style, method)
+			paintBorderLabel(s, 1+cornerGap, y, leftW, left, method)
 		}
 		if right != nil && rightW > 0 {
-			text := TruncateToWidth(right.Text, rightW, method)
-			tw := xui.StringWidth(text, method)
-			x := w - 1 - tw
+			spans, tw := fitBorderLabel(right, rightW, method)
+			// Leave cornerGap cells of border before the right corner.
+			x := w - 1 - cornerGap - tw
 			x = max(x, 1)
-			s.Print(x, y, text, right.Style, method)
+			paintFittedSpans(s, x, y, spans, method)
 		}
 	}
 	embed(0, topLeft, topRight)
