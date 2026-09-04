@@ -166,8 +166,10 @@ func TestCommandRegistry_DispatchSlash(t *testing.T) {
 	assert.True(t, r.DispatchSlash("/resume abc", ctx))
 	assert.Equal(t, "abc", resumeID)
 
-	assert.True(t, r.DispatchSlash("/resume", ctx))
-	assert.Contains(t, drainToast(t, bus), "Usage:")
+	insert, ok := r.IncompleteSlash("/resume")
+	assert.True(t, ok)
+	assert.Equal(t, "/resume ", insert)
+	assert.Empty(t, drainToast(t, bus))
 
 	assert.True(t, r.DispatchSlash("/clear", ctx))
 	assert.Equal(t, 1, cleared)
@@ -238,6 +240,25 @@ func TestCommandRegistry_ExtCommandsDoNotReplaceBuiltins(t *testing.T) {
 	r.clearExtCommands()
 	assert.Empty(t, r.LookupInsert("review"))
 	assert.Equal(t, "/clear", r.LookupInsert("clear"))
+}
+
+func TestCommandRegistry_NeedsArgs(t *testing.T) {
+	r := NewCommandRegistry()
+	r.Register(Command{
+		Name:      "plan",
+		Slash:     true,
+		NeedsArgs: true,
+		Run:       func(CommandContext) error { return nil },
+	})
+	assert.Equal(t, "/plan ", r.LookupInsert("plan"))
+	insert, ok := r.IncompleteSlash("/plan")
+	assert.True(t, ok)
+	assert.Equal(t, "/plan ", insert)
+	_, ok = r.IncompleteSlash("/plan on")
+	assert.False(t, ok)
+
+	assert.True(t, r.registerExt(Command{Name: "review", Slash: true, NeedsArgs: true}))
+	assert.Equal(t, "/review ", r.LookupInsert("review"))
 }
 
 // drainToast returns the message of the last queued ToastMsg and empties the bus.

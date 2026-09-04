@@ -12,6 +12,25 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+<!-- Released section -->
+<!-- Don't change this section unless doing release -->
+
+## [0.21.1] - 2026-09-03
+
+### Added
+
+- Slash commands can declare `NeedsArgs` (Go) / `needs_args` (Rust). Picker accept or bare submit of `/name` leaves `/name ` in the composer so the user can type arguments instead of auto-running and toasting usage. Built-in `/resume` uses this.
+
+### Changed
+
 - Go author SDK nested module now publishes under `github.com/pulseaiclub/phi/ext/go` (imports `…/ext/go/phi`, `…/ext/go/pxb`; tags `ext/go/vX.Y.Z`), matching its repo location `ext/go/` so proxies can resolve it.
 
 ### Deprecated
@@ -23,9 +42,6 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Publish Rust crate workflow: write `exists` to `$GITHUB_OUTPUT` so `cargo publish` actually runs when the version is new (previously the step was always skipped).
 
 ### Security
-
-<!-- Released section -->
-<!-- Don't change this section unless doing release -->
 
 ## [0.21.0] - 2026-09-03
 
@@ -314,7 +330,10 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.19.2...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.21.1...HEAD
+[0.21.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.21.1
+[0.21.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.21.0
+[0.20.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.20.0
 [0.19.2]: https://github.com/pulseaiclub/phi/releases/tag/v0.19.2
 [0.19.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.19.1
 [0.19.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.19.0

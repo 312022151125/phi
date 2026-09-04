@@ -13,6 +13,7 @@ import (
 type Input interface {
 	HideCompleters()
 	ClearInput()
+	SetInput(text string)
 	PendingSkills() []string
 	PendingImages() []imgutil.Attachment
 	ClearPendingSkills()

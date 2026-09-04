@@ -165,13 +165,17 @@ type ToolInfo struct {
 // Command registers a slash command.
 type Command struct {
 	Description string
-	Handler     func(args string, ctx *Context) error
+	// NeedsArgs leaves "/name " in the composer on picker accept / bare submit
+	// so the user can type arguments instead of running with an empty arg string.
+	NeedsArgs bool
+	Handler   func(args string, ctx *Context) error
 }
 
 // CommandEntry is a registered slash command name.
 type CommandEntry struct {
 	Name        string
 	Description string
+	NeedsArgs   bool
 }
 
 // ExecResult is returned from API.Exec.

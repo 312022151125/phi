@@ -88,6 +88,12 @@ func (s *Submitter) Submit(text string) {
 		}
 	}
 	if strings.HasPrefix(text, "/") {
+		if insert, ok := s.incompleteSlash(text); ok {
+			s.composer.HideCompleters()
+			s.composer.SetInput(insert)
+			s.composer.SyncBashBorder("")
+			return
+		}
 		if s.dispatchSlash(text) {
 			s.composer.HideCompleters()
 			s.composer.ClearInput()
@@ -228,4 +234,11 @@ func (s *Submitter) dispatchSlash(text string) bool {
 		return false
 	}
 	return s.commands.DispatchSlash(text, s.commandContext())
+}
+
+func (s *Submitter) incompleteSlash(text string) (string, bool) {
+	if s == nil || s.commands == nil {
+		return "", false
+	}
+	return s.commands.IncompleteSlash(text)
 }

@@ -22,6 +22,7 @@ const F_ACK_EXT_DIR: u16 = 5;
 
 const F_REG_CMD_NAME: u16 = 1;
 const F_REG_CMD_DESC: u16 = 2;
+const F_REG_CMD_NEEDS_ARGS: u16 = 3;
 
 const F_REG_TOOL_NAME: u16 = 1;
 const F_REG_TOOL_DESC: u16 = 2;
@@ -199,12 +200,18 @@ pub fn decode_hello_ack(b: &[u8]) -> Result<HelloAck, Error> {
 pub struct RegisterCommand {
     pub name: String,
     pub description: String,
+    /// Host leaves `/name ` in the composer on picker accept / bare submit.
+    /// `false` omits the wire field (backward compatible).
+    pub needs_args: bool,
 }
 
 pub fn encode_register_command(r: &RegisterCommand) -> Vec<u8> {
     let mut fw = FieldWriter::new();
     fw.put_string(F_REG_CMD_NAME, &r.name);
     fw.put_string(F_REG_CMD_DESC, &r.description);
+    if r.needs_args {
+        fw.put_bool(F_REG_CMD_NEEDS_ARGS, true);
+    }
     fw.into_vec()
 }
 
@@ -214,6 +221,7 @@ pub fn decode_register_command(b: &[u8]) -> Result<RegisterCommand, Error> {
         match tag {
             F_REG_CMD_NAME => r.name = take_string(kind, fr)?,
             F_REG_CMD_DESC => r.description = take_string(kind, fr)?,
+            F_REG_CMD_NEEDS_ARGS => r.needs_args = take_u64(kind, fr)? != 0,
             _ => fr.skip(kind)?,
         }
         Ok(())
@@ -773,6 +781,7 @@ mod tests {
                 encode_register_command(&RegisterCommand {
                     name: "hi".into(),
                     description: "Say hi".into(),
+                    needs_args: true,
                 }),
                 |b| Ok(encode_register_command(&decode_register_command(b)?)),
             ),
