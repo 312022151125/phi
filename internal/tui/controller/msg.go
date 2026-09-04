@@ -50,6 +50,11 @@ type ToastMsg struct {
 
 func (ToastMsg) isMsg() {}
 
+// ThemeMsg asks the Editor to switch the UI chrome theme by name.
+type ThemeMsg struct{ Name string }
+
+func (ThemeMsg) isMsg() {}
+
 // ClearIfActivityMsg sets Idle only when current activity still matches If.
 // Used for delayed "Stopped" → Idle without clobbering a newer state.
 type ClearIfActivityMsg struct{ If Activity }

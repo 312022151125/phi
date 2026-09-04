@@ -316,6 +316,9 @@ func (c *ComposerPane) FocusChat() {
 func (c *ComposerPane) AddPendingSkill(name string) {
 	if c != nil {
 		c.Chat.AddPendingSkill(name)
+		if c.onRedraw != nil {
+			c.onRedraw()
+		}
 	}
 }
 
