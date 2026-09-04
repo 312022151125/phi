@@ -1,5 +1,8 @@
-// Package chrome locks TUI visual grammar: glyphs, hints, and decision-row chrome.
-// Call sites should not invent parallel dialects for the same job.
+// Package chrome locks TUI visual grammar: glyphs, hints, borders, and
+// decision-row chrome. Call sites should not invent parallel dialects.
+//
+// Color roles live on components.Theme; this package only picks the right
+// role for a job (ModalBorder, PanelTitle, DecisionPrimary, ToolIcon, …).
 package chrome
 
 import (
@@ -81,12 +84,25 @@ func FeedbackHint() string {
 	return "Enter send" + Sep + "Esc cancel"
 }
 
-// DecisionPrimary is the accent used for selected decision rows.
+// DecisionPrimary is the cool action accent for selected decision rows.
 func DecisionPrimary(th components.Theme) xui.Style {
 	if th.ToolName.Fg.Kind != 0 {
 		return th.ToolName
 	}
 	return th.Success
+}
+
+// ModalBorder is the elevated border for ask/confirm panels (structure, not alarm).
+func ModalBorder(th components.Theme) xui.Style {
+	if th.Title.Fg.Kind != 0 {
+		return th.Title
+	}
+	return th.Border
+}
+
+// PanelTitle styles overlay / palette titles.
+func PanelTitle(th components.Theme) xui.Style {
+	return th.TitleOrForeground()
 }
 
 // OptionLine paints one ▸● /  ○ decision row.

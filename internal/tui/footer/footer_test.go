@@ -6,10 +6,28 @@ import (
 
 	"github.com/pulseaiclub/xui"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/components"
+	"github.com/pulseaiclub/phi/internal/components/layout"
+	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
 )
+
+type stubComposer struct {
+	label layout.BorderLabel
+	set   bool
+}
+
+func (s *stubComposer) SetBottomLeftLabel(label layout.BorderLabel) {
+	s.label = label
+	s.set = true
+}
+
+func (s *stubComposer) ClearBottomLeftLabel() {
+	s.label = layout.BorderLabel{}
+	s.set = false
+}
 
 func TestDrawCombinesParts(t *testing.T) {
 	f := NewFooterChrome(components.DefaultTheme(), 0)
@@ -18,7 +36,8 @@ func TestDrawCombinesParts(t *testing.T) {
 	f.Activity().Apply(controller.ActivityCancelled)
 
 	row := components.SurfaceText(f.Draw(components.DrawContext{Method: xui.WidthUnicode}, 40))
-	assert.Contains(t, row, "review · Stopped · 2 jobs")
+	assert.Contains(t, row, "review · 2 jobs")
+	assert.NotContains(t, row, "Stopped")
 }
 
 func TestDrawSingleJobSingular(t *testing.T) {
@@ -34,4 +53,41 @@ func TestDrawEmptyFooter(t *testing.T) {
 
 	row := components.SurfaceText(f.Draw(components.DrawContext{Method: xui.WidthUnicode}, 40))
 	assert.Empty(t, strings.TrimSpace(row))
+}
+
+func TestStatusSlotSwapsActivityAndTokens(t *testing.T) {
+	f := NewFooterChrome(components.DefaultTheme(), 128000)
+	comp := &stubComposer{}
+	f.BindComposer(comp)
+
+	f.UpdateTokenDisplay(session.TokenUsage{
+		PromptTokens:     1200,
+		CompletionTokens: 800,
+		TotalTokens:      2000,
+	})
+	require.True(t, comp.set)
+	assert.Contains(t, comp.label.Text, "↑1.2k")
+	assert.Contains(t, comp.label.Text, "↓800")
+
+	f.Activity().Apply(controller.ActivityStreaming)
+	require.True(t, comp.set)
+	assert.Empty(t, comp.label.Text)
+	require.NotEmpty(t, comp.label.Spans)
+	var joined strings.Builder
+	for _, sp := range comp.label.Spans {
+		joined.WriteString(sp.Text)
+	}
+	assert.Equal(t, "Generating…", joined.String())
+	lit := 0
+	fg := components.DefaultTheme().Foreground
+	for _, sp := range comp.label.Spans {
+		if sp.Style == fg {
+			lit++
+		}
+	}
+	assert.Positive(t, lit)
+
+	f.Activity().Apply(controller.ActivityIdle)
+	assert.Contains(t, comp.label.Text, "↑1.2k")
+	assert.Empty(t, comp.label.Spans)
 }

@@ -2,7 +2,6 @@
 package editor
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/pulseaiclub/xui"
@@ -10,7 +9,6 @@ import (
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/app"
 	"github.com/pulseaiclub/phi/internal/components/listpicker"
-	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/tui/commands"
 	"github.com/pulseaiclub/phi/internal/tui/composer"
@@ -159,19 +157,12 @@ func NewEditor(
 	bridge = newCommandBridge(
 		e.bus,
 		e.composer,
-		e.transcript,
 		e.ctrl,
 		e.submitter,
 		e.sessions,
+		e.extCmds,
 		e.modelNames,
 		e.skillPath,
-		e.reloadExtensions,
-		e.listExtensions,
-		e.setModel,
-		e.applyTheme,
-		e.setPermissions,
-		e.setAgents,
-		e.addPendingSkill,
 	)
 	e.extCmds.CommandCtx = bridge.context
 	e.composer.Wire(
@@ -230,16 +221,16 @@ func (e *Editor) Update(m controller.Msg) {
 		e.submitter.Cancel()
 	case controller.MentionResultsMsg:
 		e.composer.ApplyMentionResults(msg)
-	case controller.PermissionAskMsg, controller.PermissionDismissMsg,
-		controller.ContinueAskMsg, controller.ContinueDismissMsg,
-		controller.ExtConfirmMsg, controller.ExtConfirmDismissMsg:
-		e.overlays.Apply(m)
-	case controller.SetActivityMsg, controller.ClearIfActivityMsg, controller.UpdateAvailableMsg:
-		e.footer.Apply(m)
+	case controller.OverlayMsg:
+		e.overlays.Apply(msg)
+	case controller.FooterMsg:
+		e.footer.Apply(msg)
 	case controller.ToastMsg:
 		e.toast.Show(msg.Message, msg.Kind, msg.Duration)
+	case controller.ThemeMsg:
+		e.applyTheme(msg.Name)
 	case controller.ExtSessionEffectsMsg:
-		e.footer.Apply(m)
+		e.footer.ApplySessionEffects(msg)
 		if msg.Toast != "" {
 			e.toast.Show(msg.Toast, toast.ToastSuccess, 3*time.Second)
 		}
@@ -388,13 +379,6 @@ func (e *Editor) RequestRedraw() {
 	e.requestRedraw()
 }
 
-func (e *Editor) addPendingSkill(name string) {
-	e.composer.AddPendingSkill(name)
-	if e.vx != nil {
-		e.vx.QueueRefresh()
-	}
-}
-
 // StartUpdateCheck queries GitHub for a newer release in the background and
 // surfaces a footer hint when one is available. cacheDir is where the version
 // check may store its cache (e.g. project global root); empty disables disk cache.
@@ -408,7 +392,11 @@ func (e *Editor) StartUpdateCheck(cacheDir string) {
 		if !ok || !info.Available {
 			return
 		}
-		e.Publish(controller.UpdateAvailableMsg{Latest: info.Latest, Current: info.Current})
+		e.Publish(controller.FooterMsg{
+			Kind:    controller.FooterUpdateAvailable,
+			Latest:  info.Latest,
+			Current: info.Current,
+		})
 	}()
 }
 
@@ -435,62 +423,4 @@ func (e *Editor) applyTheme(name string) {
 	if e.vx != nil {
 		e.vx.QueueRefresh()
 	}
-}
-
-func (e *Editor) setModel(name string) {
-	if err := e.ctrl.SetModel(name); err != nil {
-		e.toast.Show(err.Error(), toast.ToastError, 3*time.Second)
-		return
-	}
-	e.composer.SetModelLabel(name)
-	e.toast.Show("Model: "+name, toast.ToastSuccess, 2*time.Second)
-	if e.vx != nil {
-		e.vx.QueueRefresh()
-	}
-}
-
-func (e *Editor) setPermissions(bypass bool) {
-	e.ctrl.SetAllowAll(bypass)
-	kind := toast.ToastWarning
-	msg := "Permissions: on (ask)"
-	if bypass {
-		kind = toast.ToastSuccess
-		msg = "Permissions: off (allow all)"
-	}
-	e.toast.Show(msg, kind, 3*time.Second)
-}
-
-func (e *Editor) setAgents(enabled bool) {
-	e.ctrl.SetAgentsEnabled(enabled)
-	msg := "Sub-agents: off"
-	if enabled {
-		msg = "Sub-agents: on"
-	}
-	e.toast.Show(msg, toast.ToastSuccess, 2*time.Second)
-}
-
-func (e *Editor) reloadExtensions() {
-	n, warns, err := e.ctrl.ReloadExtensions()
-	if err != nil {
-		e.toast.Show("Extensions reload: "+err.Error(), toast.ToastError, 3*time.Second)
-		return
-	}
-	e.extCmds.Sync()
-	msg := fmt.Sprintf("Extensions: reloaded %d", n)
-	if len(warns) > 0 {
-		msg = fmt.Sprintf("Extensions: reloaded %d (%d warning(s))", n, len(warns))
-		e.toast.Show(msg, toast.ToastWarning, 3*time.Second)
-		return
-	}
-	e.toast.Show(msg, toast.ToastSuccess, 2*time.Second)
-}
-
-func (e *Editor) listExtensions() []palette.PaletteCommand {
-	found, warns, err := e.ctrl.ListExtensions()
-	return commands.ExtensionListEntries(found, warns, err)
-}
-
-// SubmitPrompt publishes a user prompt onto the bus.
-func (e *Editor) SubmitPrompt(text string) {
-	e.Publish(controller.SubmitMsg{Text: text})
 }

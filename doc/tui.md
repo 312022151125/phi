@@ -9,7 +9,7 @@ cmd/main.go
   └─ editor.NewEditor(app, bus, ctrl, …)
        ├─ TranscriptPane   snap, list, mapper, subagents, welcome, text selection
        ├─ ComposerPane     chat, @/slash pickers, palette (input only)
-       ├─ FooterChrome     activity, spinner, tokens, update hint, extension status
+       ├─ FooterChrome     status slot (activity↔tokens), bottom row for ext/jobs/hints
        ├─ Overlays         permission ask, continue ask
        └─ Submitter        submit / cancel / slash / bash → Controller
 ```
@@ -50,7 +50,7 @@ internal/tui/
 | `controller` | `Controller` runs `agent.Engine`; publishes `Msg` to the bus only |
 | `transcript` | Projects `session.Event` → message list; sub-agent rows; copy selection |
 | `composer` | Keyboard routing for chat, `/` slash, `@` mention, Ctrl+K palette |
-| `footer` | Spinner, activity line, token/context labels, update hint, extension status |
+| `footer` | Composer status slot (activity ↔ tokens), bottom footer row (ext status, jobs, update hint) |
 | `overlays` | Modal permission / continue-ask panels; replaces composer when active |
 | `submit` | User submit path: agent prompt, slash commands, `!bash`, cancel |
 | `commands` | Slash/palette registry; session load/clear; extension command bridge |
@@ -79,9 +79,9 @@ app.Run(ui)
 
 Inside `NewEditor`, the `CommandRegistry` (builtins) is built first, then panes in dependency order:
 
-1. `FooterChrome` — spinner + activity (needs `contextWindow`)
-2. `TranscriptPane` — shares footer spinner; usage callback → footer tokens
-3. `ComposerPane` — chat chrome; footer binds composer for labels
+1. `FooterChrome` — status slot + bottom footer row (needs `contextWindow`)
+2. `TranscriptPane` — shares footer spinner; usage callback → footer status slot
+3. `ComposerPane` — chat chrome; footer binds composer for status slot
 4. `Overlays` — permission/continue UI; uses footer activity + composer focus
 5. `SessionCommands`, `ExtCommands`, `Submitter` (owns `BashRunner`) — explicit deps, no `*Editor` fields
 6. `ComposerPane.Wire(...)` — connects composer keyboard path to submitter, overlays, bus
@@ -127,8 +127,9 @@ app frame
 | ---------------- | ------- |
 | `SessionEventMsg`, `JobProgressMsg` | `TranscriptPane` (in `drainBus`) |
 | `SubmitMsg`, `CancelStreamMsg` | `Submitter` |
-| `PermissionAskMsg`, `PermissionDismissMsg`, `ContinueAskMsg`, `ContinueDismissMsg` | `Overlays` |
-| `SetActivityMsg`, `ClearIfActivityMsg`, `UpdateAvailableMsg`, `ExtSessionEffectsMsg` | `FooterChrome` |
+| `OverlayMsg` (permission / continue / ext-confirm ask+dismiss) | `Overlays` |
+| `FooterMsg` (activity / clear-if / update hint) | `FooterChrome` |
+| `ExtSessionEffectsMsg` | `FooterChrome` (+ toast when set) |
 | `MentionResultsMsg`, `BranchLabelMsg` | `ComposerPane` |
 | `ToastMsg` | `Editor` toast overlay |
 | `ExtCommandResultMsg` | `ExtCommands` |
@@ -147,7 +148,7 @@ User Enter in composer
        ├─ "!cmd" prefix  → BashRunner (local shell, SessionEventMsg for output)
        ├─ "/slash"       → CommandRegistry / SessionCommands / ExtCommands
        └─ plain text     → Controller.Submit → agent.Engine.Loop (background)
-                              └─ SessionEventMsg, SetActivityMsg, PermissionAskMsg, …
+                              └─ SessionEventMsg, FooterMsg, OverlayMsg, …
 ```
 
 `Submitter` clears composer input after slash/bash; agent submit passes pending skills from composer.
@@ -160,7 +161,7 @@ Controller.runLoop
   → bus.Publish(SessionEventMsg{Event})
   → drainBus: TranscriptPane.ApplySession
   → TranscriptPane.Sync (mapper + subagent store)
-  → FooterChrome.SyncFromSnap (tokens / context window)
+  → FooterChrome.SyncFromSnap (activity / status slot)
   → stick-to-bottom if user was pinned
 ```
 
@@ -172,17 +173,17 @@ Controller.runLoop
 Esc / composer cancel
   → CancelStreamMsg
   → Submitter.Cancel → Controller cancels stream context
-  → ClearIfActivityMsg when activity was cancelled
+  → FooterMsg{Kind: FooterClearIfActivity} when activity was cancelled
 ```
 
 ### 4. Permission / continue ask
 
 ```text
 Engine needs approval
-  → Controller publishes PermissionAskMsg (or ContinueAskMsg)
+  → Controller publishes OverlayMsg (permission / continue / ext-confirm ask)
   → Overlays.Apply → replaces composer bottom panel
   → user keys → Overlays → Controller reply channel
-  → PermissionDismissMsg / ContinueDismissMsg
+  → OverlayMsg dismiss Kind on timeout/cancel
 ```
 
 Composer input is blocked while an overlay is active (`OverlayBlocksComposer`).
@@ -204,7 +205,7 @@ Composer input is blocked while an overlay is active (`OverlayBlocksComposer`).
 | Source | Msg | Target |
 | ------ | --- | ------ |
 | `StartBranchWatch` | `BranchLabelMsg` | composer bottom-right label |
-| `StartUpdateCheck` | `UpdateAvailableMsg` | footer update hint |
+| `StartUpdateCheck` | `FooterMsg` (update available) | footer update hint |
 | Extension session lifecycle | `ExtSessionEffectsMsg` | footer status + toast |
 
 ---

@@ -30,10 +30,27 @@ type SessionEventMsg struct{ Event session.Event }
 
 func (SessionEventMsg) isMsg() {}
 
-// SetActivityMsg sets footer/stream activity status.
-type SetActivityMsg struct{ Activity Activity }
+// FooterKind discriminates variants of FooterMsg.
+type FooterKind int
 
-func (SetActivityMsg) isMsg() {}
+const (
+	FooterSetActivity FooterKind = iota
+	FooterClearIfActivity
+	FooterUpdateAvailable
+)
+
+// FooterMsg drives footer activity status and update hints.
+type FooterMsg struct {
+	Kind FooterKind
+
+	Activity Activity // FooterSetActivity
+	If       Activity // FooterClearIfActivity — Idle only when current still matches
+
+	Latest  string // FooterUpdateAvailable
+	Current string
+}
+
+func (FooterMsg) isMsg() {}
 
 // RedrawMsg only asks for a frame (e.g. delayed activity clear).
 type RedrawMsg struct{}
@@ -50,11 +67,10 @@ type ToastMsg struct {
 
 func (ToastMsg) isMsg() {}
 
-// ClearIfActivityMsg sets Idle only when current activity still matches If.
-// Used for delayed "Stopped" → Idle without clobbering a newer state.
-type ClearIfActivityMsg struct{ If Activity }
+// ThemeMsg asks the Editor to switch the UI chrome theme by name.
+type ThemeMsg struct{ Name string }
 
-func (ClearIfActivityMsg) isMsg() {}
+func (ThemeMsg) isMsg() {}
 
 // MentionResultsMsg delivers async @-file search results to the UI goroutine.
 type MentionResultsMsg struct {
@@ -69,42 +85,42 @@ type MentionResultsMsg struct {
 
 func (MentionResultsMsg) isMsg() {}
 
-// PermissionAskMsg asks the UI to confirm a gated tool call.
-// Reply must be buffered(1); the UI sends AskReply once.
-type PermissionAskMsg struct {
-	Request permission.Request
-	Reason  string
-	Reply   chan AskReply
-}
+// OverlayKind discriminates ask/dismiss variants of OverlayMsg.
+type OverlayKind int
 
-func (PermissionAskMsg) isMsg() {}
+const (
+	OverlayPermissionAsk OverlayKind = iota
+	OverlayPermissionDismiss
+	OverlayContinueAsk
+	OverlayContinueDismiss
+	OverlayExtConfirm
+	OverlayExtConfirmDismiss
+)
 
-// PermissionDismissMsg clears a pending permission overlay (timeout/cancel).
-type PermissionDismissMsg struct{}
+// OverlayMsg drives permission / continue / extension-confirm UI.
+// Kind selects which fields are meaningful; reply chans must be buffered(1).
+type OverlayMsg struct {
+	Kind OverlayKind
 
-func (PermissionDismissMsg) isMsg() {}
+	// Permission ask
+	Request   permission.Request
+	Reason    string
+	PermReply chan AskReply
 
-// ContinueAskMsg asks the UI whether to grant another max-rounds budget.
-// Reply must be buffered(1); the UI sends ContinueReply once.
-type ContinueAskMsg struct {
+	// Continue ask
 	MaxRounds int
-	Reply     chan ContinueReply
+	ContReply chan ContinueReply
+
+	// Extension confirm
+	Title        string
+	Message      string
+	Yes          string
+	No           string
+	Danger       bool
+	ConfirmReply chan ExtConfirmReply
 }
 
-func (ContinueAskMsg) isMsg() {}
-
-// ContinueDismissMsg clears a pending continue overlay (timeout/cancel).
-type ContinueDismissMsg struct{}
-
-func (ContinueDismissMsg) isMsg() {}
-
-// UpdateAvailableMsg delivers a startup version-check result to the UI.
-type UpdateAvailableMsg struct {
-	Latest  string
-	Current string
-}
-
-func (UpdateAvailableMsg) isMsg() {}
+func (OverlayMsg) isMsg() {}
 
 // ExtCommandResultMsg delivers the result of an extension slash command.
 type ExtCommandResultMsg struct {
@@ -126,24 +142,6 @@ type ExtSessionEffectsMsg struct {
 }
 
 func (ExtSessionEffectsMsg) isMsg() {}
-
-// ExtConfirmMsg asks the UI to show a yes/no dialog for an extension.
-// Reply must be buffered(1).
-type ExtConfirmMsg struct {
-	Title   string
-	Message string
-	Yes     string
-	No      string
-	Danger  bool
-	Reply   chan ExtConfirmReply
-}
-
-func (ExtConfirmMsg) isMsg() {}
-
-// ExtConfirmDismissMsg clears a pending extension confirm (timeout/cancel).
-type ExtConfirmDismissMsg struct{}
-
-func (ExtConfirmDismissMsg) isMsg() {}
 
 // JobProgressMsg carries a live sub-agent tool update for the nested tree UI.
 type JobProgressMsg struct {

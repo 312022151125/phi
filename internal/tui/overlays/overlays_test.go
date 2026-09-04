@@ -18,10 +18,11 @@ func TestResolvePermissionSendsReply(t *testing.T) {
 	activity := controller.NewActivityHandler(nil)
 	o := testOverlays(activity)
 	reply := make(chan controller.AskReply, 1)
-	o.beginPermissionAsk(controller.PermissionAskMsg{
-		Request: permission.Request{Action: permission.ActionBash, Tool: "bash", Command: "curl x"},
-		Reason:  "needs approval",
-		Reply:   reply,
+	o.beginPermissionAsk(controller.OverlayMsg{
+		Kind:      controller.OverlayPermissionAsk,
+		Request:   permission.Request{Action: permission.ActionBash, Tool: "bash", Command: "curl x"},
+		Reason:    "needs approval",
+		PermReply: reply,
 	})
 	if o.perm == nil {
 		t.Fatal("expected permAsk")
@@ -49,9 +50,10 @@ func TestResolvePermissionSendsReply(t *testing.T) {
 func TestPermissionDenyWithFeedback(t *testing.T) {
 	o := testOverlays(controller.NewActivityHandler(nil))
 	reply := make(chan controller.AskReply, 1)
-	o.beginPermissionAsk(controller.PermissionAskMsg{
-		Request: permission.Request{Tool: "bash", Action: permission.ActionBash, Command: "curl https://x"},
-		Reply:   reply,
+	o.beginPermissionAsk(controller.OverlayMsg{
+		Kind:      controller.OverlayPermissionAsk,
+		Request:   permission.Request{Tool: "bash", Action: permission.ActionBash, Command: "curl https://x"},
+		PermReply: reply,
 	})
 	o.acceptPermissionOption(askOptDenyFeedback)
 	if o.perm == nil || !o.perm.feedbackMode {
@@ -68,11 +70,12 @@ func TestPermissionDenyWithFeedback(t *testing.T) {
 func TestPermissionDismissClearsOverlay(t *testing.T) {
 	o := testOverlays(controller.NewActivityHandler(nil))
 	reply := make(chan controller.AskReply, 1)
-	o.beginPermissionAsk(controller.PermissionAskMsg{
-		Request: permission.Request{Tool: "bash", Action: permission.ActionBash, Command: "curl https://x"},
-		Reply:   reply,
+	o.beginPermissionAsk(controller.OverlayMsg{
+		Kind:      controller.OverlayPermissionAsk,
+		Request:   permission.Request{Tool: "bash", Action: permission.ActionBash, Command: "curl https://x"},
+		PermReply: reply,
 	})
-	o.Apply(controller.PermissionDismissMsg{})
+	o.Apply(controller.OverlayMsg{Kind: controller.OverlayPermissionDismiss})
 	if o.perm != nil {
 		t.Fatal("overlay should clear without consuming reply")
 	}
@@ -86,10 +89,11 @@ func TestPermissionDismissClearsOverlay(t *testing.T) {
 func TestDrawPermissionAskReplacesComposerSlot(t *testing.T) {
 	o := testOverlays(controller.NewActivityHandler(nil))
 	reply := make(chan controller.AskReply, 1)
-	o.beginPermissionAsk(controller.PermissionAskMsg{
-		Request: permission.Request{Action: permission.ActionBash, Tool: "bash", Command: "rm -f todo.list"},
-		Reason:  "Matches built-in permissions rule",
-		Reply:   reply,
+	o.beginPermissionAsk(controller.OverlayMsg{
+		Kind:      controller.OverlayPermissionAsk,
+		Request:   permission.Request{Action: permission.ActionBash, Tool: "bash", Command: "rm -f todo.list"},
+		Reason:    "Matches built-in permissions rule",
+		PermReply: reply,
 	})
 	surf := o.drawPermissionAsk(components.DrawContext{
 		Max:    components.Size{Width: 60, Height: 12},
@@ -111,7 +115,11 @@ func TestContinueAskResolveContinue(t *testing.T) {
 	activity := controller.NewActivityHandler(nil)
 	o := testOverlays(activity)
 	reply := make(chan controller.ContinueReply, 1)
-	o.beginContinueAsk(controller.ContinueAskMsg{MaxRounds: 64, Reply: reply})
+	o.beginContinueAsk(controller.OverlayMsg{
+		Kind:      controller.OverlayContinueAsk,
+		MaxRounds: 64,
+		ContReply: reply,
+	})
 	if o.cont == nil {
 		t.Fatal("expected continueAsk")
 	}
@@ -138,7 +146,11 @@ func TestContinueAskResolveContinue(t *testing.T) {
 func TestContinueAskEscapeStops(t *testing.T) {
 	o := testOverlays(controller.NewActivityHandler(nil))
 	reply := make(chan controller.ContinueReply, 1)
-	o.beginContinueAsk(controller.ContinueAskMsg{MaxRounds: 2, Reply: reply})
+	o.beginContinueAsk(controller.OverlayMsg{
+		Kind:      controller.OverlayContinueAsk,
+		MaxRounds: 2,
+		ContReply: reply,
+	})
 	ctx := &components.EventContext{}
 	_ = o.handleContinueKey(ctx, xui.KeyEvent{Press: true, Code: xui.KeyEscape})
 	select {
@@ -154,8 +166,12 @@ func TestContinueAskEscapeStops(t *testing.T) {
 func TestContinueDismissClearsOverlay(t *testing.T) {
 	o := testOverlays(controller.NewActivityHandler(nil))
 	reply := make(chan controller.ContinueReply, 1)
-	o.beginContinueAsk(controller.ContinueAskMsg{MaxRounds: 2, Reply: reply})
-	o.Apply(controller.ContinueDismissMsg{})
+	o.beginContinueAsk(controller.OverlayMsg{
+		Kind:      controller.OverlayContinueAsk,
+		MaxRounds: 2,
+		ContReply: reply,
+	})
+	o.Apply(controller.OverlayMsg{Kind: controller.OverlayContinueDismiss})
 	if o.cont != nil {
 		t.Fatal("overlay should clear without consuming reply")
 	}

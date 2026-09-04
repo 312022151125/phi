@@ -227,7 +227,7 @@ The editor supports:
 | `Ctrl+U`       | Clear the composer input, images, and skills |
 | `Ctrl+Shift+C` | Copy the selected transcript text |
 
-Themes: `Dark`, `Darcula`, `Pink`, and `Terminal` (default), switchable from
+Themes: `Dark` (default), `Darcula`, `Pink`, and `Terminal`, switchable from
 the palette under settings → theme.
 
 ## Commands

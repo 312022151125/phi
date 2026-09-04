@@ -20,19 +20,11 @@ import (
 	"github.com/pulseaiclub/phi/internal/util"
 )
 
-// ---------------------------------------------------------------------------
-// ripgrep discovery
-// ---------------------------------------------------------------------------
-
 var (
 	rgPath     string
 	rgPathOnce sync.Once
 	rgPathErr  error
 )
-
-// ---------------------------------------------------------------------------
-// constants
-// ---------------------------------------------------------------------------
 
 const (
 	grepDefaultLimit    = 100
@@ -40,10 +32,6 @@ const (
 	grepMaxLineRunes    = 500
 	grepTruncatedSuffix = "... [truncated]"
 )
-
-// ---------------------------------------------------------------------------
-// description
-// ---------------------------------------------------------------------------
 
 var grepDescription = fmt.Sprintf(
 	`Search file contents by regex or literal text and return matching lines as LINE#HASH anchors.
@@ -55,10 +43,6 @@ Use read for full untruncated line text. Prefer this over bash grep/rg.`,
 	grepDefaultLimit,
 	grepDefaultMaxBytes/1024,
 )
-
-// ---------------------------------------------------------------------------
-// tool constructor
-// ---------------------------------------------------------------------------
 
 // GrepTool returns the grep (search) tool definition + handler.
 func GrepTool() tooldef.Tool {
@@ -126,10 +110,6 @@ func GrepTool() tooldef.Tool {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// input type
-// ---------------------------------------------------------------------------
-
 type grepInput struct {
 	Pattern    string `json:"pattern"`
 	Path       string `json:"path,omitempty"`
@@ -140,10 +120,6 @@ type grepInput struct {
 	Context    int    `json:"context,omitempty"`
 	Limit      int    `json:"limit,omitempty"`
 }
-
-// ---------------------------------------------------------------------------
-// ripgrep JSON event shape
-// ---------------------------------------------------------------------------
 
 type rgJSONEvent struct {
 	Type string `json:"type"`
@@ -159,10 +135,6 @@ type grepMatch struct {
 	filePath   string
 	lineNumber int
 }
-
-// ---------------------------------------------------------------------------
-// handler
-// ---------------------------------------------------------------------------
 
 func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error) {
 	var in grepInput
@@ -375,10 +347,6 @@ func runGrep(ctx context.Context, input json.RawMessage) (tooldef.Result, error)
 	detail := fmt.Sprintf("%d matches", matchCount)
 	return tooldef.Result{Content: output, Detail: detail, Output: output}, nil
 }
-
-// ---------------------------------------------------------------------------
-// ripgrep path resolution
-// ---------------------------------------------------------------------------
 
 func resolveRipgrepPath() (string, error) {
 	rgPathOnce.Do(func() {

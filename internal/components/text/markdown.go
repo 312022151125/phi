@@ -87,7 +87,7 @@ func (r *mdRenderer) inlineStyle() xui.Style {
 	}
 	switch {
 	case r.code:
-		st = r.th.Warning
+		st = r.th.ToolName
 		if r.heading != nil {
 			st.Bold = true
 		}
@@ -158,19 +158,8 @@ func (r *mdRenderer) renderBlock(n ast.Node) {
 }
 
 func (r *mdRenderer) renderHeading(h *ast.Heading) {
-	base := r.th.Foreground
-	base.Bold = true
-	switch h.Level {
-	case 1:
-		base = r.th.Success
-		base.Bold = true
-	case 2:
-		base = r.th.ToolName
-		base.Bold = true
-	case 3:
-		base = r.th.Warning
-		base.Bold = true
-	default:
+	base := r.th.TitleOrForeground()
+	if h.Level >= 4 {
 		base = r.th.Muted
 		base.Bold = true
 		base.Dim = false
@@ -312,7 +301,7 @@ func highlightCodeLines(code, lang string, th components.Theme) [][]components.S
 				out[i] = nil
 				continue
 			}
-			out[i] = []components.Span{{Text: line, Style: th.Warning}}
+			out[i] = []components.Span{{Text: line, Style: th.ToolName}}
 		}
 		return out
 	}
@@ -371,13 +360,13 @@ func chromaStyle(t chroma.TokenType, th components.Theme) xui.Style {
 	case t.InCategory(chroma.String), t.InCategory(chroma.LiteralString):
 		return th.Success
 	case t.InCategory(chroma.LiteralNumber), t.InCategory(chroma.LiteralDate):
-		return th.Warning
+		return th.Identity
 	case t.InCategory(chroma.NameFunction), t.InCategory(chroma.NameClass):
 		st := th.Accent
 		st.Underline = false
 		return st
 	case t.InCategory(chroma.NameBuiltin), t.InCategory(chroma.NameDecorator):
-		return th.Warning
+		return th.TitleOrForeground()
 	case t.InCategory(chroma.Operator), t.InCategory(chroma.Punctuation):
 		return th.Foreground
 	case t.InCategory(chroma.Error):
@@ -548,7 +537,7 @@ func highlightPathsStyled(text string, base xui.Style, th components.Theme) []co
 		if m[0] > last {
 			out = append(out, components.Span{Text: text[last:m[0]], Style: base})
 		}
-		pathSt := th.Warning
+		pathSt := th.ToolName
 		pathSt.Bold = base.Bold
 		pathSt.Italic = base.Italic
 		pathSt.Strikethrough = base.Strikethrough

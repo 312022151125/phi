@@ -179,7 +179,7 @@ func (s *Submitter) Cancel() {
 	s.transcript.Sync()
 	s.activity.Apply(controller.ActivityCancelled)
 	time.AfterFunc(1200*time.Millisecond, func() {
-		s.bus.Publish(controller.ClearIfActivityMsg{If: controller.ActivityCancelled})
+		s.bus.Publish(controller.FooterMsg{Kind: controller.FooterClearIfActivity, If: controller.ActivityCancelled})
 	})
 }
 

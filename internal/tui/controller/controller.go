@@ -370,7 +370,7 @@ func (c *EngineController) askPermission(
 		return permission.AskResult{Approved: true}, nil
 	}
 	reply := make(chan AskReply, 1)
-	c.publish(PermissionAskMsg{Request: req, Reason: reason, Reply: reply})
+	c.publish(OverlayMsg{Kind: OverlayPermissionAsk, Request: req, Reason: reason, PermReply: reply})
 
 	timeout := time.Duration(c.askTimeoutSec) * time.Second
 	if timeout <= 0 {
@@ -391,10 +391,10 @@ func (c *EngineController) askPermission(
 		}
 		return permission.AskResult{Approved: r.Approved, Feedback: r.Feedback}, nil
 	case <-ctx.Done():
-		c.publish(PermissionDismissMsg{})
+		c.publish(OverlayMsg{Kind: OverlayPermissionDismiss})
 		return permission.AskResult{}, ctx.Err()
 	case <-timer.C:
-		c.publish(PermissionDismissMsg{})
+		c.publish(OverlayMsg{Kind: OverlayPermissionDismiss})
 		return permission.AskResult{}, nil
 	}
 }
@@ -402,7 +402,7 @@ func (c *EngineController) askPermission(
 // askContinue blocks until the user chooses to continue or stop after max rounds.
 func (c *EngineController) askContinue(ctx context.Context, maxRounds int) (bool, error) {
 	reply := make(chan ContinueReply, 1)
-	c.publish(ContinueAskMsg{MaxRounds: maxRounds, Reply: reply})
+	c.publish(OverlayMsg{Kind: OverlayContinueAsk, MaxRounds: maxRounds, ContReply: reply})
 
 	timeout := time.Duration(c.askTimeoutSec) * time.Second
 	if timeout <= 0 {
@@ -415,10 +415,10 @@ func (c *EngineController) askContinue(ctx context.Context, maxRounds int) (bool
 	case r := <-reply:
 		return r.Continue, nil
 	case <-ctx.Done():
-		c.publish(ContinueDismissMsg{})
+		c.publish(OverlayMsg{Kind: OverlayContinueDismiss})
 		return false, ctx.Err()
 	case <-timer.C:
-		c.publish(ContinueDismissMsg{})
+		c.publish(OverlayMsg{Kind: OverlayContinueDismiss})
 		return false, nil
 	}
 }
@@ -426,13 +426,14 @@ func (c *EngineController) askContinue(ctx context.Context, maxRounds int) (bool
 // askExtConfirm blocks until the user answers an extension Confirm dialog.
 func (c *EngineController) askExtConfirm(req ext.ConfirmRequest) ext.ConfirmReply {
 	reply := make(chan ExtConfirmReply, 1)
-	c.publish(ExtConfirmMsg{
-		Title:   req.Title,
-		Message: req.Message,
-		Yes:     req.Yes,
-		No:      req.No,
-		Danger:  req.Danger,
-		Reply:   reply,
+	c.publish(OverlayMsg{
+		Kind:         OverlayExtConfirm,
+		Title:        req.Title,
+		Message:      req.Message,
+		Yes:          req.Yes,
+		No:           req.No,
+		Danger:       req.Danger,
+		ConfirmReply: reply,
 	})
 	timeout := time.Duration(c.askTimeoutSec) * time.Second
 	if timeout <= 0 {
@@ -444,7 +445,7 @@ func (c *EngineController) askExtConfirm(req ext.ConfirmRequest) ext.ConfirmRepl
 	case r := <-reply:
 		return ext.ConfirmReply{OK: r.OK}
 	case <-timer.C:
-		c.publish(ExtConfirmDismissMsg{})
+		c.publish(OverlayMsg{Kind: OverlayExtConfirmDismiss})
 		return ext.ConfirmReply{}
 	}
 }
@@ -786,7 +787,7 @@ func (c *EngineController) runLoop(
 	if !c.waitOrDone(ctx, gen, 120*time.Millisecond) {
 		return
 	}
-	c.publish(SetActivityMsg{Activity: ActivityStreaming})
+	c.publish(FooterMsg{Kind: FooterSetActivity, Activity: ActivityStreaming})
 
 	if c.engine == nil {
 		errText := "agent not configured"

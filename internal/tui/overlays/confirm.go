@@ -20,7 +20,7 @@ type confirmAskState struct {
 	reply    chan controller.ExtConfirmReply
 }
 
-func newConfirmAskState(msg controller.ExtConfirmMsg) *confirmAskState {
+func newConfirmAskState(msg controller.OverlayMsg) *confirmAskState {
 	yes := strings.TrimSpace(msg.Yes)
 	if yes == "" {
 		yes = "Yes"
@@ -36,7 +36,7 @@ func newConfirmAskState(msg controller.ExtConfirmMsg) *confirmAskState {
 		no:       no,
 		danger:   msg.Danger,
 		selected: 0,
-		reply:    msg.Reply,
+		reply:    msg.ConfirmReply,
 	}
 }
 
@@ -54,7 +54,7 @@ func (s *confirmAskState) preferredAskHeight() int {
 	return h
 }
 
-func (o *Overlays) beginExtConfirm(msg controller.ExtConfirmMsg) {
+func (o *Overlays) beginExtConfirm(msg controller.OverlayMsg) {
 	if o.confirm != nil {
 		o.resolveExtConfirm(controller.ExtConfirmReply{})
 	}
@@ -186,10 +186,10 @@ func (o *Overlays) drawExtConfirm(ctx components.DrawContext, width, height int)
 	}
 
 	primary := chrome.DecisionPrimary(th)
-	warn := th.Warning
+	border := chrome.ModalBorder(th)
 	if st.danger {
 		primary = th.Destructive
-		warn = th.Destructive
+		border = th.Destructive
 	}
 
 	var body []components.RichLine
@@ -216,5 +216,5 @@ func (o *Overlays) drawExtConfirm(ctx components.DrawContext, width, height int)
 		{Text: chrome.ConfirmHint(), Style: th.Muted},
 	}, innerW, ctx.Method)...)
 
-	return paintAskPanel(body, width, height, warn, ctx.Method)
+	return paintAskPanel(body, width, height, border, ctx.Method)
 }

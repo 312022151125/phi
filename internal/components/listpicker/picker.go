@@ -333,8 +333,7 @@ func (p *Picker) Draw(ctx components.DrawContext) components.Surface {
 	}
 	tw := xui.StringWidth(title, ctx.Method)
 	tx := max((boxW-tw)/2, 1)
-	titleSt := th.Warning
-	titleSt.Bold = true
+	titleSt := chrome.PanelTitle(th)
 	panel.Print(tx, 0, title, titleSt, ctx.Method)
 
 	p.drawPrompt(&panel, ctx, th, boxW)
