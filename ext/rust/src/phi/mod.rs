@@ -21,12 +21,15 @@
 //! The run loop is single-threaded. Command handlers receive a [`Context`]
 //! whose methods (`notify`, `confirm`, `submit`, …) forward to the host over
 //! the same pipe — the borrow checker enforces at compile time what the Go
-//! SDK's mutexes enforce at runtime.
-
-use std::collections::HashMap;
-use std::io;
+//! SDK's mutexes enforce at runtime. Tool `execute` handlers may be async
+//! ([`Tool::new_async`]); the SDK drives them to completion on a
+//! single-threaded tokio runtime, so network / IO calls just work.
 
 use crate::pxb;
+use std::collections::HashMap;
+use std::future::Future;
+use std::io;
+use std::pin::Pin;
 
 pub use crate::pxb::Error;
 
@@ -49,16 +52,26 @@ pub struct HostInfo {
 
 /// An LLM-callable tool. `schema` is a typed JSON Schema for parameters
 /// (same role as Go's `Parameters` / Codex's schemars-generated input schema).
+/// The `execute` handler returns a boxed future so sync ([`Tool::new`]) and
+/// async ([`Tool::new_async`]) handlers share one storage type; it is run to
+/// completion on a single-threaded tokio runtime, blocking the PXB loop the
+/// same way a sync handler does (the host waits for the result anyway).
 #[allow(clippy::type_complexity)] // execute / detail signatures mirror the Go SDK
 pub struct Tool {
     pub name: String,
     pub description: String,
     pub schema: Schema,
+    /// Side-effect-free: the host may run a batch of Readable calls
+    /// concurrently. Set with [`Tool::readable`].
+    pub readable: bool,
     /// Host RPC wait for `execute`, in seconds. `0` = host default (30s).
     pub timeout_sec: u32,
     /// Optional one-line TUI detail from raw JSON args (before execute).
     pub detail_from_args: Option<Box<dyn FnMut(&[u8]) -> String>>,
-    pub execute: Box<dyn FnMut(&[u8]) -> Result<ToolResult, String>>,
+    /// Tool handler: takes raw JSON args, returns a future yielding the
+    /// result. Not `Send` — the run loop is single-threaded, so handlers may
+    /// capture non-`Send` state.
+    pub execute: Box<dyn FnMut(&[u8]) -> Pin<Box<dyn Future<Output = Result<ToolResult, String>>>>>,
 }
 
 impl Tool {
@@ -66,7 +79,7 @@ impl Tool {
         name: impl Into<String>,
         description: impl Into<String>,
         schema: impl Into<Schema>,
-        execute: impl FnMut(&[u8]) -> Result<ToolResult, String> + 'static,
+        mut execute: impl FnMut(&[u8]) -> Result<ToolResult, String> + 'static,
     ) -> Self {
         Self {
             name: name.into(),
@@ -74,7 +87,38 @@ impl Tool {
             schema: schema.into(),
             timeout_sec: 0,
             detail_from_args: None,
-            execute: Box::new(execute),
+            readable: false,
+            // Sync handler: call it eagerly, hand the host a ready future.
+            execute: Box::new(move |args| {
+                let result = execute(args);
+                Box::pin(async move { result })
+            }),
+        }
+    }
+
+    /// Builds a tool with an async handler (network / IO friendly). The
+    /// closure returns a future that the SDK drives to completion on its
+    /// single-threaded runtime when the host invokes the tool. Args are
+    /// owned (`Vec<u8>`) so `|args| async move { … }` can capture them
+    /// directly in a `'static` future.
+    pub fn new_async<F, Fut>(
+        name: impl Into<String>,
+        description: impl Into<String>,
+        schema: impl Into<Schema>,
+        mut execute: F,
+    ) -> Self
+    where
+        F: FnMut(Vec<u8>) -> Fut + 'static,
+        Fut: Future<Output = Result<ToolResult, String>> + 'static,
+    {
+        Self {
+            name: name.into(),
+            description: description.into(),
+            schema: schema.into(),
+            timeout_sec: 0,
+            readable: false,
+            detail_from_args: None,
+            execute: Box::new(move |args| Box::pin(execute(args.to_vec()))),
         }
     }
 
@@ -87,6 +131,13 @@ impl Tool {
     /// Sets a one-line TUI detail formatter for raw JSON arguments.
     pub fn detail_from_args(mut self, f: impl FnMut(&[u8]) -> String + 'static) -> Self {
         self.detail_from_args = Some(Box::new(f));
+        self
+    }
+
+    /// Marks this tool side-effect-free so the host may run a batch of
+    /// Readable calls concurrently.
+    pub fn readable(mut self) -> Self {
+        self.readable = true;
         self
     }
 }
@@ -130,7 +181,8 @@ impl Command {
 }
 
 /// Modal yes/no dialog shown by the host.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize)]
+#[serde(rename_all = "PascalCase")] // host unmarshals into Go's ext.ConfirmRequest
 pub struct ConfirmRequest {
     pub title: String,
     pub message: String,
@@ -144,8 +196,6 @@ pub struct ConfirmRequest {
 pub struct ConfirmReply {
     pub ok: bool,
 }
-
-// ── Intercept event payloads (mirror `ext/types.go`) ────────────────────────
 
 #[derive(Debug, Clone, Default)]
 pub struct ToolCallEvent {
@@ -235,8 +285,6 @@ pub struct TurnStoppingResult {
     pub message: String,
     pub reason: String,
 }
-
-// ── Extension ───────────────────────────────────────────────────────────────
 
 /// Registered intercept / subscribe handlers. Kept as one struct so `run`
 /// can destructure the [`Extension`] into independent fields (each handler
@@ -367,6 +415,10 @@ impl Extension {
         let mut rd = stdin.lock();
         let mut wr = stdout.lock();
 
+        // One single-threaded runtime drives every async tool handler; it
+        // blocks the read loop exactly like a sync handler would.
+        let rt = tokio::runtime::Builder::new_current_thread().build()?;
+
         let host = handshake(&mut rd, &mut wr, &self)?;
         register(&mut wr, &self)?;
 
@@ -378,11 +430,9 @@ impl Extension {
             handlers,
             ..
         } = self;
-        serve(&mut rd, &mut wr, host, tools, commands, handlers)
+        serve(&mut rd, &mut wr, host, tools, commands, handlers, &rt)
     }
 }
-
-// ── Handshake, registration, and frame dispatch ──────────────────────────
 
 /// Exchanges the HELLO handshake and fills [`HostInfo`] from the host's ack.
 fn handshake(rd: &mut Rd, wr: &mut Wr, ext: &Extension) -> Result<HostInfo, Error> {
@@ -433,6 +483,7 @@ fn register(wr: &mut Wr, ext: &Extension) -> Result<(), Error> {
             schema_json: tool.schema.to_json_bytes(),
             timeout_sec: tool.timeout_sec,
             has_detail: tool.detail_from_args.is_some(),
+            readable: tool.readable,
         });
         pxb::write_frame(wr, pxb::TYPE_REGISTER_TOOL, 0, 0, &body)?;
     }
@@ -463,6 +514,7 @@ fn serve(
     mut tools: Vec<Tool>,
     mut commands: Vec<(String, Command)>,
     mut handlers: Handlers,
+    rt: &tokio::runtime::Runtime,
 ) -> Result<(), Error> {
     let mut pending_submit: Option<String> = None;
     let mut next_host_id: u32 = 0;
@@ -484,7 +536,7 @@ fn serve(
                 &mut pending_submit,
                 &mut next_host_id,
             )?,
-            pxb::FrameType::ToolInvoke => serve_tool(wr, &f, &mut tools)?,
+            pxb::FrameType::ToolInvoke => serve_tool(wr, &f, &mut tools, rt)?,
             pxb::FrameType::ToolDetailInvoke => serve_tool_detail(wr, &f, &mut tools)?,
             pxb::FrameType::Intercept => serve_intercept(wr, &f, &mut handlers)?,
             pxb::FrameType::Event => {
@@ -505,6 +557,10 @@ fn serve(
 
 /// Invokes a registered slash-command handler and replies with its outcome.
 /// An unknown command fails with "unknown command".
+///
+/// Commands stay synchronous: their [`Context`] reads nested PXB frames off
+/// the same pipe, which only works on the loop thread. Use async *tool*
+/// handlers for IO-heavy work.
 #[allow(clippy::too_many_arguments)] // the loop lends each state piece separately
 fn serve_command(
     rd: &mut Rd,
@@ -554,11 +610,18 @@ fn serve_command(
 }
 
 /// Executes a tool and replies with its result, or an error result when the
-/// tool is unknown or its handler failed.
-fn serve_tool(wr: &mut Wr, frame: &pxb::Frame, tools: &mut [Tool]) -> Result<(), Error> {
+/// tool is unknown or its handler failed. Async handlers are driven to
+/// completion on the extension's single-threaded runtime, so the loop blocks
+/// for the handler the same way it does for a sync one.
+fn serve_tool(
+    wr: &mut Wr,
+    frame: &pxb::Frame,
+    tools: &mut [Tool],
+    rt: &tokio::runtime::Runtime,
+) -> Result<(), Error> {
     let inv = pxb::decode_tool_invoke(&frame.body)?;
     let tr = match tools.iter_mut().find(|t| t.name == inv.name) {
-        Some(tool) => match (tool.execute)(&inv.args) {
+        Some(tool) => match rt.block_on((tool.execute)(&inv.args)) {
             Ok(res) => pxb::ToolResultMsg {
                 content: res.content,
                 detail: res.detail,
@@ -877,44 +940,13 @@ impl Context<'_> {
     }
 }
 
-/// Encodes a [`ConfirmRequest`] as the JSON the host parses. The host
+/// Serializes a [`ConfirmRequest`] as the JSON the host parses. The host
 /// unmarshals into Go's `ext.ConfirmRequest` (fields `Title`/`Message`/
-/// `Yes`/`No`/`Danger`), so key names and presence must match exactly —
-/// hence hand-rolled rather than a serde dependency.
+/// `Yes`/`No`/`Danger`); `serde`'s `rename_all = "PascalCase"` pins the key
+/// names to that contract, and `serde_json` handles escaping.
 fn confirm_request_json(req: &ConfirmRequest) -> String {
-    let mut s = String::with_capacity(
-        64 + req.title.len() + req.message.len() + req.yes.len() + req.no.len(),
-    );
-    s.push_str(r#"{"Title":"#);
-    push_json_string(&mut s, &req.title);
-    s.push_str(r#","Message":"#);
-    push_json_string(&mut s, &req.message);
-    s.push_str(r#","Yes":"#);
-    push_json_string(&mut s, &req.yes);
-    s.push_str(r#","No":"#);
-    push_json_string(&mut s, &req.no);
-    s.push_str(r#","Danger":"#);
-    s.push_str(if req.danger { "true" } else { "false" });
-    s.push('}');
-    s
-}
-
-/// Appends `s` as a JSON string literal (control chars escaped; `<`, `>`,
-/// `&` are left as-is, which Go escapes but any JSON parser accepts).
-fn push_json_string(out: &mut String, s: &str) {
-    out.push('"');
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if (c as u32) < 0x20 => out.push_str(&format!("\\u{:04x}", c as u32)),
-            c => out.push(c),
-        }
-    }
-    out.push('"');
+    serde_json::to_string(req)
+        .expect("ConfirmRequest holds only strings/bool; serialization cannot fail")
 }
 
 fn push_unique(xs: &mut Vec<pxb::Event>, v: pxb::Event) {

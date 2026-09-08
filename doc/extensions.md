@@ -80,6 +80,9 @@ Set `DetailFromArgs` so the TUI tool row shows a one-line summary (path, URL, �
 instead of raw JSON while the tool is in progress. The host RPCs the extension
 with a short default timeout (not `TimeoutSec`).
 
+Set `Readable: true` on side-effect-free tools (read-only lookups, pure
+computation) so the host may run a batch of all-readable calls concurrently.
+
 ```go
 m.RegisterTool(ext.Tool{
 	Name:        "fetch",
@@ -175,9 +178,10 @@ Reload: **Ctrl+K → extensions → reload**.
 
 ## Authoring (Rust SDK)
 
-Zero-dependency crate under [`ext/rust`](../ext/rust) — same wire protocol,
+Lean crate under [`ext/rust`](../ext/rust) — same wire protocol,
 byte-for-byte compatible with the Go SDK (golden-tested against the Go
-fixtures). Requires Rust ≥ 1.75.
+fixtures). Deps: `serde`/`serde_json` at the JSON edges plus `tokio` (`rt`
+feature) to drive async tool handlers. Requires Rust ≥ 1.75.
 
 ```bash
 # pre-release: tracks the latest main (crate publishes under ext/rust/vX.Y.Z tags)
@@ -232,7 +236,9 @@ fn main() -> Result<(), phi::Error> {
 ```
 
 Slow tools should chain `.timeout_sec(n)` (host default RPC wait is 30s; clamped to 1–3600).
-Chain `.detail_from_args(|args| …)` so the TUI shows a one-line summary instead of raw JSON:
+Chain `.detail_from_args(|args| …)` so the TUI shows a one-line summary instead of raw JSON,
+and `.readable()` on side-effect-free tools so the host may run a batch of all-readable
+calls concurrently:
 
 ```rust,no_run
 m.register_tool(
@@ -243,6 +249,23 @@ m.register_tool(
     .detail_from_args(|args| String::from_utf8_lossy(args).into_owned()),
 );
 ```
+
+Tools are usually IO-bound, so handlers may be async — `Tool::new_async` takes
+an async closure that the SDK runs on a single-threaded tokio runtime:
+
+```rust,no_run
+m.register_tool(phi::Tool::new_async(
+    "fetch",
+    "HTTP GET",
+    phi::Schema::object().property("url", phi::Schema::string()),
+    |args| async move {
+        // args is owned (Vec<u8>); network / IO calls go here.
+        Ok(phi::ToolResult { content: "…".into(), ..Default::default() })
+    },
+));
+```
+
+Sync `Tool::new` handlers keep working unchanged.
 
 UI surface today: **toast** (`ctx.notify`), **footer status** (`ctx.set_status`),
 **Submit** (`ctx.submit`), **SendUserMessage** (`ctx.send_user_message`),
@@ -289,6 +312,28 @@ When no matching release asset exists, install falls back to a shallow
 `git clone` — the cloned tree must already include the binary (source-only
 repos will fail). Source-only yaegi repos no longer load.
 
+### Managing installed plugins
+
+```bash
+phi plugin list                  # installed plugins: id, version, source, path
+phi plugin update                # update all managed plugins
+phi plugin update greet          # update one plugin
+phi plugin update greet@latest   # switch to the newest release
+phi plugin update --check        # report available updates without installing
+phi plugin remove greet          # uninstall (alias: rm)
+```
+
+Install records the GitHub source in `.phi-install.json` inside the extension
+directory. `update` re-resolves that source and swaps the directory atomically
+(the old tree is kept as a backup until the swap completes); release archives
+are preferred, with the same git-clone fallback as install. A pinned ref
+(`@v1.2.3`) stays pinned — override it with `phi plugin update greet@latest`
+or another tag.
+
+Extensions not installed via `phi plugin install` (manual copies) carry no
+metadata and are left untouched by `update`/`remove`; reinstall once to bring
+them under management.
+
 ## Lifecycle (process)
 
 1. Discover `phi.yaml`
@@ -305,7 +350,7 @@ repos will fail). Source-only yaegi repos no longer load.
 | `ext/go/` (module `github.com/pulseaiclub/phi/ext/go`) | Shared types (`Tool`, events) |
 | `ext/go/pxb` | Binary wire protocol |
 | `ext/go/phi` | Go author SDK (`ExtensionAPI.Run`) |
-| `ext/rust` (crate `phi-ext`) | Rust author SDK (`pxb` + `phi` modules, zero deps) |
+| `ext/rust` (crate `phi-ext`) | Rust author SDK (`pxb` + `phi` modules; deps: serde/serde_json + tokio `rt`) |
 | `internal/extension` | Discover, spawn, Runner shims |
 
 ## Migration from yaegi
