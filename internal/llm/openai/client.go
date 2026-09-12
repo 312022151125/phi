@@ -34,12 +34,13 @@ type apiMessage struct {
 }
 
 type apiRequest struct {
-	Model         string         `json:"model"`
-	Messages      []apiMessage   `json:"messages"`
-	Tools         []apiTool      `json:"tools,omitempty"`
-	Stream        bool           `json:"stream,omitempty"`
-	StreamOptions *streamOptions `json:"stream_options,omitempty"`
-	ExtraBody     *extraBody     `json:"extra_body,omitempty"`
+	Model           string         `json:"model"`
+	Messages        []apiMessage   `json:"messages"`
+	Tools           []apiTool      `json:"tools,omitempty"`
+	Stream          bool           `json:"stream,omitempty"`
+	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
+	ExtraBody       *extraBody     `json:"extra_body,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
 }
 
 type extraBody struct {
@@ -112,13 +113,19 @@ func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, to
 		extra = &extraBody{Thinking: &thinkingConfig{Type: "enabled"}}
 	}
 
+	var reasoningEffort string
+	if cfg.Think.Enabled {
+		reasoningEffort = string(cfg.Think.Mode)
+	}
+
 	return &apiRequest{
-		Model:         cfg.Name,
-		Messages:      msgs,
-		Tools:         apiTools,
-		Stream:        true,
-		StreamOptions: &streamOptions{IncludeUsage: true},
-		ExtraBody:     extra,
+		Model:           cfg.Name,
+		Messages:        msgs,
+		Tools:           apiTools,
+		Stream:          true,
+		StreamOptions:   &streamOptions{IncludeUsage: true},
+		ExtraBody:       extra,
+		ReasoningEffort: reasoningEffort,
 	}
 }
 

@@ -171,7 +171,7 @@ func parseConfigFile(path string) (*Config, error) {
 
 func modelEntryToConfig(m modelEntry) llm.ModelConfig {
 	cfg := llm.ModelConfig{Name: m.Name, APIKey: m.APIKey, BaseURL: m.BaseURL}
-	// A built-in preset supplies base_url / context_window / image_enabled
+	// A built-in preset supplies base_url / context_window / image_enabled / api
 	// when the entry omits them; the explicit fields below still win so
 	// users can override any default.
 	if preset, ok := model.Lookup(m.Name); ok {
@@ -182,6 +182,12 @@ func modelEntryToConfig(m modelEntry) llm.ModelConfig {
 			cfg.ContextWindow = preset.ContextWindow
 		}
 		cfg.ImageEnabled = preset.ImageEnabled
+		if cfg.API == "" {
+			cfg.API = preset.API
+		}
+	}
+	if m.API != "" {
+		cfg.API = m.API
 	}
 	if m.ContextWindow != nil && *m.ContextWindow > 0 {
 		cfg.ContextWindow = *m.ContextWindow
@@ -210,14 +216,13 @@ type agentsConfig struct {
 }
 
 type modelEntry struct {
-	Name          string `yaml:"name"`
-	APIKey        string `yaml:"api_key"`
-	BaseURL       string `yaml:"base_url"`
-	ContextWindow *int   `yaml:"context_window"`
-	// ImageEnabled is a pointer so YAML absence (use the built-in preset's
-	// default) is distinguishable from an explicit false.
-	ImageEnabled *bool `yaml:"image_enabled"`
-	Default      bool  `yaml:"default"`
+	Name          string         `yaml:"name"`
+	APIKey        string         `yaml:"api_key"`
+	BaseURL       string         `yaml:"base_url"`
+	ContextWindow *int           `yaml:"context_window"`
+	ImageEnabled  *bool          `yaml:"image_enabled"`
+	API           llm.RouterType `yaml:"api"`
+	Default       bool           `yaml:"default"`
 }
 
 type permConfig struct {

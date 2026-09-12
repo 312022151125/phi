@@ -11,22 +11,6 @@ import (
 	"github.com/pulseaiclub/phi/internal/llm"
 )
 
-func TestIsAnthropicProvider(t *testing.T) {
-	cases := []struct {
-		cfg  llm.ModelConfig
-		want bool
-	}{
-		{llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: "https://api.anthropic.com"}, true},
-		{llm.ModelConfig{Name: "gpt-4o", BaseURL: "https://api.anthropic.com"}, true},
-		{llm.ModelConfig{Name: "claude-3-5-sonnet", BaseURL: "https://api.openai.com/v1"}, true},
-		{llm.ModelConfig{Name: "gpt-4o", BaseURL: "https://api.openai.com/v1"}, false},
-		{llm.ModelConfig{Name: "deepseek-chat", BaseURL: "https://api.deepseek.com/v1"}, false},
-	}
-	for i, c := range cases {
-		require.Equal(t, c.want, isAnthropicProvider(c.cfg), "case %d: isAnthropicProvider(%+v)", i, c.cfg)
-	}
-}
-
 func TestClientStreamAnthropicEndToEnd(t *testing.T) {
 	var gotPath, gotKey, gotVersion string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -48,7 +32,7 @@ func TestClientStreamAnthropicEndToEnd(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient(
-		llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test"},
+		llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test", API: llm.Anthropic},
 		nil,
 		"be brief",
 	)
@@ -122,7 +106,7 @@ func TestClientCompactAnthropic(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test"}, nil, "")
+	client := NewClient(llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test", API: llm.Anthropic}, nil, "")
 	out, err := client.Compact(t.Context(), "summarize")
 	require.NoError(t, err)
 	require.Equal(t, "/v1/messages", gotPath)

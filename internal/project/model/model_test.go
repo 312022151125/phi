@@ -32,7 +32,7 @@ func TestLookupUnknownFallsThrough(t *testing.T) {
 	// OpenAI default themselves.
 	_, ok := Lookup("deepseek-chat")
 	assert.False(t, ok)
-	_, ok = Lookup("gpt-4o")
+	_, ok = Lookup("some-unknown-model")
 	assert.False(t, ok)
 
 	// A preset never leaks api_key or skill path — those stay caller-owned.

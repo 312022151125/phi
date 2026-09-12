@@ -8,6 +8,31 @@ type Compactor interface {
 	Compact(ctx context.Context, summary string) (string, error)
 }
 
+type RouterType string
+
+const (
+	OpenAI    RouterType = "OpenAI"
+	Anthropic RouterType = "Anthropic"
+	Gemini    RouterType = "Gemini"
+)
+
+type ThinkMode string
+
+const (
+	Off    ThinkMode = "off"
+	Minimal ThinkMode = "minimal"
+	Low    ThinkMode = "low"
+	Medium ThinkMode = "medium"
+	High   ThinkMode = "high"
+	XHigh  ThinkMode = "xhigh"
+	Max    ThinkMode = "max"
+)
+
+type ThinkConfig struct {
+	Mode    ThinkMode
+	Enabled bool
+}
+
 // ModelConfig is the connection config for one LLM endpoint: either an
 // OpenAI-compatible endpoint or the Anthropic Messages API. It also carries
 // agent-wide settings like the skill directory path.
@@ -24,6 +49,9 @@ type ModelConfig struct {
 	// ImageEnabled opts this model into image attachments (clipboard / @file).
 	// Absent or false keeps the composer from attaching images.
 	ImageEnabled bool
+	API          RouterType
+	// Think controls reasoning effort sent as reasoning_effort.
+	Think ThinkConfig
 }
 
 // Role identifies the participant in a chat message.
