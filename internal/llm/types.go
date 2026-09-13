@@ -28,9 +28,19 @@ const (
 	Max     ThinkMode = "max"
 )
 
+// ThinkConfig is the provider-agnostic reasoning level. Provider wire formats
+// (OpenAI reasoning_effort, Gemini thinkingBudget/level, …) are applied by
+// each client or model RequestInterceptor.
 type ThinkConfig struct {
 	Mode    ThinkMode
 	Enabled bool
+}
+
+// RequestInterceptor customizes a provider request after BuildRequest and before
+// the HTTP call. Req is the provider's request type (e.g. openai.Request).
+// cfg is the live session ModelConfig so hooks can read Think and other fields.
+type RequestInterceptor[Req any] interface {
+	Before(ctx context.Context, req *Req, cfg ModelConfig) error
 }
 
 // ModelConfig is the connection config for one LLM endpoint: either an

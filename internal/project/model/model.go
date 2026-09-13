@@ -5,45 +5,112 @@
 // names fall through to the generic OpenAI defaults the config loader applies.
 package model
 
-import "github.com/pulseaiclub/phi/internal/llm"
+import (
+	"github.com/pulseaiclub/phi/internal/llm"
+	llmclient "github.com/pulseaiclub/phi/internal/llm/client"
+)
 
-// Lookup returns the built-in connection defaults for a model name. ok is
-// false for names without a preset, so callers fall back to the generic
-// OpenAI endpoint. The returned config carries no api_key or skill path;
-// the caller layers those on top and may override any field.
-func Lookup(name string) (llm.ModelConfig, bool) {
+// Preset is a built-in model catalog entry: connection defaults plus optional
+// request Hooks for vendor-specific wire shape.
+type Preset struct {
+	Config llm.ModelConfig
+	Hooks  llmclient.Hooks
+}
+
+// Lookup returns the built-in preset for a model name. ok is false for names
+// without a preset, so callers fall back to the generic OpenAI endpoint.
+// The returned config carries no api_key or skill path; the caller layers
+// those on top and may override any field.
+func Lookup(name string) (Preset, bool) {
 	for _, p := range presets {
-		if p.Name == name {
+		if p.Config.Name == name {
 			return p, true
 		}
 	}
-	return llm.ModelConfig{}, false
+	return Preset{}, false
 }
+
+// HooksFor returns request hooks from the built-in catalog, or a zero Hooks
+// when the name has no preset (or the preset has no interceptors).
+func HooksFor(name string) llmclient.Hooks {
+	if p, ok := Lookup(name); ok {
+		return p.Hooks
+	}
+	return llmclient.Hooks{}
+}
+
+var thinkHigh = llm.ThinkConfig{Enabled: true, Mode: llm.High}
 
 // presets is the built-in catalog, keyed by model name. Values mirror each
 // provider's public API docs; re-check the linked page when refreshing a
 // model — context length, base URL, and capabilities change between versions.
-var presets = []llm.ModelConfig{
+var presets = []Preset{
 	// Source: https://api-docs.deepseek.com/zh-cn/quick_start/pricing
 	{
-		Name:          "deepseek-flash",
-		BaseURL:       "https://api.deepseek.com",
-		ContextWindow: 1_000_000,
-		ImageEnabled:  true,
-		API:           llm.OpenAI,
-		Think: llm.ThinkConfig{
-			Enabled: true,
-			Mode:    llm.High,
+		Config: llm.ModelConfig{
+			Name:          "deepseek-flash",
+			BaseURL:       "https://api.deepseek.com",
+			ContextWindow: 1_000_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAI,
+			Think:         thinkHigh,
 		},
+		Hooks: deepseekHooks(),
 	},
 	{
-		Name:          "deepseek-v4-pro",
-		BaseURL:       "https://api.deepseek.com",
-		ContextWindow: 1_000_000,
-		API:           llm.OpenAI,
-		Think: llm.ThinkConfig{
-			Enabled: true,
-			Mode:    llm.High,
+		Config: llm.ModelConfig{
+			Name:          "deepseek-v4-pro",
+			BaseURL:       "https://api.deepseek.com",
+			ContextWindow: 1_000_000,
+			API:           llm.OpenAI,
+			Think:         thinkHigh,
 		},
+		Hooks: deepseekHooks(),
+	},
+	// Gemini 2.5 — thinkingBudget (token cap). Source: https://ai.google.dev/gemini-api/docs/models
+	{
+		Config: llm.ModelConfig{
+			Name:          "gemini-2.5-pro",
+			BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+			ContextWindow: 1_000_000,
+			ImageEnabled:  true,
+			API:           llm.Gemini,
+			Think:         thinkHigh,
+		},
+		Hooks: geminiBudgetHooks(),
+	},
+	{
+		Config: llm.ModelConfig{
+			Name:          "gemini-2.5-flash",
+			BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+			ContextWindow: 1_000_000,
+			ImageEnabled:  true,
+			API:           llm.Gemini,
+			Think:         thinkHigh,
+		},
+		Hooks: geminiBudgetHooks(),
+	},
+	// Gemini 3 — thinkingLevel. Pro floor LOW; Flash floor MINIMAL. Neither can fully disable.
+	{
+		Config: llm.ModelConfig{
+			Name:          "gemini-3-pro",
+			BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+			ContextWindow: 1_000_000,
+			ImageEnabled:  true,
+			API:           llm.Gemini,
+			Think:         thinkHigh,
+		},
+		Hooks: geminiLevelHooks("LOW"),
+	},
+	{
+		Config: llm.ModelConfig{
+			Name:          "gemini-3-flash",
+			BaseURL:       "https://generativelanguage.googleapis.com/v1beta",
+			ContextWindow: 1_000_000,
+			ImageEnabled:  true,
+			API:           llm.Gemini,
+			Think:         thinkHigh,
+		},
+		Hooks: geminiLevelHooks("MINIMAL"),
 	},
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/job"
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/mcp"
+	"github.com/pulseaiclub/phi/internal/project/model"
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tools"
 )
@@ -80,6 +81,8 @@ func runHeadless(opts runOptions) error {
 	if opts.maxRounds > 0 {
 		engineOpts = append(engineOpts, agent.WithMaxRounds(opts.maxRounds))
 	}
+	primary := bs.Config.Model()
+	engineOpts = append(engineOpts, agent.WithHooks(model.HooksFor(primary.Name)))
 	if pool, err := mcp.LoadPool(bs.Proj.MCPConfigFile()); err != nil {
 		fmt.Fprintln(os.Stderr, "warning: mcp:", err)
 	} else if pool != nil {

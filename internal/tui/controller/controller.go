@@ -21,6 +21,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/mcp"
 	"github.com/pulseaiclub/phi/internal/permission"
 	"github.com/pulseaiclub/phi/internal/project"
+	"github.com/pulseaiclub/phi/internal/project/model"
 	"github.com/pulseaiclub/phi/internal/session"
 )
 
@@ -432,7 +433,7 @@ func (c *EngineController) SetModel(name string) error {
 	if _, _, err := c.ReloadExtensions(); err != nil {
 		debuglog.Logf("extension: reload on SetModel: %v", err)
 	}
-	c.engine.SetModel(cfg)
+	c.engine.SetModelWithHooks(cfg, model.HooksFor(cfg.Name))
 	c.modelCfg = cfg
 	return nil
 }
@@ -593,6 +594,7 @@ func (c *EngineController) openEngine(
 		agent.WithJobs(c.engineJobs()),
 		agent.WithExtensions(extRunner),
 		agent.WithMCP(c.mcpPool),
+		agent.WithHooks(model.HooksFor(cfg.Name)),
 	)
 }
 

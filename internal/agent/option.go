@@ -3,6 +3,7 @@ package agent
 import (
 	"github.com/pulseaiclub/phi/internal/extension"
 	"github.com/pulseaiclub/phi/internal/job"
+	llmclient "github.com/pulseaiclub/phi/internal/llm/client"
 	"github.com/pulseaiclub/phi/internal/mcp"
 	"github.com/pulseaiclub/phi/internal/permission"
 	"github.com/pulseaiclub/phi/internal/tools"
@@ -21,6 +22,7 @@ type engineConfig struct {
 	extensions   *extension.Runner
 	omitExtTools bool
 	mcp          *mcp.Pool
+	hooks        llmclient.Hooks
 }
 
 // WithGate sets the permission gate (nil = allow all).
@@ -66,4 +68,9 @@ func WithOmitExtensionTools(omit bool) EngineOption {
 // WithMCP registers mcp_list/inspect/call meta-tools against the pool.
 func WithMCP(pool *mcp.Pool) EngineOption {
 	return func(c *engineConfig) { c.mcp = pool }
+}
+
+// WithHooks sets provider request interceptors (nil fields = no customization).
+func WithHooks(hooks llmclient.Hooks) EngineOption {
+	return func(c *engineConfig) { c.hooks = hooks }
 }

@@ -67,21 +67,55 @@ type GeminiRequest struct {
 	ThinkingConfig *thinkingConfig `json:"thinkingConfig,omitempty"`
 }
 
-// DisableThinking sets thinkingConfig for models that think by default.
-// Gemini 2.x accepts thinkingBudget 0; Gemini 3 Pro cannot disable thinking and
-// Flash/Flash-Lite have no full off, so use the lowest level without
-// includeThoughts to keep hidden reasoning invisible.
-func (req *GeminiRequest) DisableThinking(model string) {
-	m := strings.ToLower(model)
-	switch {
-	case strings.Contains(m, "gemini-3") && strings.Contains(m, "pro"):
-		req.ThinkingConfig = &thinkingConfig{ThinkingLevel: "LOW"}
-	case strings.Contains(m, "gemini-3"):
-		req.ThinkingConfig = &thinkingConfig{ThinkingLevel: "MINIMAL"}
-	default:
-		// Zero disables thinking; a pointer keeps it on the wire (omitempty would drop it).
+// ApplyBudgetThinking maps ThinkConfig to Gemini 2.x thinkingBudget.
+func (req *GeminiRequest) ApplyBudgetThinking(think llm.ThinkConfig) {
+	if !think.Enabled {
 		zero := 0
 		req.ThinkingConfig = &thinkingConfig{ThinkingBudget: &zero}
+		return
+	}
+	budget := mapThinkModeToBudget(think.Mode)
+	req.ThinkingConfig = &thinkingConfig{ThinkingBudget: &budget}
+}
+
+// ApplyLevelThinking maps ThinkConfig to Gemini 3.x thinkingLevel.
+// offLevel is used when thinking is disabled (models that cannot fully turn off).
+func (req *GeminiRequest) ApplyLevelThinking(think llm.ThinkConfig, offLevel string) {
+	if !think.Enabled {
+		if offLevel == "" {
+			offLevel = "MINIMAL"
+		}
+		req.ThinkingConfig = &thinkingConfig{ThinkingLevel: offLevel}
+		return
+	}
+	req.ThinkingConfig = &thinkingConfig{ThinkingLevel: mapThinkModeToGeminiLevel(think.Mode)}
+}
+
+// mapThinkModeToGeminiLevel maps ThinkMode to Gemini 3's thinkingLevel string.
+func mapThinkModeToGeminiLevel(mode llm.ThinkMode) string {
+	switch mode {
+	case llm.Minimal:
+		return "MINIMAL"
+	case llm.Low:
+		return "LOW"
+	case llm.Medium:
+		return "MEDIUM"
+	default: // high, xhigh, max, and anything else
+		return "HIGH"
+	}
+}
+
+// mapThinkModeToBudget maps ThinkMode to a token budget for Gemini 2.x.
+func mapThinkModeToBudget(mode llm.ThinkMode) int {
+	switch mode {
+	case llm.Minimal:
+		return 1024
+	case llm.Low:
+		return 2048
+	case llm.Medium:
+		return 8192
+	default: // high, xhigh, max, and anything else
+		return 16384
 	}
 }
 
@@ -229,8 +263,6 @@ func Stream(
 	req *GeminiRequest,
 ) iter.Seq2[llm.StreamEvent, error] {
 	return func(yield func(llm.StreamEvent, error) bool) {
-		// Gemini 2.x+ thinks by default; opt out unless reasoning was requested.
-		req.DisableThinking(config.Name)
 		body, err := json.Marshal(req)
 		if err != nil {
 			yield(llm.StreamEvent{}, err)
@@ -375,7 +407,16 @@ func Compact(
 	prompt string,
 ) (string, error) {
 	req := BuildRequest("", []llm.Message{{Role: llm.RoleUser, Content: prompt}}, nil)
-	req.DisableThinking(cfg.Name)
+	return CompactRequest(ctx, client, cfg, &req)
+}
+
+// CompactRequest POSTs a non-streaming Gemini body and returns assistant text.
+func CompactRequest(
+	ctx context.Context,
+	client *http.Client,
+	cfg llm.ModelConfig,
+	req *GeminiRequest,
+) (string, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
 		return "", err

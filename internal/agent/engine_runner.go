@@ -11,6 +11,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/job"
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/permission"
+	"github.com/pulseaiclub/phi/internal/project/model"
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tools"
 )
@@ -64,9 +65,9 @@ func (r EngineRunner) Run(ctx context.Context, env job.RunEnv) (string, error) {
 		toolList = spec.Tools
 	}
 
-	model := r.Model
+	cfg := r.Model
 	if r.ModelFn != nil {
-		model = r.ModelFn(env.Job.Role)
+		cfg = r.ModelFn(env.Job.Role)
 	}
 
 	extRunner := r.Extensions
@@ -84,12 +85,13 @@ func (r EngineRunner) Run(ctx context.Context, env job.RunEnv) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	engine, err := NewEngine(model, sess,
+	engine, err := NewEngine(cfg, sess,
 		WithGate(gate),
 		WithTools(toolList),
 		WithMaxRounds(r.MaxRounds),
 		WithExtensions(extRunner),
 		WithOmitExtensionTools(true),
+		WithHooks(model.HooksFor(cfg.Name)),
 	)
 	if err != nil {
 		return "", err

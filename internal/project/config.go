@@ -175,16 +175,20 @@ func modelEntryToConfig(m modelEntry) llm.ModelConfig {
 	// when the entry omits them; the explicit fields below still win so
 	// users can override any default.
 	if preset, ok := model.Lookup(m.Name); ok {
+		pc := preset.Config
 		if cfg.BaseURL == "" {
-			cfg.BaseURL = preset.BaseURL
+			cfg.BaseURL = pc.BaseURL
 		}
-		if preset.ContextWindow > 0 {
-			cfg.ContextWindow = preset.ContextWindow
+		if pc.ContextWindow > 0 {
+			cfg.ContextWindow = pc.ContextWindow
 		}
-		cfg.ImageEnabled = preset.ImageEnabled
+		cfg.ImageEnabled = pc.ImageEnabled
 		if cfg.API == "" {
-			cfg.API = preset.API
+			cfg.API = pc.API
 		}
+		// Inherit the preset's thinking config so models like deepseek-flash
+		// ship with sensible defaults (thinking enabled, high mode).
+		cfg.Think = pc.Think
 	}
 	if m.API != "" {
 		cfg.API = m.API
@@ -194,6 +198,13 @@ func modelEntryToConfig(m modelEntry) llm.ModelConfig {
 	}
 	if m.ImageEnabled != nil {
 		cfg.ImageEnabled = *m.ImageEnabled
+	}
+	if m.ThinkEnabled != nil {
+		cfg.Think.Enabled = *m.ThinkEnabled
+	}
+	if m.ThinkLevel != nil && *m.ThinkLevel != "" {
+		cfg.Think.Mode = llm.ThinkMode(*m.ThinkLevel)
+		cfg.Think.Enabled = true
 	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com/v1"
@@ -223,6 +234,8 @@ type modelEntry struct {
 	ImageEnabled  *bool          `yaml:"image_enabled"`
 	API           llm.RouterType `yaml:"api"`
 	Default       bool           `yaml:"default"`
+	ThinkEnabled  *bool          `yaml:"think_enabled"`
+	ThinkLevel    *string        `yaml:"think_level"`
 }
 
 type permConfig struct {
@@ -329,6 +342,11 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := firstEnv("PHI_SKILL_PATH"); v != "" {
 		c.SkillPath = v
+	}
+	if v := firstEnv("PHI_THINK_LEVEL"); v != "" {
+		entry := c.defaultEntry()
+		entry.Think.Mode = llm.ThinkMode(v)
+		entry.Think.Enabled = (v != string(llm.Off))
 	}
 }
 

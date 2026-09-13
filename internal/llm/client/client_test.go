@@ -1,6 +1,9 @@
 package client
 
 import (
+	"context"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -9,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/pulseaiclub/phi/internal/llm/openai"
 )
 
 func TestClientStreamAnthropicEndToEnd(t *testing.T) {
@@ -33,6 +37,7 @@ func TestClientStreamAnthropicEndToEnd(t *testing.T) {
 
 	client := NewClient(
 		llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test", API: llm.Anthropic},
+		Hooks{},
 		nil,
 		"be brief",
 	)
@@ -76,7 +81,7 @@ func TestClientStreamOpenAIEndToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"}, nil, "")
+	client := NewClient(llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"}, Hooks{}, nil, "")
 	events := collectEvents(client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hello"}}))
 
 	require.Equal(t, "/chat/completions", gotPath)
@@ -108,6 +113,7 @@ func TestClientCompactAnthropic(t *testing.T) {
 
 	client := NewClient(
 		llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test", API: llm.Anthropic},
+		Hooks{},
 		nil,
 		"",
 	)
@@ -126,11 +132,59 @@ func TestClientCompactOpenAI(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"}, nil, "")
+	client := NewClient(llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"}, Hooks{}, nil, "")
 	out, err := client.Compact(t.Context(), "summarize")
 	require.NoError(t, err)
 	require.Equal(t, "/chat/completions", gotPath)
 	require.Equal(t, "summary here", out)
+}
+
+type openAIExtraThinking struct{}
+
+func (openAIExtraThinking) Before(_ context.Context, req *openai.Request, _ llm.ModelConfig) error {
+	req.ExtraBody = &openai.ExtraBody{Thinking: &openai.ThinkingConfig{Type: "enabled"}}
+	return nil
+}
+
+func TestClientStreamOpenAIRunsInterceptor(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	client := NewClient(
+		llm.ModelConfig{Name: "deepseek-flash", BaseURL: srv.URL, APIKey: "sk-test"},
+		Hooks{OpenAI: openAIExtraThinking{}},
+		nil,
+		"",
+	)
+	for _, err := range client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hi"}}) {
+		require.NoError(t, err)
+	}
+	require.Contains(t, string(body), `"extra_body"`)
+	require.Contains(t, string(body), `"thinking"`)
+}
+
+type rejectHook struct{}
+
+func (rejectHook) Before(context.Context, *openai.Request, llm.ModelConfig) error {
+	return errors.New("blocked by hook")
+}
+
+func TestClientStreamOpenAIInterceptorError(t *testing.T) {
+	client := NewClient(
+		llm.ModelConfig{Name: "gpt-4o", BaseURL: "http://127.0.0.1:9", APIKey: "sk-test"},
+		Hooks{OpenAI: rejectHook{}},
+		nil,
+		"",
+	)
+	events := collectEvents(client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hi"}}))
+	require.Len(t, events, 1)
+	require.Equal(t, llm.StreamEventTypeError, events[0].Type)
+	require.Contains(t, events[0].Err, "blocked by hook")
 }
 
 // collectEvents drains an iter.Seq2 into a slice.

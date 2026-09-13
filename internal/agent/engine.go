@@ -43,6 +43,7 @@ type Engine struct {
 	executor     *Executor
 	maxRounds    int
 	modelCfg     llm.ModelConfig
+	hooks        llmclient.Hooks
 	gate         permission.Gate
 	ask          permission.AskFunc
 	continueAsk  ContinueFunc
@@ -67,6 +68,7 @@ func NewEngine(model llm.ModelConfig, sess *Session, opts ...EngineOption) (*Eng
 	engine := &Engine{
 		maxRounds:    defaultMaxToolRounds,
 		modelCfg:     model,
+		hooks:        cfg.hooks,
 		session:      sess,
 		gate:         cfg.gate,
 		ask:          cfg.ask,
@@ -83,7 +85,7 @@ func NewEngine(model llm.ModelConfig, sess *Session, opts ...EngineOption) (*Eng
 	engine.extensions.SetBaseTools(engine.buildCoreTools(engine.baseTools))
 	engine.extensions.SetMeta(engine.SessionID(), engine.SessionCwd())
 	toolList := engine.buildToolList(engine.baseTools)
-	engine.client = llmclient.NewClient(model, tools.Definitions(toolList), engine.systemPrompt())
+	engine.client = llmclient.NewClient(model, engine.hooks, tools.Definitions(toolList), engine.systemPrompt())
 	engine.bindExecutor(tools.NewRegistry(toolList))
 	return engine, nil
 }
@@ -132,8 +134,15 @@ func (engine *Engine) buildCoreTools(base []tools.Tool) []tools.Tool {
 
 // SetModel replaces the LLM client and model-related settings without
 // discarding the session tree. Agent tools remain registered when Jobs is set.
+// Hooks are left unchanged; use SetModelWithHooks when switching presets.
 func (engine *Engine) SetModel(cfg llm.ModelConfig) {
+	engine.SetModelWithHooks(cfg, engine.hooks)
+}
+
+// SetModelWithHooks replaces the model config and request hooks together.
+func (engine *Engine) SetModelWithHooks(cfg llm.ModelConfig, hooks llmclient.Hooks) {
 	engine.modelCfg = cfg
+	engine.hooks = hooks
 	engine.rebindTools()
 }
 
@@ -152,6 +161,7 @@ func (engine *Engine) rebindTools() {
 	toolList := engine.buildToolList(engine.baseTools)
 	engine.client = llmclient.NewClient(
 		engine.modelCfg,
+		engine.hooks,
 		tools.Definitions(toolList),
 		engine.systemPrompt(),
 	)

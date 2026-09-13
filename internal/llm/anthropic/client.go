@@ -54,6 +54,10 @@ func BuildRequest(
 		Stream:    true,
 	}
 
+	if cfg.Think.Enabled {
+		req.Thinking = buildThinkingConfig(cfg.Think.Mode)
+	}
+
 	var systemText strings.Builder
 	if strings.TrimSpace(system) != "" {
 		systemText.WriteString(system)
@@ -202,6 +206,27 @@ func toolUseInput(arguments string) json.RawMessage {
 		return json.RawMessage("{}")
 	}
 	return encoded
+}
+
+// buildThinkingConfig maps a ThinkMode to Anthropic's thinking parameter.
+// Adaptive ("adaptive") lets the model decide the effort level;
+// budget-based sets a fixed token cap per thinking level.
+func buildThinkingConfig(mode llm.ThinkMode) *thinkingConfig {
+	switch mode {
+	case llm.Off:
+		return nil
+	case llm.Minimal, llm.Low:
+		budget := 1024
+		return &thinkingConfig{Type: "enabled", BudgetTokens: &budget}
+	case llm.Medium:
+		budget := 8192
+		return &thinkingConfig{Type: "enabled", BudgetTokens: &budget}
+	case llm.High, llm.XHigh, llm.Max:
+		budget := 16384
+		return &thinkingConfig{Type: "enabled", BudgetTokens: &budget}
+	default:
+		return &thinkingConfig{Type: "adaptive"}
+	}
 }
 
 func newMessagesHTTPRequest(ctx context.Context, cfg llm.ModelConfig, body []byte, stream bool) (*http.Request, error) {
