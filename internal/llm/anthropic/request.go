@@ -7,6 +7,14 @@ type cacheControl struct {
 	TTL  string `json:"ttl,omitempty"`
 }
 
+// thinkingConfig controls Anthropic's extended thinking feature.
+// Type "adaptive" lets the model decide how much to think;
+// Type "enabled" with BudgetTokens gives a fixed token budget.
+type thinkingConfig struct {
+	Type         string `json:"type"`
+	BudgetTokens *int   `json:"budget_tokens,omitempty"`
+}
+
 type AnthropicRequest struct {
 	Model     string             `json:"model"`
 	MaxTokens int                `json:"max_tokens"`
@@ -14,6 +22,7 @@ type AnthropicRequest struct {
 	Messages  []anthropicMessage `json:"messages"`
 	Stream    bool               `json:"stream"`
 	Tools     []anthropicTool    `json:"tools,omitempty"`
+	Thinking  *thinkingConfig    `json:"thinking,omitempty"`
 }
 
 type anthropicMessage struct {

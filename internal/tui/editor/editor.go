@@ -226,6 +226,13 @@ func (e *Editor) Update(m controller.Msg) {
 		e.toast.Show(msg.Message, msg.Kind, msg.Duration)
 	case controller.ThemeMsg:
 		e.applyTheme(msg.Name)
+	case controller.ModelChangeMsg:
+		switch msg.Kind {
+		case "model":
+			e.composer.SetModelLabel(msg.Value, string(e.ctrl.ThinkLevel()))
+		case "think_level":
+			e.composer.SetModelLabel(e.ctrl.ModelName(), msg.Value)
+		}
 	case controller.ExtSessionEffectsMsg:
 		e.footer.ApplySessionEffects(msg)
 		if msg.Toast != "" {

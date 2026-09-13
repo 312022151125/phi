@@ -23,7 +23,7 @@ A lean, high-performance terminal coding agent harness in Go — a sibling to Pi
 - **MCP without context death** — configure as many MCP servers as you want; their tool schemas **never** enter the model prompt. The system prompt lists **server names** only (like the Skills catalog); the agent uses three meta-tools (`mcp_list` / `mcp_inspect` / `mcp_call`) to discover and call on demand. Same Gate / Ask / Hooks path as built-in tools. See [MCP](#mcp)
 - **Extensions (Go or Rust)** — native binaries speak the **PXB** binary protocol over stdin/stdout; official author SDKs for Go ([`ext/go`](ext/go)) and Rust ([`ext/rust`](ext/rust)): LLM tools, slash commands, event intercepts, confirm dialogs — no reflection; JSON at the SDK edges via `serde_json`. See [Extensions](#extensions)
 - **In-TUI diff review** — `/diff` opens a full-screen git review (working tree / staged / HEAD): syntax-highlighted hunks, line notes, then `a` sends notes to the agent. See [Diff review](#diff-review)
-- **Any model** — OpenAI-compatible or Anthropic, no vendor lock-in
+- **Any model** — OpenAI-compatible, Anthropic, or Gemini via an explicit `api` field; built-in presets for DeepSeek and Gemini. See [Supported models](doc/models.md)
 
 ![phi welcome](assets/phi.png)
 
@@ -144,15 +144,22 @@ file in your browser.
 ```yaml
 # ~/.phi/config.yaml
 models:
-  - name: gpt-4o            # model name; "claude-*" routes to the Anthropic API
+  - name: gpt-4o
+    api: OpenAI             # OpenAI | Anthropic | Gemini (empty → OpenAI-compatible)
     api_key: sk-...         # or set PHI_API_KEY
     base_url: https://api.openai.com/v1   # default; PHI_BASE_URL overrides
     context_window: 128000  # optional
     default: true           # the model used at startup; first entry wins if absent
-  - name: claude-sonnet-4-20250514   # extra models; switchable at runtime
+  - name: claude-sonnet-4-20250514
+    api: Anthropic          # required — no name/URL guessing
     api_key: sk-ant-...
     base_url: https://api.anthropic.com
     context_window: 200000
+  - name: deepseek-flash    # built-in preset: base_url / context / thinking filled in
+    api_key: sk-...
+  - name: gemini-2.5-flash  # built-in preset (api: Gemini)
+    api_key: ...
+    think_level: high       # optional: off | minimal | low | medium | high | …
 
 skill_path: ~/.phi/skills # where SKILL.md files are loaded from
 
@@ -173,9 +180,20 @@ permissions:
       - "rm -rf *"
 ```
 
+Built-in presets and thinking wire formats: [doc/models.md](doc/models.md).
+
 ### Recommended model: DeepSeek Flash
 
 phi + DeepSeek Flash — the best pairing: grounded, low hallucination, cache hit rates near 100%.
+
+Use the built-in preset (only `name` + `api_key` required):
+
+```yaml
+models:
+  - name: deepseek-flash
+    api_key: sk-...
+    default: true
+```
 
 Measured data:
 
@@ -205,10 +223,10 @@ Environment overrides:
 | `PHI_MODEL`      | `models[].name` (default model) |
 | `PHI_BASE_URL`   | `models[].base_url` (default model) |
 | `PHI_SKILL_PATH` | `skill_path`       |
+| `PHI_THINK_LEVEL` | `models[].think_level` (default model; `off` disables) |
 
-Provider routing: a base URL containing `anthropic` or a model name starting
-with `claude` uses the Anthropic Messages API; everything else uses the
-OpenAI-compatible `/chat/completions` path.
+Provider routing uses the explicit `api` field (`OpenAI` / `Anthropic` /
+`Gemini`). See [Supported models](doc/models.md).
 
 ### Workspace layout
 

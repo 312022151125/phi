@@ -33,20 +33,24 @@ type apiMessage struct {
 	ToolCallID       string         `json:"tool_call_id,omitempty"`
 }
 
-type apiRequest struct {
-	Model         string         `json:"model"`
-	Messages      []apiMessage   `json:"messages"`
-	Tools         []apiTool      `json:"tools,omitempty"`
-	Stream        bool           `json:"stream,omitempty"`
-	StreamOptions *streamOptions `json:"stream_options,omitempty"`
-	ExtraBody     *extraBody     `json:"extra_body,omitempty"`
+// Request is the OpenAI-compatible chat completions body.
+type Request struct {
+	Model           string         `json:"model"`
+	Messages        []apiMessage   `json:"messages"`
+	Tools           []apiTool      `json:"tools,omitempty"`
+	Stream          bool           `json:"stream,omitempty"`
+	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
+	ExtraBody       *ExtraBody     `json:"extra_body,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
 }
 
-type extraBody struct {
-	Thinking *thinkingConfig `json:"thinking,omitempty"`
+// ExtraBody holds vendor extensions nested under extra_body (e.g. DeepSeek).
+type ExtraBody struct {
+	Thinking *ThinkingConfig `json:"thinking,omitempty"`
 }
 
-type thinkingConfig struct {
+// ThinkingConfig is a vendor thinking toggle inside ExtraBody.
+type ThinkingConfig struct {
 	Type string `json:"type"`
 }
 
@@ -92,8 +96,9 @@ func toAPIMessage(m llm.Message) apiMessage {
 
 // BuildRequest converts the normalized messages into an OpenAI-shaped request.
 // The system prompt is prepended as a system message, mirroring the previous
-// in-client behavior.
-func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, tools []llm.ToolDefinition) *apiRequest {
+// in-client behavior. Vendor-specific fields (e.g. DeepSeek extra_body) belong
+// on model presets via RequestInterceptor, not here.
+func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, tools []llm.ToolDefinition) *Request {
 	msgs := make([]apiMessage, 0, len(messages)+1)
 	if strings.TrimSpace(system) != "" {
 		msgs = append(msgs, apiMessage{Role: llm.RoleSystem, Content: system})
@@ -107,23 +112,19 @@ func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, to
 		apiTools[i] = apiTool{Type: "function", Function: t}
 	}
 
-	var extra *extraBody
-	if isThinkingModeModel(cfg.Name) {
-		extra = &extraBody{Thinking: &thinkingConfig{Type: "enabled"}}
+	var reasoningEffort string
+	if cfg.Think.Enabled {
+		reasoningEffort = string(cfg.Think.Mode)
 	}
 
-	return &apiRequest{
-		Model:         cfg.Name,
-		Messages:      msgs,
-		Tools:         apiTools,
-		Stream:        true,
-		StreamOptions: &streamOptions{IncludeUsage: true},
-		ExtraBody:     extra,
+	return &Request{
+		Model:           cfg.Name,
+		Messages:        msgs,
+		Tools:           apiTools,
+		Stream:          true,
+		StreamOptions:   &streamOptions{IncludeUsage: true},
+		ReasoningEffort: reasoningEffort,
 	}
-}
-
-func isThinkingModeModel(model string) bool {
-	return strings.HasPrefix(strings.ToLower(model), "deepseek")
 }
 
 func chatCompletionsURL(baseURL string) string {
@@ -146,13 +147,17 @@ func newChatRequest(ctx context.Context, url, apiKey string, body []byte, stream
 	return httpReq, nil
 }
 
-// Compact sends a single non-streaming chat request and returns the assistant
-// text. Satisfies llm.Compactor for session compaction.
-func Compact(ctx context.Context, httpClient *http.Client, cfg llm.ModelConfig, prompt string) (string, error) {
-	body, err := json.Marshal(&apiRequest{
-		Model:    cfg.Name,
+// NewCompactRequest builds a minimal non-streaming chat body for Compact.
+func NewCompactRequest(model, prompt string) *Request {
+	return &Request{
+		Model:    model,
 		Messages: []apiMessage{{Role: llm.RoleUser, Content: prompt}},
-	})
+	}
+}
+
+// CompactRequest POSTs a non-streaming chat request body and returns assistant text.
+func CompactRequest(ctx context.Context, httpClient *http.Client, cfg llm.ModelConfig, req *Request) (string, error) {
+	body, err := json.Marshal(req)
 	if err != nil {
 		return "", err
 	}

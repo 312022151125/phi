@@ -332,11 +332,26 @@ func (c *ComposerPane) AddPendingImage(att imgutil.Attachment) {
 	}
 }
 
-// SetModelLabel updates the model name in the composer header.
-func (c *ComposerPane) SetModelLabel(name string) {
-	if c != nil {
-		c.Chat.TopRightLabel.Text = name
+// SetModelLabel updates the model name and thinking level in the composer header.
+// When thinkLevel is non-empty and not "off", it is appended (e.g. "claude-sonnet-4.20250514 • high").
+// Spans carry their own styles — BorderLabel.Style is ignored once Spans is set.
+func (c *ComposerPane) SetModelLabel(name, thinkLevel string) {
+	if c == nil {
+		return
 	}
+	id := c.theme.IdentityOrSuccess()
+	if thinkLevel != "" && thinkLevel != "off" {
+		chrome := footer.ChromeLabelStyle(c.theme)
+		c.Chat.TopRightLabel = layout.BorderLabel{
+			Spans: []layout.BorderSpan{
+				{Text: name, Style: id},
+				{Text: " • ", Style: chrome},
+				{Text: thinkLevel, Style: id},
+			},
+		}
+		return
+	}
+	c.Chat.TopRightLabel = layout.BorderLabel{Text: name, Style: id}
 }
 
 // SetBranchLabel updates the path label in the composer footer.
@@ -391,7 +406,11 @@ func (c *ComposerPane) SetTheme(th components.Theme) {
 	c.Chat.BorderStyle = th.Border
 	c.Chat.TextStyle = th.Foreground
 	c.Chat.BottomRightLabel.Style = footer.PathLabelStyle(th)
-	c.Chat.TopRightLabel.Style = th.IdentityOrSuccess()
+	if len(c.Chat.TopRightLabel.Spans) >= 3 {
+		c.SetModelLabel(c.Chat.TopRightLabel.Spans[0].Text, c.Chat.TopRightLabel.Spans[2].Text)
+	} else {
+		c.Chat.TopRightLabel.Style = th.IdentityOrSuccess()
+	}
 	c.palette.Theme = th
 	c.listPicker.Theme = th
 	c.mention.Theme = th

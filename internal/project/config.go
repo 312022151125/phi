@@ -171,23 +171,41 @@ func parseConfigFile(path string) (*Config, error) {
 
 func modelEntryToConfig(m modelEntry) llm.ModelConfig {
 	cfg := llm.ModelConfig{Name: m.Name, APIKey: m.APIKey, BaseURL: m.BaseURL}
-	// A built-in preset supplies base_url / context_window / image_enabled
+	// A built-in preset supplies base_url / context_window / image_enabled / api
 	// when the entry omits them; the explicit fields below still win so
 	// users can override any default.
 	if preset, ok := model.Lookup(m.Name); ok {
+		pc := preset.Config
 		if cfg.BaseURL == "" {
-			cfg.BaseURL = preset.BaseURL
+			cfg.BaseURL = pc.BaseURL
 		}
-		if preset.ContextWindow > 0 {
-			cfg.ContextWindow = preset.ContextWindow
+		if pc.ContextWindow > 0 {
+			cfg.ContextWindow = pc.ContextWindow
 		}
-		cfg.ImageEnabled = preset.ImageEnabled
+		cfg.ImageEnabled = pc.ImageEnabled
+		if cfg.API == "" {
+			cfg.API = pc.API
+		}
+		// Inherit the preset's thinking config so models like deepseek-flash
+		// ship with sensible defaults (thinking enabled, high mode).
+		cfg.Think = pc.Think
+	}
+	if m.API != "" {
+		cfg.API = m.API
 	}
 	if m.ContextWindow != nil && *m.ContextWindow > 0 {
 		cfg.ContextWindow = *m.ContextWindow
 	}
 	if m.ImageEnabled != nil {
 		cfg.ImageEnabled = *m.ImageEnabled
+	}
+	if m.ThinkEnabled != nil {
+		cfg.Think.Enabled = *m.ThinkEnabled
+	}
+	if m.ThinkLevel != nil && *m.ThinkLevel != "" {
+		mode := llm.ThinkMode(*m.ThinkLevel)
+		cfg.Think.Mode = mode
+		cfg.Think.Enabled = mode != llm.Off
 	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com/v1"
@@ -210,14 +228,15 @@ type agentsConfig struct {
 }
 
 type modelEntry struct {
-	Name          string `yaml:"name"`
-	APIKey        string `yaml:"api_key"`
-	BaseURL       string `yaml:"base_url"`
-	ContextWindow *int   `yaml:"context_window"`
-	// ImageEnabled is a pointer so YAML absence (use the built-in preset's
-	// default) is distinguishable from an explicit false.
-	ImageEnabled *bool `yaml:"image_enabled"`
-	Default      bool  `yaml:"default"`
+	Name          string         `yaml:"name"`
+	APIKey        string         `yaml:"api_key"`
+	BaseURL       string         `yaml:"base_url"`
+	ContextWindow *int           `yaml:"context_window"`
+	ImageEnabled  *bool          `yaml:"image_enabled"`
+	API           llm.RouterType `yaml:"api"`
+	Default       bool           `yaml:"default"`
+	ThinkEnabled  *bool          `yaml:"think_enabled"`
+	ThinkLevel    *string        `yaml:"think_level"`
 }
 
 type permConfig struct {
@@ -324,6 +343,11 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := firstEnv("PHI_SKILL_PATH"); v != "" {
 		c.SkillPath = v
+	}
+	if v := firstEnv("PHI_THINK_LEVEL"); v != "" {
+		entry := c.defaultEntry()
+		entry.Think.Mode = llm.ThinkMode(v)
+		entry.Think.Enabled = (v != string(llm.Off))
 	}
 }
 

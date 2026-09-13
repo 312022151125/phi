@@ -8,8 +8,9 @@
 | `internal/agent/`        | Agent engine, executor, jobs                     |
 | `internal/agent/prompt/` | System prompt templates + Skills/MCP catalogs    |
 | `internal/components/`   | TUI widgets (chat, input, palette, mention, diffview, …) |
-| `internal/llm/`          | LLM clients (OpenAI-compatible + Anthropic), streaming, skills |
+| `internal/llm/`          | LLM clients (OpenAI-compatible + Anthropic + Gemini), streaming, skills |
 | `internal/project/`      | Workspace layout and config                    |
+| `internal/project/model/` | Built-in model presets + request interceptors |
 | `internal/session/`      | Session persistence, load/apply                |
 | `internal/job/`          | Sub-agent job manager (spawn/wait/cancel)      |
 | `internal/tools/`        | Agent tools (`*tool` packages + `tooldef`)     |
@@ -37,5 +38,6 @@
 | ---- | ------- |
 | [`extensions.md`](extensions.md) | Extensions: discover, API, events, migration from hooks |
 | [`mcp.md`](mcp.md) | MCP: zero schema pollution, meta-tools, config, CLI |
+| [`models.md`](models.md) | Supported models, presets, explicit `api`, thinking config |
 | [`tui.md`](tui.md) | TUI: package layout, aggregation, interaction flows |
 | [`session-context-building.md`](session-context-building.md) | Sessions: tree model, compaction, context building |

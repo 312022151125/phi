@@ -94,26 +94,74 @@ func TestBuildRequestUserContent(t *testing.T) {
 	assert.Equal(t, "aGVsbG8=", parts[1].InlineData.Data)
 }
 
-func TestDisableThinking(t *testing.T) {
-	testcases := []struct {
-		name  string
-		model string
-		want  string
-	}{
-		{name: "gemini_2x_budget_zero", model: "gemini-2.5-flash", want: `"thinkingBudget":0`},
-		{name: "gemini_3_pro_lowest_level", model: "gemini-3-pro", want: `"thinkingLevel":"LOW"`},
-		{name: "gemini_3_flash_minimal", model: "gemini-3-flash", want: `"thinkingLevel":"MINIMAL"`},
-	}
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			var req GeminiRequest
-			req.DisableThinking(tc.model)
-			require.NotNil(t, req.ThinkingConfig)
-			body, err := json.Marshal(req.ThinkingConfig)
-			require.NoError(t, err)
-			assert.Contains(t, string(body), tc.want)
-		})
-	}
+func TestApplyBudgetThinking(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		var req GeminiRequest
+		req.ApplyBudgetThinking(llm.ThinkConfig{})
+		require.NotNil(t, req.ThinkingConfig)
+		body, err := json.Marshal(req.ThinkingConfig)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), `"thinkingBudget":0`)
+	})
+	t.Run("enabled", func(t *testing.T) {
+		testcases := []struct {
+			mode llm.ThinkMode
+			want string
+		}{
+			{mode: llm.Low, want: `"thinkingBudget":2048`},
+			{mode: llm.Medium, want: `"thinkingBudget":8192`},
+			{mode: llm.High, want: `"thinkingBudget":16384`},
+		}
+		for _, tc := range testcases {
+			t.Run(string(tc.mode), func(t *testing.T) {
+				var req GeminiRequest
+				req.ApplyBudgetThinking(llm.ThinkConfig{Enabled: true, Mode: tc.mode})
+				body, err := json.Marshal(req.ThinkingConfig)
+				require.NoError(t, err)
+				assert.Contains(t, string(body), tc.want)
+			})
+		}
+	})
+}
+
+func TestApplyLevelThinking(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		testcases := []struct {
+			name string
+			off  string
+			want string
+		}{
+			{name: "default_minimal", want: `"thinkingLevel":"MINIMAL"`},
+			{name: "custom_low", off: "LOW", want: `"thinkingLevel":"LOW"`},
+		}
+		for _, tc := range testcases {
+			t.Run(tc.name, func(t *testing.T) {
+				var req GeminiRequest
+				req.ApplyLevelThinking(llm.ThinkConfig{}, tc.off)
+				body, err := json.Marshal(req.ThinkingConfig)
+				require.NoError(t, err)
+				assert.Contains(t, string(body), tc.want)
+			})
+		}
+	})
+	t.Run("enabled", func(t *testing.T) {
+		testcases := []struct {
+			mode llm.ThinkMode
+			want string
+		}{
+			{mode: llm.Medium, want: `"thinkingLevel":"MEDIUM"`},
+			{mode: llm.High, want: `"thinkingLevel":"HIGH"`},
+		}
+		for _, tc := range testcases {
+			t.Run(string(tc.mode), func(t *testing.T) {
+				var req GeminiRequest
+				req.ApplyLevelThinking(llm.ThinkConfig{Enabled: true, Mode: tc.mode}, "MINIMAL")
+				body, err := json.Marshal(req.ThinkingConfig)
+				require.NoError(t, err)
+				assert.Contains(t, string(body), tc.want)
+			})
+		}
+	})
 }
 
 // processForTest runs processStream and returns the yielded events.

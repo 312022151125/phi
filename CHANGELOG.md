@@ -13,8 +13,19 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 - Built-in DeepSeek model presets: config entries named `deepseek-flash`
   or `deepseek-v4-pro` auto-fill base_url / context_window /
   image_enabled from the catalog, so only name + api_key is required.
+- Built-in Gemini model presets (`gemini-2.5-pro`, `gemini-2.5-flash`,
+  `gemini-3-pro`, `gemini-3-flash`) with provider-native thinking
+  config (budget for 2.x, level for 3.x).
+- Per-model `think_enabled` / `think_level` config keys and
+  `PHI_THINK_LEVEL` env var override.
+- Docs: [Supported models](doc/models.md).
 
 ### Changed
+
+- Provider routing uses explicit `models[].api` (`OpenAI` / `Anthropic` /
+  `Gemini`) instead of guessing from model name or base URL.
+- Vendor thinking wire shape (DeepSeek `extra_body`, Gemini budget/level)
+  lives on model preset request interceptors, not client name matching.
 
 ### Deprecated
 

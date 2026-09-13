@@ -11,7 +11,7 @@ macro_rules! pxb_message {
         pxb_message!(@step $Name, [$(#[$meta])*], [], [], [ $($body)* ]);
     };
 
-    // Field descriptors are space-separated triples: (+|?) tag field
+    // Field descriptors are space-separated triples: "+" or "?" tag field
     (@step $Name:ident, [$(#[$meta:meta])*],
      [$($sf:tt)*], [$($op:tt $ftag:literal $ffield:ident)*], []) => {
         #[derive(Debug, Clone, PartialEq, Eq, Default)]

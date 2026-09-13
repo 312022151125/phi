@@ -8,6 +8,41 @@ type Compactor interface {
 	Compact(ctx context.Context, summary string) (string, error)
 }
 
+type RouterType string
+
+const (
+	OpenAI    RouterType = "OpenAI"
+	Anthropic RouterType = "Anthropic"
+	Gemini    RouterType = "Gemini"
+)
+
+type ThinkMode string
+
+const (
+	Off     ThinkMode = "off"
+	Minimal ThinkMode = "minimal"
+	Low     ThinkMode = "low"
+	Medium  ThinkMode = "medium"
+	High    ThinkMode = "high"
+	XHigh   ThinkMode = "xhigh"
+	Max     ThinkMode = "max"
+)
+
+// ThinkConfig is the provider-agnostic reasoning level. Provider wire formats
+// (OpenAI reasoning_effort, Gemini thinkingBudget/level, …) are applied by
+// each client or model RequestInterceptor.
+type ThinkConfig struct {
+	Mode    ThinkMode
+	Enabled bool
+}
+
+// RequestInterceptor customizes a provider request after BuildRequest and before
+// the HTTP call. Req is the provider's request type (e.g. openai.Request).
+// cfg is the live session ModelConfig so hooks can read Think and other fields.
+type RequestInterceptor[Req any] interface {
+	Before(ctx context.Context, req *Req, cfg ModelConfig) error
+}
+
 // ModelConfig is the connection config for one LLM endpoint: either an
 // OpenAI-compatible endpoint or the Anthropic Messages API. It also carries
 // agent-wide settings like the skill directory path.
@@ -24,6 +59,9 @@ type ModelConfig struct {
 	// ImageEnabled opts this model into image attachments (clipboard / @file).
 	// Absent or false keeps the composer from attaching images.
 	ImageEnabled bool
+	API          RouterType
+	// Think controls reasoning effort sent as reasoning_effort.
+	Think ThinkConfig
 }
 
 // Role identifies the participant in a chat message.

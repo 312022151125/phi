@@ -23,7 +23,7 @@
 - **MCP 不炸上下文** — 随便配多少 MCP 服务器，工具 schema **绝不**进模型 prompt。系统提示只列 **server 名**（像 Skills 目录）；Agent 用三个元工具（`mcp_list` / `mcp_inspect` / `mcp_call`）按需发现再调用；权限仍走 Gate / Ask / Hooks。详见 [MCP](#mcp)
 - **扩展（Go 或 Rust）** — 原生二进制通过 stdin/stdout 讲 **PXB** 协议；官方作者 SDK：Go（[`ext/go`](ext/go)）+ 零依赖 Rust 移植（[`ext/rust`](ext/rust)）：LLM 工具、斜杠命令、事件拦截、确认对话框——无 JSON、无反射。详见 [Extensions（扩展）](#extensions扩展)
 - **TUI 内 diff 审阅** — `/diff` 全屏审阅 git 改动（工作区 / staged / HEAD）：语法高亮、行级批注，按 `a` 发给代理。详见 [Diff 审阅](#diff-审阅)
-- **任意模型** — OpenAI 兼容或 Anthropic，无厂商锁定
+- **任意模型** — 通过显式 `api` 字段支持 OpenAI 兼容、Anthropic、Gemini；内置 DeepSeek / Gemini preset。详见 [支持的模型](doc/models.md)
 
 ![phi 欢迎界面](assets/phi.png)
 
@@ -143,15 +143,22 @@ phi 读取 `~/.phi/config.yaml`（标准 YAML）。环境变量可覆盖配置�
 ```yaml
 # ~/.phi/config.yaml
 models:
-  - name: gpt-4o            # 模型名；"claude-*" 走 Anthropic API
+  - name: gpt-4o
+    api: OpenAI             # OpenAI | Anthropic | Gemini（空则走 OpenAI 兼容）
     api_key: sk-...         # 或设置 PHI_API_KEY
     base_url: https://api.openai.com/v1   # 默认；PHI_BASE_URL 可覆盖
     context_window: 128000  # 可选
     default: true           # 启动时使用的模型；缺省时第一项生效
-  - name: claude-sonnet-4-20250514   # 额外模型；运行时可切换
+  - name: claude-sonnet-4-20250514
+    api: Anthropic          # 必填 — 不再按名字/URL 猜测
     api_key: sk-ant-...
     base_url: https://api.anthropic.com
     context_window: 200000
+  - name: deepseek-flash    # 内置 preset：自动补齐 base_url / context / thinking
+    api_key: sk-...
+  - name: gemini-2.5-flash  # 内置 preset（api: Gemini）
+    api_key: ...
+    think_level: high       # 可选：off | minimal | low | medium | high | …
 
 skill_path: ~/.phi/skills # SKILL.md 文件的加载目录
 
@@ -168,14 +175,18 @@ permissions:
       - "rm -rf *"
 ```
 
+内置 preset 与思考参数上线格式见 [doc/models.md](doc/models.md)。
+
 ### 推荐模型：DeepSeek Flash
 
-**DeepSeek V4 Flash**（`api.deepseek.com` 上的 `deepseek-chat`）——快、便宜，agent 场景下 prefix cache 真能打。
+**DeepSeek Flash**（内置 preset `deepseek-flash`）——快、便宜，agent 场景下 prefix cache 真能打。
+
+只需 name + api_key：
 
 ```yaml
-  - name: deepseek-chat
+models:
+  - name: deepseek-flash
     api_key: sk-...
-    base_url: https://api.deepseek.com/v1
     default: true
 ```
 
@@ -209,9 +220,9 @@ xychart-beta
 | `PHI_MODEL` | `models[].name`（默认模型） |
 | `PHI_BASE_URL` | `models[].base_url`（默认模型） |
 | `PHI_SKILL_PATH` | `skill_path` |
+| `PHI_THINK_LEVEL` | `models[].think_level`（默认模型；`off` 关闭思考） |
 
-提供商路由：base URL 包含 `anthropic` 或模型名以 `claude` 开头时使用
-Anthropic Messages API；其余走 OpenAI 兼容的 `/chat/completions` 路径。
+提供商路由看显式 `api` 字段（`OpenAI` / `Anthropic` / `Gemini`）。详见 [支持的模型](doc/models.md)。
 
 ### 工作区布局
 

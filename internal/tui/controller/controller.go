@@ -21,6 +21,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/mcp"
 	"github.com/pulseaiclub/phi/internal/permission"
 	"github.com/pulseaiclub/phi/internal/project"
+	"github.com/pulseaiclub/phi/internal/project/model"
 	"github.com/pulseaiclub/phi/internal/session"
 )
 
@@ -432,9 +433,28 @@ func (c *EngineController) SetModel(name string) error {
 	if _, _, err := c.ReloadExtensions(); err != nil {
 		debuglog.Logf("extension: reload on SetModel: %v", err)
 	}
-	c.engine.SetModel(cfg)
+	c.engine.SetModelWithHooks(cfg, model.HooksFor(cfg.Name))
 	c.modelCfg = cfg
 	return nil
+}
+
+// SetThinkLevel changes the thinking level for the current session.
+func (c *EngineController) SetThinkLevel(mode llm.ThinkMode) {
+	c.modelCfg.Think.Mode = mode
+	c.modelCfg.Think.Enabled = mode != llm.Off
+	if c.engine != nil {
+		c.engine.SetModel(c.modelCfg)
+	}
+}
+
+// ThinkLevel returns the current thinking mode.
+func (c *EngineController) ThinkLevel() llm.ThinkMode {
+	return c.modelCfg.Think.Mode
+}
+
+// ModelName returns the active model name.
+func (c *EngineController) ModelName() string {
+	return c.modelCfg.Name
 }
 
 func (c *EngineController) ImageEnabled() bool {
@@ -574,6 +594,7 @@ func (c *EngineController) openEngine(
 		agent.WithJobs(c.engineJobs()),
 		agent.WithExtensions(extRunner),
 		agent.WithMCP(c.mcpPool),
+		agent.WithHooks(model.HooksFor(cfg.Name)),
 	)
 }
 
