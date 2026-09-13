@@ -203,8 +203,9 @@ func modelEntryToConfig(m modelEntry) llm.ModelConfig {
 		cfg.Think.Enabled = *m.ThinkEnabled
 	}
 	if m.ThinkLevel != nil && *m.ThinkLevel != "" {
-		cfg.Think.Mode = llm.ThinkMode(*m.ThinkLevel)
-		cfg.Think.Enabled = true
+		mode := llm.ThinkMode(*m.ThinkLevel)
+		cfg.Think.Mode = mode
+		cfg.Think.Enabled = mode != llm.Off
 	}
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "https://api.openai.com/v1"

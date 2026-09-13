@@ -18,9 +18,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   config (budget for 2.x, level for 3.x).
 - Per-model `think_enabled` / `think_level` config keys and
   `PHI_THINK_LEVEL` env var override.
+- Docs: [Supported models](doc/models.md).
 
 ### Changed
 
+- Provider routing uses explicit `models[].api` (`OpenAI` / `Anthropic` /
+  `Gemini`) instead of guessing from model name or base URL.
+- Vendor thinking wire shape (DeepSeek `extra_body`, Gemini budget/level)
+  lives on model preset request interceptors, not client name matching.
 ### Deprecated
 
 ### Removed
