@@ -29,9 +29,8 @@ const (
 )
 
 type ThinkConfig struct {
-	Mode      ThinkMode
-	Enabled   bool
-	Supported []ThinkMode
+	Mode    ThinkMode
+	Enabled bool
 }
 
 // ModelConfig is the connection config for one LLM endpoint: either an
