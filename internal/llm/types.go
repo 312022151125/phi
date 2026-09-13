@@ -19,18 +19,19 @@ const (
 type ThinkMode string
 
 const (
-	Off    ThinkMode = "off"
+	Off     ThinkMode = "off"
 	Minimal ThinkMode = "minimal"
-	Low    ThinkMode = "low"
-	Medium ThinkMode = "medium"
-	High   ThinkMode = "high"
-	XHigh  ThinkMode = "xhigh"
-	Max    ThinkMode = "max"
+	Low     ThinkMode = "low"
+	Medium  ThinkMode = "medium"
+	High    ThinkMode = "high"
+	XHigh   ThinkMode = "xhigh"
+	Max     ThinkMode = "max"
 )
 
 type ThinkConfig struct {
-	Mode    ThinkMode
-	Enabled bool
+	Mode      ThinkMode
+	Enabled   bool
+	Supported []ThinkMode
 }
 
 // ModelConfig is the connection config for one LLM endpoint: either an

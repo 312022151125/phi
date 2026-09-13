@@ -11,12 +11,17 @@ import (
 )
 
 type stubBuiltinComposer struct {
-	model  string
-	skills []string
-	pal    []palette.PaletteCommand
+	model      string
+	thinkLevel string
+	skills     []string
+	pal        []palette.PaletteCommand
 }
 
-func (s *stubBuiltinComposer) SetModelLabel(name string) { s.model = name }
+func (s *stubBuiltinComposer) SetModelLabel(name, thinkLevel string) {
+	s.model = name
+	s.thinkLevel = thinkLevel
+}
+
 func (s *stubBuiltinComposer) AddPendingSkill(name string) {
 	s.skills = append(s.skills, name)
 }

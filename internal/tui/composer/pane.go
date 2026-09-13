@@ -332,11 +332,23 @@ func (c *ComposerPane) AddPendingImage(att imgutil.Attachment) {
 	}
 }
 
-// SetModelLabel updates the model name in the composer header.
-func (c *ComposerPane) SetModelLabel(name string) {
-	if c != nil {
-		c.Chat.TopRightLabel.Text = name
+// SetModelLabel updates the model name and thinking level in the composer header.
+// When thinkLevel is non-empty and not "off", it is appended (e.g. "claude-sonnet-4.20250514 • high").
+func (c *ComposerPane) SetModelLabel(name, thinkLevel string) {
+	if c == nil {
+		return
 	}
+	if thinkLevel != "" && thinkLevel != "off" {
+		c.Chat.TopRightLabel.Text = ""
+		c.Chat.TopRightLabel.Spans = []layout.BorderSpan{
+			{Text: name},
+			{Text: " • "},
+			{Text: thinkLevel},
+		}
+		return
+	}
+	c.Chat.TopRightLabel.Text = name
+	c.Chat.TopRightLabel.Spans = nil
 }
 
 // SetBranchLabel updates the path label in the composer footer.

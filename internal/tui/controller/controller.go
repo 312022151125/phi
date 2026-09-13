@@ -437,6 +437,25 @@ func (c *EngineController) SetModel(name string) error {
 	return nil
 }
 
+// SetThinkLevel changes the thinking level for the current session.
+func (c *EngineController) SetThinkLevel(mode llm.ThinkMode) {
+	c.modelCfg.Think.Mode = mode
+	c.modelCfg.Think.Enabled = mode != llm.Off
+	if c.engine != nil {
+		c.engine.SetModel(c.modelCfg)
+	}
+}
+
+// ThinkLevel returns the current thinking mode.
+func (c *EngineController) ThinkLevel() llm.ThinkMode {
+	return c.modelCfg.Think.Mode
+}
+
+// ModelName returns the active model name.
+func (c *EngineController) ModelName() string {
+	return c.modelCfg.Name
+}
+
 func (c *EngineController) ImageEnabled() bool {
 	return c.modelCfg.ImageEnabled
 }

@@ -11,7 +11,7 @@ import (
 // BuiltinComposer is the composer surface builtin domains need.
 // *composer.ComposerPane satisfies this without importing composer here.
 type BuiltinComposer interface {
-	SetModelLabel(name string)
+	SetModelLabel(name, thinkLevel string)
 	AddPendingSkill(name string)
 	SetPaletteCommands([]palette.PaletteCommand)
 }

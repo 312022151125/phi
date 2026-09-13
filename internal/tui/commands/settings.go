@@ -8,6 +8,7 @@ import (
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
+	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
 )
 
@@ -21,7 +22,7 @@ type SettingsCommands struct {
 
 // settingsComposer is the subset of the composer pane needed by settings.
 type settingsComposer interface {
-	SetModelLabel(name string)
+	SetModelLabel(name, thinkLevel string)
 }
 
 // Register wires settings palette entries into r.
@@ -53,6 +54,12 @@ func (s *SettingsCommands) Register(r *CommandRegistry) {
 			return buildAgentsPalette(s.setAgents, s.setRoleModel, s.ModelNames)
 		},
 	})
+	r.Register(Command{
+		Name: "settings-think",
+		Build: func(_ Context) palette.PaletteCommand {
+			return buildThinkPalette(s.Ctrl, s.setThinkLevel)
+		},
+	})
 }
 
 func (s *SettingsCommands) setModel(name string) {
@@ -64,7 +71,7 @@ func (s *SettingsCommands) setModel(name string) {
 		return
 	}
 	if s.Composer != nil {
-		s.Composer.SetModelLabel(name)
+		s.Composer.SetModelLabel(name, string(s.Ctrl.ThinkLevel()))
 	}
 	publishToast(s.Bus, "Model: "+name, toast.ToastSuccess, 2*time.Second)
 }
@@ -115,6 +122,56 @@ func (s *SettingsCommands) setRoleModel(role, name string) {
 		msg = fmt.Sprintf("Sub-agent %s: %s", role, name)
 	}
 	publishToast(s.Bus, msg, toast.ToastSuccess, 2*time.Second)
+}
+
+func (s *SettingsCommands) setThinkLevel(level llm.ThinkMode) {
+	if s == nil || s.Ctrl == nil {
+		return
+	}
+	s.Ctrl.SetThinkLevel(level)
+	label := string(level)
+	if level == llm.Off {
+		label = "off"
+	}
+	if s.Composer != nil {
+		s.Composer.SetModelLabel(s.Ctrl.ModelName(), label)
+	}
+	publishToast(s.Bus, "Thinking: "+label, toast.ToastSuccess, 2*time.Second)
+}
+
+func buildThinkPalette(ctrl *controller.EngineController, set func(llm.ThinkMode)) palette.PaletteCommand {
+	levels := []llm.ThinkMode{
+		llm.Off, llm.Minimal, llm.Low, llm.Medium, llm.High, llm.XHigh, llm.Max,
+	}
+	current := llm.Off
+	if ctrl != nil {
+		current = ctrl.ThinkLevel()
+	}
+	cmds := make([]palette.PaletteCommand, 0, len(levels))
+	for _, lv := range levels {
+		mark := "  "
+		if lv == current {
+			mark = "✓ "
+		}
+		cmds = append(cmds, palette.PaletteCommand{
+			ID:       "think-" + string(lv),
+			Verb:     mark + string(lv),
+			Keywords: []string{string(lv), "thinking", "reasoning", "effort"},
+			Run: func() {
+				if set != nil {
+					set(lv)
+				}
+			},
+		})
+	}
+	return palette.PaletteCommand{
+		ID:           "settings-think",
+		Noun:         "settings",
+		Verb:         "think",
+		Keywords:     []string{"thinking", "reasoning", "effort", "budget"},
+		SubmenuTitle: "Thinking Level",
+		Submenu:      cmds,
+	}
 }
 
 func buildModelPalette(onModel func(string), modelNames []string) palette.PaletteCommand {

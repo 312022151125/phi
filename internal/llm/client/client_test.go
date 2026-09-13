@@ -106,7 +106,11 @@ func TestClientCompactAnthropic(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test", API: llm.Anthropic}, nil, "")
+	client := NewClient(
+		llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test", API: llm.Anthropic},
+		nil,
+		"",
+	)
 	out, err := client.Compact(t.Context(), "summarize")
 	require.NoError(t, err)
 	require.Equal(t, "/v1/messages", gotPath)

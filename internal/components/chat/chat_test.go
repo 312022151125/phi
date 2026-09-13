@@ -18,9 +18,13 @@ import (
 func TestChatInputBorderLabels(t *testing.T) {
 	c := &ChatInput{
 		MinBodyRows: 3,
-		TopRightLabel: layout.BorderLabel{
+		TopLeftLabel: layout.BorderLabel{
 			Text:  "nostromo—1—skill",
 			Style: xui.Style{Fg: xui.RGBColor(0x5f, 0xc2, 0xc2)},
+		},
+		TopRightLabel: layout.BorderLabel{
+			Text:  "high",
+			Style: xui.Style{Fg: xui.IndexedColor(250)},
 		},
 		BottomLeftLabel: layout.BorderLabel{
 			Text:  "↑1.2k ↓800 Σ2.0k 5% of 128k",
@@ -43,6 +47,7 @@ func TestChatInputBorderLabels(t *testing.T) {
 	assert.Equal(t, "╯", s.Buffer[bottom+59].Char)
 	top := rowString(s, 0)
 	assert.Contains(t, top, "nostromo")
+	assert.Contains(t, top, "high")
 	bot := rowString(s, 4)
 	assert.Contains(t, bot, "5% of 128k")
 	assert.Contains(t, bot, "examples")

@@ -97,3 +97,19 @@ func TestAcceptMentionImageAttachesWhenSupported(t *testing.T) {
 	assert.Equal(t, "pixel.png", c.Chat.PendingImages[0].Label)
 	assert.Empty(t, c.Chat.Value)
 }
+
+func TestTopRightLabelPairsModelLeftOfThink(t *testing.T) {
+	c := NewComposerPane(components.DefaultTheme(), "sonnet", "/tmp")
+	assert.Equal(t, "sonnet", c.Chat.TopRightLabel.Text)
+	assert.Empty(t, c.Chat.TopLeftLabel.Text)
+
+	c.SetModelLabel("sonnet", "high")
+	require.Len(t, c.Chat.TopRightLabel.Spans, 3)
+	assert.Equal(t, "sonnet", c.Chat.TopRightLabel.Spans[0].Text)
+	assert.Equal(t, "high", c.Chat.TopRightLabel.Spans[2].Text)
+	assert.Empty(t, c.Chat.TopLeftLabel.Text)
+
+	c.SetModelLabel("sonnet", "off")
+	assert.Equal(t, "sonnet", c.Chat.TopRightLabel.Text)
+	assert.Empty(t, c.Chat.TopRightLabel.Spans)
+}

@@ -31,11 +31,19 @@ var presets = []llm.ModelConfig{
 		ContextWindow: 1_000_000,
 		ImageEnabled:  true,
 		API:           llm.OpenAI,
+		Think: llm.ThinkConfig{
+			Enabled: true,
+			Mode:    llm.High,
+		},
 	},
 	{
 		Name:          "deepseek-v4-pro",
 		BaseURL:       "https://api.deepseek.com",
 		ContextWindow: 1_000_000,
 		API:           llm.OpenAI,
+		Think: llm.ThinkConfig{
+			Enabled: true,
+			Mode:    llm.High,
+		},
 	},
 }
