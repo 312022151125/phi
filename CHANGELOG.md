@@ -26,6 +26,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `Gemini`) instead of guessing from model name or base URL.
 - Vendor thinking wire shape (DeepSeek `extra_body`, Gemini budget/level)
   lives on model preset request interceptors, not client name matching.
+
 ### Deprecated
 
 ### Removed
