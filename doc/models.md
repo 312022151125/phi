@@ -1,8 +1,9 @@
 # Supported models
 
 phi talks to LLMs through an **explicit** `api` field on each config entry
-(`OpenAI` | `Anthropic` | `Gemini`). Empty `api` means OpenAI-compatible
-`/chat/completions`. There is no name- or URL-based provider guessing.
+(`OpenAI` | `OpenAIResponses` | `Anthropic` | `Gemini`). Empty `api` means
+OpenAI-compatible `/chat/completions`. There is no name- or URL-based
+provider guessing.
 
 Built-in **presets** (exact `name` match) fill `base_url`, `context_window`,
 `image_enabled`, `api`, and default thinking when those fields are omitted.
@@ -36,12 +37,18 @@ Any other `name` works as a normal entry. Set fields yourself:
 
 ```yaml
 models:
+  - name: gpt-5
+    api: OpenAIResponses        # /v1/responses (not chat-completions)
+    api_key: sk-...
+    base_url: https://api.openai.com/v1
+    context_window: 272000
+    default: true
+
   - name: gpt-4o
     api: OpenAI                 # optional; default
     api_key: sk-...
     base_url: https://api.openai.com/v1
     context_window: 128000
-    default: true
 
   - name: claude-sonnet-4-20250514
     api: Anthropic              # required for Anthropic Messages API
@@ -55,6 +62,10 @@ models:
     base_url: https://proxy.example/v1
 ```
 
+`OpenAIResponses` uses the Responses wire format (`input` items, typed SSE
+events, flat function tools). Tool call IDs are stored as `call_id|item_id`
+when the stream provides both, matching round-trip needs for
+`function_call_output`.
 Gemini without a preset name still needs `api: Gemini` and a valid base URL;
 thinking then uses the budget style by default.
 

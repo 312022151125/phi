@@ -47,7 +47,7 @@ type modelDoc struct {
 	// ImageEnabled is a pointer so the editor can omit the key until the user
 	// toggles it (absent vs false). Runtime parse treats absence as false.
 	ImageEnabled *bool  `yaml:"image_enabled,omitempty" json:"imageEnabled,omitempty"`
-	API          string `yaml:"api,omitempty"           json:"api,omitempty"` // OpenAI | Anthropic | Gemini
+	API          string `yaml:"api,omitempty"           json:"api,omitempty"` // OpenAI | OpenAIResponses | Anthropic | Gemini
 	ThinkEnabled *bool  `yaml:"think_enabled,omitempty" json:"thinkEnabled,omitempty"`
 	ThinkLevel   string `yaml:"think_level,omitempty"   json:"thinkLevel,omitempty"`
 	Default      bool   `yaml:"default,omitempty"       json:"default"`
@@ -84,7 +84,7 @@ type modelListRequest struct {
 	BaseURL string `json:"baseUrl"`
 	APIKey  string `json:"apiKey"`
 	Model   string `json:"model"`
-	API     string `json:"api"` // OpenAI | Anthropic | Gemini; empty falls back to legacy heuristics
+	API     string `json:"api"` // OpenAI | OpenAIResponses | Anthropic | Gemini; empty falls back to legacy heuristics
 }
 
 type modelListItem struct {
@@ -272,7 +272,7 @@ func isAnthropicAPI(api, baseURL, model string) bool {
 	switch strings.TrimSpace(api) {
 	case "Anthropic":
 		return true
-	case "OpenAI", "Gemini":
+	case "OpenAI", "OpenAIResponses", "Gemini":
 		return false
 	}
 	// Empty api: keep legacy heuristics so older editor sessions still fetch.
