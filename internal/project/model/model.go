@@ -39,7 +39,10 @@ func HooksFor(name string) llmclient.Hooks {
 	return llmclient.Hooks{}
 }
 
-var thinkHigh = llm.ThinkConfig{Enabled: true, Mode: llm.High}
+var (
+	thinkHigh = llm.ThinkConfig{Enabled: true, Mode: llm.High}
+	thinkMax  = llm.ThinkConfig{Enabled: true, Mode: llm.Max}
+)
 
 // presets is the built-in catalog, keyed by model name. Values mirror each
 // provider's public API docs; re-check the linked page when refreshing a
@@ -112,5 +115,15 @@ var presets = []Preset{
 			Think:         thinkHigh,
 		},
 		Hooks: geminiLevelHooks("MINIMAL"),
+	},
+	{
+		Config: llm.ModelConfig{
+			Name:          "kimi-k3",
+			BaseURL:       "https://api.moonshot.cn/v1",
+			ContextWindow: 1_000_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAI,
+			Think:         thinkMax,
+		},
 	},
 }
