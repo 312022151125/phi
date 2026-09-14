@@ -126,4 +126,13 @@ var presets = []Preset{
 			Think:         thinkMax,
 		},
 	},
+	{
+		Config: llm.ModelConfig{
+			Name:          "kimi-k2.7-code",
+			BaseURL:       "https://api.moonshot.cn/v1",
+			ContextWindow: 10_000_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAI,
+		},
+	},
 }
