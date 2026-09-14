@@ -31,6 +31,9 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   model name or base URL.
 - Vendor thinking wire shape (DeepSeek `extra_body`, Gemini budget/level)
   lives on model preset request interceptors, not client name matching.
+- `/diff`: an empty overlay names the comparison (`No changes vs <rev>`) and
+  reminds that untracked files never show up; git failures collapse to one
+  line with the next step (`fetch first`, `open inside the repo`).
 
 ### Deprecated
 

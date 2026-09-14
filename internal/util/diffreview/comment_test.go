@@ -101,6 +101,16 @@ func TestLabelForSpec(t *testing.T) {
 	assert.Equal(t, "HEAD", LabelForSpec([]string{"HEAD"}))
 }
 
+func TestEmptyNote(t *testing.T) {
+	assert.Contains(t, EmptyNote(nil), "No unstaged changes")
+	assert.Contains(t, EmptyNote([]string{"staged"}), "No staged changes")
+	assert.Contains(t, EmptyNote([]string{"HEAD"}), "HEAD has no changes")
+	// A plain revision is compared against the working tree, so the note must
+	// name it — otherwise an empty overlay looks like a broken /diff.
+	assert.Contains(t, EmptyNote([]string{"HEAD~2"}), "No changes vs HEAD~2")
+	assert.Contains(t, EmptyNote([]string{"HEAD~2"}), "Untracked files are not shown")
+}
+
 func TestCommentPath(t *testing.T) {
 	assert.Equal(t, DefaultFilePath, CommentPath(""))
 	assert.Equal(t, filepath.Join("/tmp/proj", DefaultFilePath), CommentPath("/tmp/proj"))

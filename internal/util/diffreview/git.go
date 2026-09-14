@@ -2,6 +2,7 @@ package diffreview
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os/exec"
 	"strings"
@@ -19,6 +20,22 @@ func LabelForSpec(spec []string) string {
 		return "HEAD"
 	default:
 		return strings.Join(spec, " ")
+	}
+}
+
+// EmptyNote explains an empty diff for spec. Untracked files never appear in
+// `git diff` output, which is the usual reason a reviewer sees nothing.
+func EmptyNote(spec []string) string {
+	if len(spec) == 0 {
+		return "No unstaged changes. Untracked files are not shown — run git status."
+	}
+	switch strings.ToLower(spec[0]) {
+	case "staged", "--staged", "--cached":
+		return "No staged changes. Index matches HEAD; untracked files are not shown."
+	case "head":
+		return "HEAD has no changes to show."
+	default:
+		return fmt.Sprintf("No changes vs %s. Untracked files are not shown.", LabelForSpec(spec))
 	}
 }
 
@@ -52,13 +69,63 @@ func LoadGit(ctx context.Context, cwd string, spec []string) (string, error) {
 	}
 	out, err := cmd.CombinedOutput()
 	text := string(out)
-	if err != nil && strings.TrimSpace(text) == "" {
-		return "", fmt.Errorf("%s: %w", strings.Join(argv, " "), err)
+	if err == nil || looksLikeDiff(text) {
+		return text, nil
 	}
-	if err != nil && !looksLikeDiff(text) {
-		return "", fmt.Errorf("%s: %s", strings.Join(argv, " "), strings.TrimSpace(text))
+	return "", gitError(argv, text, err)
+}
+
+// gitError renders a git failure as one line the status bar can show, and names
+// the next step for the failures users actually hit.
+func gitError(argv []string, text string, err error) error {
+	if errors.Is(err, exec.ErrNotFound) {
+		return fmt.Errorf("git not found on PATH: %w", err)
 	}
-	return text, nil
+	msg := gitMessage(text, err)
+	return fmt.Errorf("%s: %s%s", strings.Join(argv, " "), msg, gitHint(msg))
+}
+
+// gitMessage reduces git's stderr to something a status line can show. Failures
+// like "not a git repository" come with a full usage dump attached.
+func gitMessage(text string, err error) string {
+	raw := text
+	if strings.TrimSpace(raw) == "" {
+		raw = err.Error()
+	}
+	if i := strings.Index(raw, "\nusage:"); i >= 0 {
+		raw = raw[:i]
+	}
+	if msg := oneLine(raw); msg != "" {
+		return truncate(msg, 160)
+	}
+	return truncate(oneLine(err.Error()), 160)
+}
+
+func gitHint(msg string) string {
+	lower := strings.ToLower(msg)
+	switch {
+	case strings.Contains(lower, "not a git repository"):
+		return " — open /diff inside the repo"
+	case strings.Contains(lower, "unknown revision"), strings.Contains(lower, "bad object"),
+		strings.Contains(lower, "ambiguous argument"):
+		return " — fetch first, or check the revision name"
+	case strings.Contains(lower, "does not have any commits"):
+		return " — commit something first"
+	}
+	return ""
+}
+
+// oneLine flattens git's multi-line stderr into a single status line.
+func oneLine(s string) string {
+	return strings.Join(strings.Fields(s), " ")
+}
+
+func truncate(s string, n int) string {
+	r := []rune(s)
+	if len(r) <= n {
+		return s
+	}
+	return strings.TrimSpace(string(r[:n])) + "…"
 }
 
 func looksLikeDiff(text string) bool {
