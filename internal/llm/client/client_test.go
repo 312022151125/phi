@@ -102,6 +102,46 @@ func TestClientStreamOpenAIEndToEnd(t *testing.T) {
 	require.Equal(t, 6, done.Partial.Usage.TotalTokens)
 }
 
+func TestClientStreamOpenAIResponsesEndToEnd(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"type":"response.output_text.delta","delta":"hi"}`,
+			"",
+			`data: {"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4}}}`,
+			"",
+		}, "\n")))
+	}))
+	defer srv.Close()
+
+	client := NewClient(
+		llm.ModelConfig{Name: "gpt-5", BaseURL: srv.URL, APIKey: "sk-test", API: llm.OpenAIResponses},
+		Hooks{},
+		nil,
+		"",
+	)
+	events := collectEvents(client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hello"}}))
+
+	require.Equal(t, "/responses", gotPath)
+	var text strings.Builder
+	var done *llm.StreamEvent
+	for _, ev := range events {
+		require.Empty(t, ev.Err, "stream error")
+		switch ev.Type {
+		case llm.StreamEventTypeDelta:
+			text.WriteString(ev.Delta.Content)
+		case llm.StreamEventTypeDone:
+			done = &ev
+		}
+	}
+	require.Equal(t, "hi", text.String())
+	require.NotNil(t, done)
+	require.Equal(t, "hi", done.Partial.Choices[0].Message.Content)
+	require.Equal(t, 4, done.Partial.Usage.TotalTokens)
+}
+
 func TestClientCompactAnthropic(t *testing.T) {
 	var gotPath string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

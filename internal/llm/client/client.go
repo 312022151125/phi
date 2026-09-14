@@ -9,11 +9,12 @@ import (
 	"github.com/pulseaiclub/phi/internal/llm/anthropic"
 	"github.com/pulseaiclub/phi/internal/llm/gemini"
 	"github.com/pulseaiclub/phi/internal/llm/openai"
+	"github.com/pulseaiclub/phi/internal/llm/openai/responses"
 	"github.com/pulseaiclub/phi/internal/util"
 )
 
-// Client talks to the configured LLM endpoint: OpenAI-compatible by default,
-// or Anthropic / Gemini when cfg.API is set accordingly.
+// Client talks to the configured LLM endpoint: OpenAI chat-completions by
+// default, or Anthropic / Gemini / OpenAI Responses when cfg.API is set.
 type Client struct {
 	httpClient *http.Client
 	cfg        llm.ModelConfig
@@ -48,7 +49,13 @@ func (c *Client) Stream(ctx context.Context, messages []llm.Message) iter.Seq2[l
 			return errorSeq(err)
 		}
 		return gemini.Stream(ctx, c.httpClient, c.cfg, &req)
-	default: // llm.OpenAI or empty — both route to OpenAI-compatible
+	case llm.OpenAIResponses:
+		req := responses.BuildRequest(c.cfg, c.system, messages, c.tools)
+		if err := applyHook(ctx, c.hooks.OpenAIResponses, req, c.cfg); err != nil {
+			return errorSeq(err)
+		}
+		return responses.Stream(ctx, c.httpClient, c.cfg, req)
+	default: // llm.OpenAI or empty — both route to OpenAI-compatible chat completions
 		req := openai.BuildRequest(c.cfg, c.system, messages, c.tools)
 		if err := applyHook(ctx, c.hooks.OpenAI, req, c.cfg); err != nil {
 			return errorSeq(err)
@@ -69,6 +76,12 @@ func (c *Client) Compact(ctx context.Context, prompt string) (string, error) {
 			return "", err
 		}
 		return gemini.CompactRequest(ctx, c.httpClient, c.cfg, &req)
+	case llm.OpenAIResponses:
+		req := responses.NewCompactRequest(c.cfg.Name, prompt)
+		if err := applyHook(ctx, c.hooks.OpenAIResponses, req, c.cfg); err != nil {
+			return "", err
+		}
+		return responses.CompactRequest(ctx, c.httpClient, c.cfg, req)
 	default:
 		req := openai.NewCompactRequest(c.cfg.Name, prompt)
 		if err := applyHook(ctx, c.hooks.OpenAI, req, c.cfg); err != nil {

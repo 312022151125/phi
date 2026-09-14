@@ -11,9 +11,10 @@ type Compactor interface {
 type RouterType string
 
 const (
-	OpenAI    RouterType = "OpenAI"
-	Anthropic RouterType = "Anthropic"
-	Gemini    RouterType = "Gemini"
+	OpenAI          RouterType = "OpenAI"
+	OpenAIResponses RouterType = "OpenAIResponses"
+	Anthropic       RouterType = "Anthropic"
+	Gemini          RouterType = "Gemini"
 )
 
 type ThinkMode string
