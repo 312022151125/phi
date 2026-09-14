@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 )
 
 // GlobalLayout describes the global phi home directory (~/.phi).
@@ -23,15 +24,27 @@ func (g GlobalLayout) BinDir() string { return filepath.Join(g.root, "bin") }
 
 // LookBin returns name from BinDir if present, otherwise PATH.
 func (g GlobalLayout) LookBin(name string) (string, error) {
-	custom := filepath.Join(g.BinDir(), name)
-	if _, err := os.Stat(custom); err == nil {
-		return custom, nil
+	for _, path := range binCandidates(filepath.Join(g.BinDir(), name)) {
+		if _, err := os.Stat(path); err == nil {
+			return path, nil
+		}
 	}
 	p, err := exec.LookPath(name)
 	if err != nil {
 		return "", fmt.Errorf("%s is not available: install to ~/.phi/bin or PATH", name)
 	}
 	return p, nil
+}
+
+// binCandidates returns the paths to probe inside a single directory.
+// Downloads save Windows binaries as "<name>.exe", so an extensionless stat
+// misses an fd/rg that is sitting right there in ~/.phi/bin. exec.LookPath
+// appends PATHEXT on its own, so only the bin dir needs the extra variant.
+func binCandidates(path string) []string {
+	if runtime.GOOS == "windows" && filepath.Ext(path) == "" {
+		return []string{path + ".exe", path}
+	}
+	return []string{path}
 }
 
 // SkillsDir returns the directory for SKILL.md files.

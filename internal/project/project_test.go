@@ -3,6 +3,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -54,6 +55,19 @@ func TestLookBinPrefersBinDir(t *testing.T) {
 	got, err := p.Global().LookBin("rg")
 	require.NoError(t, err)
 	assert.Equal(t, fake, got)
+}
+
+func TestLookBinFindsWindowsExe(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows binaries are installed with an .exe suffix")
+	}
+	p := discoverInTempHome(t)
+	exe := filepath.Join(p.Global().BinDir(), "fd.exe")
+	require.NoError(t, os.WriteFile(exe, []byte("MZ"), 0o755))
+
+	got, err := p.Global().LookBin("fd")
+	require.NoError(t, err)
+	assert.Equal(t, exe, got)
 }
 
 func TestLookBinFallsBackToPATH(t *testing.T) {
