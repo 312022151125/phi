@@ -844,7 +844,7 @@ func (p *Pane) Draw(ctx components.DrawContext) components.Surface {
 		PromptKind:  kind,
 		CursorByte:  cur,
 		Highlighted: p.highlighted,
-		Empty:       emptyMessage(p.err, len(p.rows)),
+		Empty:       emptyMessage(p.err, len(p.rows), p.spec),
 	})
 	if p.picker.Open {
 		if overlay, ok := p.pickerOverlay(ctx); ok {
@@ -909,12 +909,12 @@ func oneLine(s string) string {
 	return s
 }
 
-func emptyMessage(loadErr string, n int) string {
+func emptyMessage(loadErr string, n int, spec []string) string {
 	if loadErr != "" {
 		return loadErr
 	}
 	if n == 0 {
-		return "No diff. Working tree is clean, or git is unavailable."
+		return diffreview.EmptyNote(spec)
 	}
 	return ""
 }
