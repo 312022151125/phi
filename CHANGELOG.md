@@ -35,6 +35,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Windows: `fd` / `rg` installed in `~/.phi/bin` as `fd.exe` / `rg.exe` are
+  found again — the bin dir probe now tries the `.exe` suffix, so `find` and
+  `grep` no longer report "fd is not available".
+- Windows: Git Bash is found for per-user installs
+  (`%LocalAppData%\Programs\Git`) and for custom roots reached through the
+  Git on PATH (`D:\Git`), instead of falling through to WSL's legacy
+  `bash.exe` shim and failing with `execvpe(/bin/bash): No such file or
+  directory`.
+
 ### Security
 
 ## [0.26.0] - 2026-09-10

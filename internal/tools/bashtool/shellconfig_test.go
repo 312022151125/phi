@@ -2,6 +2,7 @@ package bashtool
 
 import (
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -28,6 +29,60 @@ func TestIsLegacyWslBashPath(t *testing.T) {
 	} {
 		assert.False(t, isLegacyWslBashPath(p), "not a WSL shim for %q", p)
 	}
+}
+
+func TestGitBashPaths(t *testing.T) {
+	t.Setenv("ProgramFiles", `C:\ProgramFiles`)
+	t.Setenv("ProgramFiles(x86)", `C:\ProgramFiles(x86)`)
+	t.Setenv("LocalAppData", `C:\Users\x\AppData\Local`)
+
+	// A Git on PATH may append one more candidate; the env-var roots lead.
+	got := gitBashPaths()
+	require.GreaterOrEqual(t, len(got), 3)
+	assert.Equal(t, filepath.Join(`C:\ProgramFiles`, "Git", "bin", "bash.exe"), got[0])
+	assert.Equal(t, filepath.Join(`C:\ProgramFiles(x86)`, "Git", "bin", "bash.exe"), got[1])
+	assert.Equal(t, filepath.Join(`C:\Users\x\AppData\Local`, "Git", "bin", "bash.exe"), got[2])
+
+	// An unset root drops out instead of yielding a relative path.
+	t.Setenv("ProgramFiles", "")
+	got = gitBashPaths()
+	require.GreaterOrEqual(t, len(got), 2)
+	assert.Equal(t, filepath.Join(`C:\ProgramFiles(x86)`, "Git", "bin", "bash.exe"), got[0])
+	assert.Equal(t, filepath.Join(`C:\Users\x\AppData\Local`, "Git", "bin", "bash.exe"), got[1])
+}
+
+// fakeGitTree lays out the Git for Windows shape - <root>\cmd\git.exe plus
+// <root>\bin\bash.exe - and puts cmd on PATH so LookPath finds it. Off
+// Windows the stub drops the .exe, since LookPath has no PATHEXT to lean on.
+func fakeGitTree(t *testing.T, withBash bool) (bash string) {
+	t.Helper()
+	root := t.TempDir()
+	cmd := filepath.Join(root, "cmd")
+	require.NoError(t, os.MkdirAll(cmd, 0o755))
+	git := "git"
+	if runtime.GOOS == "windows" {
+		git = "git.exe"
+	}
+	require.NoError(t, os.WriteFile(filepath.Join(cmd, git), []byte("MZ"), 0o755))
+	bash = filepath.Join(root, "bin", "bash.exe")
+	if withBash {
+		require.NoError(t, os.MkdirAll(filepath.Dir(bash), 0o755))
+		require.NoError(t, os.WriteFile(bash, []byte("MZ"), 0o755))
+	}
+	t.Setenv("PATH", cmd+string(os.PathListSeparator)+os.Getenv("PATH"))
+	return bash
+}
+
+func TestGitBashFromGitOnPath(t *testing.T) {
+	want := fakeGitTree(t, true)
+
+	assert.Equal(t, want, gitBashFromGitOnPath())
+}
+
+func TestGitBashFromGitOnPathRejectsShim(t *testing.T) {
+	fakeGitTree(t, false) // e.g. a scoop shim: no bin\bash.exe next to it
+
+	assert.Empty(t, gitBashFromGitOnPath())
 }
 
 func TestConfigForShell(t *testing.T) {
