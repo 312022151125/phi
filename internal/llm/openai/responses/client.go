@@ -1,0 +1,347 @@
+package responses
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
+	"iter"
+	"net/http"
+	"strings"
+
+	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/pulseaiclub/phi/internal/util"
+)
+
+func responsesURL(baseURL string) string {
+	base := strings.TrimRight(baseURL, "/")
+	if strings.HasSuffix(base, responsesPath) {
+		return base
+	}
+	return base + responsesPath
+}
+
+func newHTTPRequest(ctx context.Context, url, apiKey string, body []byte, stream bool) (*http.Request, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	if stream {
+		httpReq.Header.Set("Accept", util.ContentEventStream)
+	}
+	return httpReq, nil
+}
+
+// CompactRequest POSTs a non-streaming Responses create and returns assistant text.
+func CompactRequest(ctx context.Context, httpClient *http.Client, cfg llm.ModelConfig, req *Request) (string, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return "", err
+	}
+
+	httpReq, err := newHTTPRequest(ctx, responsesURL(cfg.BaseURL), cfg.APIKey, body, false)
+	if err != nil {
+		return "", err
+	}
+
+	httpResp, err := util.DoWithRetry(httpClient, httpReq)
+	if err != nil {
+		return "", err
+	}
+	defer httpResp.Body.Close()
+
+	respBody, err := io.ReadAll(httpResp.Body)
+	if err != nil {
+		return "", err
+	}
+	if httpResp.StatusCode != http.StatusOK {
+		return "", llm.FormatAPIError("LLM", httpResp.StatusCode, respBody)
+	}
+
+	var resp compactResponse
+	if err := json.Unmarshal(respBody, &resp); err != nil {
+		return "", err
+	}
+	text := resp.outputText()
+	if text == "" {
+		return "", errors.New("LLM API error: empty Responses output")
+	}
+	return text, nil
+}
+
+type compactResponse struct {
+	Output []struct {
+		Type    string `json:"type"`
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+	} `json:"output"`
+}
+
+func (r compactResponse) outputText() string {
+	var b strings.Builder
+	for _, item := range r.Output {
+		if item.Type != "message" {
+			continue
+		}
+		for _, c := range item.Content {
+			if c.Type == "output_text" || c.Type == "text" {
+				b.WriteString(c.Text)
+			}
+		}
+	}
+	return b.String()
+}
+
+// Stream POSTs a streaming Responses create and yields normalized events.
+func Stream(
+	ctx context.Context,
+	httpClient *http.Client,
+	cfg llm.ModelConfig,
+	req *Request,
+) iter.Seq2[llm.StreamEvent, error] {
+	return func(yield func(llm.StreamEvent, error) bool) {
+		body, err := json.Marshal(req)
+		if err != nil {
+			yield(llm.StreamEvent{}, err)
+			return
+		}
+
+		httpReq, err := newHTTPRequest(ctx, responsesURL(cfg.BaseURL), cfg.APIKey, body, true)
+		if err != nil {
+			yield(llm.StreamEvent{}, err)
+			return
+		}
+
+		httpResp, err := util.DoWithRetry(httpClient, httpReq)
+		if err != nil {
+			yield(llm.StreamEvent{}, err)
+			return
+		}
+		defer httpResp.Body.Close()
+
+		if httpResp.StatusCode != http.StatusOK {
+			respBody, _ := io.ReadAll(httpResp.Body)
+			yield(llm.StreamEvent{}, llm.FormatAPIError("LLM", httpResp.StatusCode, respBody))
+			return
+		}
+
+		processStream(httpResp.Body, yield)
+	}
+}
+
+// streamEvent is a partial decode of Responses SSE payloads. Only fields we
+// actually consume are listed; unknown event types are ignored.
+type streamEvent struct {
+	Type  string `json:"type"`
+	Delta string `json:"delta,omitempty"`
+	// function_call_arguments.done
+	Arguments string `json:"arguments,omitempty"`
+	Item      *struct {
+		Type      string `json:"type"`
+		ID        string `json:"id,omitempty"`
+		CallID    string `json:"call_id,omitempty"`
+		Name      string `json:"name,omitempty"`
+		Arguments string `json:"arguments,omitempty"`
+	} `json:"item,omitempty"`
+	Response *struct {
+		Usage *struct {
+			InputTokens        int `json:"input_tokens"`
+			OutputTokens       int `json:"output_tokens"`
+			TotalTokens        int `json:"total_tokens"`
+			InputTokensDetails *struct {
+				CachedTokens int `json:"cached_tokens"`
+			} `json:"input_tokens_details,omitempty"`
+		} `json:"usage,omitempty"`
+		Error *struct {
+			Code    string `json:"code"`
+			Message string `json:"message"`
+		} `json:"error,omitempty"`
+		IncompleteDetails *struct {
+			Reason string `json:"reason"`
+		} `json:"incomplete_details,omitempty"`
+	} `json:"response,omitempty"`
+	Code    string `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+func processStream(body io.Reader, yield func(llm.StreamEvent, error) bool) {
+	var (
+		text      strings.Builder
+		reasoning strings.Builder
+		toolCalls []llm.ToolCall
+		usage     llm.Usage
+		// active function_call being streamed (by output order)
+		activeIndex = -1
+	)
+
+	for data, parseErr := range util.ParseDataStream(body) {
+		if parseErr != nil {
+			yield(llm.StreamEvent{}, parseErr)
+			return
+		}
+		payload := bytes.TrimSpace(data)
+		if len(payload) == 0 || bytes.Equal(payload, []byte("[DONE]")) {
+			continue
+		}
+
+		var ev streamEvent
+		if err := json.Unmarshal(payload, &ev); err != nil {
+			continue
+		}
+
+		switch ev.Type {
+		case "response.output_text.delta", "response.refusal.delta":
+			if ev.Delta == "" {
+				continue
+			}
+			text.WriteString(ev.Delta)
+			if !yield(llm.StreamEvent{
+				Type:  llm.StreamEventTypeDelta,
+				Delta: llm.StreamDelta{Content: ev.Delta},
+			}, nil) {
+				return
+			}
+
+		case "response.reasoning_summary_text.delta", "response.reasoning_text.delta":
+			if ev.Delta == "" {
+				continue
+			}
+			reasoning.WriteString(ev.Delta)
+			if !yield(llm.StreamEvent{
+				Type:  llm.StreamEventTypeDelta,
+				Delta: llm.StreamDelta{ReasoningContent: ev.Delta},
+			}, nil) {
+				return
+			}
+
+		case "response.reasoning_summary_part.done":
+			reasoning.WriteString("\n\n")
+			if !yield(llm.StreamEvent{
+				Type:  llm.StreamEventTypeDelta,
+				Delta: llm.StreamDelta{ReasoningContent: "\n\n"},
+			}, nil) {
+				return
+			}
+
+		case "response.output_item.added":
+			if ev.Item == nil || ev.Item.Type != "function_call" {
+				continue
+			}
+			id := ev.Item.CallID
+			if ev.Item.ID != "" {
+				id = ev.Item.CallID + "|" + ev.Item.ID
+			}
+			tc := llm.ToolCall{
+				Index: len(toolCalls),
+				ID:    id,
+				Type:  "function",
+				Function: llm.Function{
+					Name:      ev.Item.Name,
+					Arguments: ev.Item.Arguments,
+				},
+			}
+			toolCalls = append(toolCalls, tc)
+			activeIndex = tc.Index
+			if !yield(llm.StreamEvent{
+				Type:  llm.StreamEventTypeDelta,
+				Delta: llm.StreamDelta{ToolCalls: []llm.ToolCall{tc}},
+			}, nil) {
+				return
+			}
+
+		case "response.function_call_arguments.delta":
+			if activeIndex < 0 || activeIndex >= len(toolCalls) || ev.Delta == "" {
+				continue
+			}
+			toolCalls[activeIndex].Function.Arguments += ev.Delta
+			delta := llm.ToolCall{
+				Index: activeIndex,
+				ID:    toolCalls[activeIndex].ID,
+				Type:  "function",
+				Function: llm.Function{
+					Name:      toolCalls[activeIndex].Function.Name,
+					Arguments: ev.Delta,
+				},
+			}
+			if !yield(llm.StreamEvent{
+				Type:  llm.StreamEventTypeDelta,
+				Delta: llm.StreamDelta{ToolCalls: []llm.ToolCall{delta}},
+			}, nil) {
+				return
+			}
+
+		case "response.function_call_arguments.done":
+			if activeIndex < 0 || activeIndex >= len(toolCalls) {
+				continue
+			}
+			prev := toolCalls[activeIndex].Function.Arguments
+			if ev.Arguments != "" {
+				toolCalls[activeIndex].Function.Arguments = ev.Arguments
+				if strings.HasPrefix(ev.Arguments, prev) {
+					if d := ev.Arguments[len(prev):]; d != "" {
+						delta := llm.ToolCall{
+							Index: activeIndex,
+							ID:    toolCalls[activeIndex].ID,
+							Type:  "function",
+							Function: llm.Function{
+								Name:      toolCalls[activeIndex].Function.Name,
+								Arguments: d,
+							},
+						}
+						if !yield(llm.StreamEvent{
+							Type:  llm.StreamEventTypeDelta,
+							Delta: llm.StreamDelta{ToolCalls: []llm.ToolCall{delta}},
+						}, nil) {
+							return
+						}
+					}
+				}
+			}
+
+		case "response.completed":
+			if ev.Response != nil && ev.Response.Usage != nil {
+				u := ev.Response.Usage
+				cached := 0
+				if u.InputTokensDetails != nil {
+					cached = u.InputTokensDetails.CachedTokens
+				}
+				usage.PromptTokens = u.InputTokens - cached
+				usage.CompletionTokens = u.OutputTokens
+				usage.TotalTokens = u.TotalTokens
+				if cached > 0 {
+					usage.PromptTokensDetails = &llm.PromptTokensDetails{CachedTokens: cached}
+				}
+			}
+
+		case "error":
+			msg := ev.Message
+			if msg == "" {
+				msg = "unknown Responses stream error"
+			}
+			if ev.Code != "" {
+				msg = "Error Code " + ev.Code + ": " + msg
+			}
+			yield(llm.StreamEvent{}, errors.New(msg))
+			return
+
+		case "response.failed":
+			msg := "Unknown error (no error details in response)"
+			if ev.Response != nil {
+				if e := ev.Response.Error; e != nil {
+					msg = e.Code + ": " + e.Message
+				} else if d := ev.Response.IncompleteDetails; d != nil && d.Reason != "" {
+					msg = "incomplete: " + d.Reason
+				}
+			}
+			yield(llm.StreamEvent{}, errors.New(msg))
+			return
+		}
+	}
+
+	yield(llm.AssistantDone(text.String(), strings.TrimSpace(reasoning.String()), toolCalls, usage), nil)
+}
