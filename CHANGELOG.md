@@ -10,6 +10,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.27.0] - 2026-09-15
+
+### Added
+
 - OpenAI Responses API route (`api: OpenAIResponses`) via
   `/v1/responses`, for models that no longer speak chat-completions
   (e.g. GPT-5 tool calling).
@@ -24,6 +38,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   plan, with Preserved Thinking.
 - Per-model `think_enabled` / `think_level` config keys and
   `PHI_THINK_LEVEL` env var override.
+- Rust SDK (`ext/rust`, crate `phi-ext`): `Context` gains `cwd()`,
+  `session_id()`, and `has_ui()` accessors.
 - Docs: [Supported models](doc/models.md).
 
 ### Changed
@@ -33,6 +49,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   model name or base URL.
 - Vendor thinking wire shape (DeepSeek `extra_body`, Gemini budget/level)
   lives on model preset request interceptors, not client name matching.
+- Rust SDK: PXB messages are built by the declarative `pxb_message!` macro —
+  `pxb::Hello::encode()` / `decode()` replace the free `pxb::encode_hello` /
+  `decode_hello` functions (and likewise per message type). Wire format
+  unchanged.
 - `/diff`: an empty overlay names the comparison (`No changes vs <rev>`) and
   reminds that untracked files never show up; git failures collapse to one
   line with the next step (`fetch first`, `open inside the repo`).
@@ -516,7 +536,8 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.0
 [0.26.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.26.0
 [0.25.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.25.1
 [0.25.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.25.0
