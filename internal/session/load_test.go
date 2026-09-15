@@ -83,6 +83,42 @@ func TestSessionPersistUsageRoundTrip(t *testing.T) {
 	assert.Equal(t, 5, entry.Usage.CachedTokens())
 }
 
+// A resumed session must show its own token counts, so replay has to read
+// usage from the entry (llm.Message.Usage does not survive a reload).
+func TestReplaySnapshotUsageAfterReload(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewSessionManager(dir, WithSessionDir(dir), WithShouldFlush(true))
+	require.NoError(t, err)
+
+	_, err = m.Append(llm.Message{Role: llm.RoleUser, Content: "hello"})
+	require.NoError(t, err)
+	_, err = m.Append(llm.Message{
+		Role:    llm.RoleAssistant,
+		Content: "done",
+		Usage: llm.Usage{
+			PromptTokens:        12,
+			CompletionTokens:    7,
+			TotalTokens:         19,
+			PromptTokensDetails: &llm.PromptTokensDetails{CachedTokens: 5},
+		},
+	})
+	require.NoError(t, err)
+
+	loaded, err := OpenSession(m.File())
+	require.NoError(t, err)
+
+	snap := ReplaySnapshot(loaded.BuildContext(), nil)
+	require.Len(t, snap.Messages, 2)
+	want := TokenUsage{PromptTokens: 12, CompletionTokens: 7, CachedTokens: 5, TotalTokens: 19}
+	assert.Equal(t, want, snap.Messages[1].Usage)
+	assert.Equal(t, want, snap.LastUsage())
+}
+
+func TestSnapshotLastUsageEmpty(t *testing.T) {
+	snap := Snapshot{Messages: []Message{{ID: "1", Role: RoleUser}, {ID: "2", Role: RoleAssistant}}}
+	assert.False(t, snap.LastUsage().Reported())
+}
+
 func TestSessionPersistCompaction(t *testing.T) {
 	dir := t.TempDir()
 	m, err := NewSessionManager(dir, WithSessionDir(dir), WithShouldFlush(true))

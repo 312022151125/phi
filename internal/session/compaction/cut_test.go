@@ -11,19 +11,11 @@ import (
 
 func TestFindCutIndex_ExceedsTokensChoosesNearestCutPoint(t *testing.T) {
 	entries := []session.MessageEntry{
-		session.SessionMessageEntry{
-			Message: llm.Message{Usage: llm.Usage{TotalTokens: 10}},
-		},
-		session.SessionMessageEntry{
-			Message: llm.Message{Usage: llm.Usage{TotalTokens: 20}},
-		},
+		msgEntry("e1", llm.RoleUser, 10),
+		msgEntry("e2", llm.RoleUser, 20),
 		session.CompactionEntry{}, // non-message, should be skipped for token accumulation
-		session.SessionMessageEntry{
-			Message: llm.Message{Usage: llm.Usage{TotalTokens: 30}},
-		},
-		session.SessionMessageEntry{
-			Message: llm.Message{Usage: llm.Usage{TotalTokens: 40}},
-		},
+		msgEntry("e3", llm.RoleUser, 30),
+		msgEntry("e4", llm.RoleUser, 40),
 	}
 
 	startIndex := 0
@@ -38,15 +30,9 @@ func TestFindCutIndex_ExceedsTokensChoosesNearestCutPoint(t *testing.T) {
 
 func TestFindCutIndex_NotExceedTokensReturnsFirstCutPoint(t *testing.T) {
 	entries := []session.MessageEntry{
-		session.SessionMessageEntry{
-			Message: llm.Message{Usage: llm.Usage{TotalTokens: 10}},
-		},
-		session.SessionMessageEntry{
-			Message: llm.Message{Usage: llm.Usage{TotalTokens: 20}},
-		},
-		session.SessionMessageEntry{
-			Message: llm.Message{Usage: llm.Usage{TotalTokens: 30}},
-		},
+		msgEntry("e1", llm.RoleUser, 10),
+		msgEntry("e2", llm.RoleUser, 20),
+		msgEntry("e3", llm.RoleUser, 30),
 	}
 
 	startIndex := 0

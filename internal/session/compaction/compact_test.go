@@ -9,13 +9,14 @@ import (
 	"github.com/pulseaiclub/phi/internal/session"
 )
 
+// msgEntry builds a persisted message entry. Token usage lives on the entry
+// wrapper (llm.Message.Usage is json:"-" and does not survive a reload), so
+// fixtures must set it there too.
 func msgEntry(id string, role llm.Role, tokens int) session.MessageEntry {
 	return session.SessionMessageEntry{
 		SessionBaseEntry: session.SessionBaseEntry{ID: id},
-		Message: llm.Message{
-			Role:  role,
-			Usage: llm.Usage{TotalTokens: tokens},
-		},
+		Message:          llm.Message{Role: role},
+		Usage:            llm.Usage{TotalTokens: tokens},
 	}
 }
 
@@ -43,10 +44,8 @@ func TestPrepareCompact_SessionNeedsMigration_ReturnsError(t *testing.T) {
 	entries := []session.MessageEntry{
 		session.SessionMessageEntry{
 			SessionBaseEntry: session.SessionBaseEntry{ID: ""},
-			Message: llm.Message{
-				Role:  llm.RoleUser,
-				Usage: llm.Usage{TotalTokens: 10},
-			},
+			Message:          llm.Message{Role: llm.RoleUser},
+			Usage:            llm.Usage{TotalTokens: 10},
 		},
 	}
 	settings := Settings{keepRecentTokens: 100}

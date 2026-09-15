@@ -216,13 +216,15 @@ func summarizeHistory(
 	)
 }
 
+// getLastAssistantUsage reads usage from the entry, not llm.Message: the
+// latter is json:"-" and so reads as zero for every reloaded session.
 func getLastAssistantUsage(entries []session.MessageEntry) llm.Usage {
 	for i := range slices.Backward(entries) {
 		entry := entries[i]
 		if entry.GetType() == session.EntryMessage {
 			msgEntry := entry.(session.SessionMessageEntry)
 			if msgEntry.Message.Role == llm.RoleAssistant {
-				return msgEntry.Message.Usage
+				return msgEntry.Usage
 			}
 		}
 	}

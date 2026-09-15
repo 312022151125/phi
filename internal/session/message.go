@@ -1,6 +1,7 @@
 package session
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/pulseaiclub/phi/internal/llm"
@@ -166,6 +167,16 @@ type TokenUsage struct {
 	TotalTokens      int
 }
 
+// TokenUsageFrom converts provider usage into the UI-facing copy.
+func TokenUsageFrom(u llm.Usage) TokenUsage {
+	return TokenUsage{
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		CachedTokens:     u.CachedTokens(),
+		TotalTokens:      u.TotalTokens,
+	}
+}
+
 // Reported is true when the provider sent any non-zero token count.
 func (u TokenUsage) Reported() bool {
 	return u.TotalTokens > 0 || u.PromptTokens > 0 || u.CompletionTokens > 0 || u.CachedTokens > 0
@@ -261,4 +272,16 @@ type Snapshot struct {
 	Messages   []Message
 	Tools      map[string]ToolRun
 	Compacting bool
+}
+
+// LastUsage returns the newest reported token usage in the snapshot. The UI
+// uses it to restore the token readout after a resume instead of keeping the
+// previous session's counts.
+func (s Snapshot) LastUsage() TokenUsage {
+	for _, m := range slices.Backward(s.Messages) {
+		if m.Usage.Reported() {
+			return m.Usage
+		}
+	}
+	return TokenUsage{}
 }

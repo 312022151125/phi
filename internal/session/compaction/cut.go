@@ -82,8 +82,10 @@ func findCutIndex(
 			continue
 		}
 
+		// Usage lives on the entry wrapper: llm.Message.Usage is json:"-",
+		// so a reloaded session reads zero there and the budget never trips.
 		msgEntry := entry.(session.SessionMessageEntry)
-		accumulatedTokens += msgEntry.Message.Usage.TotalTokens
+		accumulatedTokens += msgEntry.Usage.TotalTokens
 
 		if accumulatedTokens > keepRecentTokens {
 			for _, point := range cutPoints {

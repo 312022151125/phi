@@ -42,7 +42,7 @@ func replayEntry(snap Snapshot, entry SessionMessageEntry, detail ToolDetail) Sn
 			Images: append(images, msg.Images...),
 		})
 	case llm.RoleAssistant:
-		return Apply(snap, AssistantMessageUpdate{Message: replayAssistant(entry.GetID(), msg, detail)})
+		return Apply(snap, AssistantMessageUpdate{Message: replayAssistant(entry.GetID(), entry, detail)})
 	case llm.RoleTool:
 		// The persisted result is the model-facing content; Name/Detail of the
 		// run are carried over from the tool_use block by Apply's merge.
@@ -57,8 +57,11 @@ func replayEntry(snap Snapshot, entry SessionMessageEntry, detail ToolDetail) Sn
 
 // replayAssistant converts a persisted assistant llm.Message into a session
 // Message. Tool calls become tool_use content blocks so the snapshot carries
-// the same tool runs (and thus styled tool rows) as the original turn.
-func replayAssistant(id string, msg llm.Message, detail ToolDetail) Message {
+// the same tool runs (and thus styled tool rows) as the original turn. Token
+// usage comes from the entry, not the llm.Message: usage is not serialized
+// inside llm.Message, so a reloaded session only has it on the entry.
+func replayAssistant(id string, entry SessionMessageEntry, detail ToolDetail) Message {
+	msg := entry.Message
 	text := msg.Content
 	var blocks []ContentBlock
 	if strings.TrimSpace(msg.ReasoningContent) != "" {
@@ -82,6 +85,7 @@ func replayAssistant(id string, msg llm.Message, detail ToolDetail) Message {
 		StopReason: replayStopReason(blocks),
 		Text:       text,
 		Content:    blocks,
+		Usage:      TokenUsageFrom(entry.Usage),
 	}
 }
 

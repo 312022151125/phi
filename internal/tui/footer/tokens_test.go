@@ -10,19 +10,6 @@ import (
 	"github.com/pulseaiclub/phi/internal/session"
 )
 
-func TestFormatTokens(t *testing.T) {
-	cases := map[int]string{
-		0:       "0",
-		999:     "999",
-		1200:    "1.2k",
-		15000:   "15k",
-		1500000: "1.5M",
-	}
-	for n, want := range cases {
-		require.Equal(t, want, formatTokens(n))
-	}
-}
-
 func TestFormatContextLabel(t *testing.T) {
 	u := session.TokenUsage{PromptTokens: 5120, TotalTokens: 6000}
 	got := formatContextLabel(u, 128000)

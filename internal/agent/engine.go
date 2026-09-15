@@ -600,12 +600,7 @@ func emitMessage(
 		StopReason: reason,
 		Content:    buildContent(thinking, text, tools),
 		Text:       text,
-		Usage: session.TokenUsage{
-			PromptTokens:     usage.PromptTokens,
-			CompletionTokens: usage.CompletionTokens,
-			CachedTokens:     usage.CachedTokens(),
-			TotalTokens:      usage.TotalTokens,
-		},
+		Usage:      session.TokenUsageFrom(usage),
 	}}
 }
 

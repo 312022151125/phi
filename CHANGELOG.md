@@ -24,6 +24,14 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Resuming a session (`/sessions`) now refreshes the composer token readout
+  from the resumed session instead of keeping the previous session's counts;
+  sessions without reported usage clear the label.
+- Compaction now reads token usage from the persisted entry instead of the
+  in-memory message field, which is dropped on load. Resumed sessions were
+  seen as having spent zero tokens, so the first auto-compaction summarized
+  nothing and context-overflow recovery did not compact at all.
+
 ### Security
 
 ## [0.27.0] - 2026-09-15

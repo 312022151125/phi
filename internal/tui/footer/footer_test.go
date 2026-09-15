@@ -55,6 +55,32 @@ func TestDrawEmptyFooter(t *testing.T) {
 	assert.Empty(t, strings.TrimSpace(row))
 }
 
+func TestUpdateTokenDisplayZeroClearsLabel(t *testing.T) {
+	f := NewFooterChrome(components.DefaultTheme(), 128000)
+	comp := &stubComposer{}
+	f.BindComposer(comp)
+
+	f.UpdateTokenDisplay(session.TokenUsage{PromptTokens: 1200, TotalTokens: 1200})
+	require.True(t, comp.set)
+
+	// A session switch to one without usage must drop the stale counts.
+	f.UpdateTokenDisplay(session.TokenUsage{})
+	assert.False(t, comp.set)
+	assert.Empty(t, comp.label.Text)
+}
+
+func TestClearTokenDisplayDropsLabel(t *testing.T) {
+	f := NewFooterChrome(components.DefaultTheme(), 128000)
+	comp := &stubComposer{}
+	f.BindComposer(comp)
+
+	f.UpdateTokenDisplay(session.TokenUsage{PromptTokens: 1200, TotalTokens: 1200})
+	require.True(t, comp.set)
+
+	f.ClearTokenDisplay()
+	assert.False(t, comp.set)
+}
+
 func TestStatusSlotSwapsActivityAndTokens(t *testing.T) {
 	f := NewFooterChrome(components.DefaultTheme(), 128000)
 	comp := &stubComposer{}
