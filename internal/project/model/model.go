@@ -135,4 +135,30 @@ var presets = []Preset{
 			API:           llm.OpenAI,
 		},
 	},
+	// GLM on the z.ai coding plan. Both presets are forced-thinking, and
+	// thinking rides in extra_body.thinking with clear_thinking false (Preserved
+	// Thinking), so reasoning survives across turns.
+	// Sources: https://docs.z.ai/api-reference/llm/chat-completion
+	//          https://docs.z.ai/guides/capabilities/thinking
+	{
+		Config: llm.ModelConfig{
+			Name:          "glm-5.3-flash",
+			BaseURL:       "https://api.z.ai/api/coding/paas/v4",
+			ContextWindow: 1_048_576,
+			ImageEnabled:  true,
+			API:           llm.OpenAI,
+			Think:         thinkMax,
+		},
+		Hooks: glmHooks(),
+	},
+	{
+		Config: llm.ModelConfig{
+			Name:          "glm-5.3",
+			BaseURL:       "https://api.z.ai/api/coding/paas/v4",
+			ContextWindow: 1_048_576,
+			API:           llm.OpenAI,
+			Think:         thinkMax,
+		},
+		Hooks: glmHooks(),
+	},
 }

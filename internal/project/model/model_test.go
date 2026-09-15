@@ -68,6 +68,73 @@ func TestDeepSeekInterceptorSetsExtraBody(t *testing.T) {
 	assert.Contains(t, string(body), `"thinking"`)
 }
 
+func TestLookupGLM53(t *testing.T) {
+	p, ok := Lookup("glm-5.3")
+	require.True(t, ok)
+	assert.Equal(t, "https://api.z.ai/api/coding/paas/v4", p.Config.BaseURL)
+	assert.Equal(t, 1_048_576, p.Config.ContextWindow)
+	assert.False(t, p.Config.ImageEnabled, "5.3 is text-only")
+}
+
+func TestLookupGLM53Flash(t *testing.T) {
+	p, ok := Lookup("glm-5.3-flash")
+	require.True(t, ok)
+	assert.Equal(t, "https://api.z.ai/api/coding/paas/v4", p.Config.BaseURL)
+	assert.Equal(t, 1_048_576, p.Config.ContextWindow)
+	assert.True(t, p.Config.ImageEnabled, "5.3-flash is natively multimodal")
+	assert.Equal(t, llm.OpenAI, p.Config.API)
+}
+
+func TestGLMRetiredNamesAreNotPresets(t *testing.T) {
+	for _, name := range []string{"glm-5-turbo", "glm-5.1", "glm-5v-turbo", "glm-4.5-air", "glm-4.7"} {
+		_, ok := Lookup(name)
+		assert.False(t, ok, "%s is no longer a preset", name)
+	}
+}
+
+// Both GLM presets are forced-thinking: thinking.type is always enabled and
+// clear_thinking is false (Preserved Thinking) so reasoning survives across
+// turns. reasoning_effort rides along as the depth of the thought chain.
+func TestGLMPresetWiresThinkingThroughExtraBody(t *testing.T) {
+	for _, name := range []string{"glm-5.3", "glm-5.3-flash"} {
+		p, ok := Lookup(name)
+		require.True(t, ok, name)
+		require.NotNil(t, p.Hooks.OpenAI, name)
+
+		req := openai.BuildRequest(p.Config, "", nil, nil)
+		require.NoError(t, p.Hooks.OpenAI.Before(t.Context(), req, p.Config))
+		require.NotNil(t, req.ExtraBody, name)
+		require.NotNil(t, req.ExtraBody.Thinking, name)
+		assert.Equal(t, "enabled", req.ExtraBody.Thinking.Type, name)
+		require.NotNil(t, req.ExtraBody.Thinking.ClearThinking, name)
+		assert.False(t, *req.ExtraBody.Thinking.ClearThinking, "%s preserves reasoning", name)
+		assert.Equal(t, "max", req.ReasoningEffort, name)
+
+		body, err := json.Marshal(req)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), `"thinking":{"type":"enabled","clear_thinking":false}`, name)
+		assert.Contains(t, string(body), `"reasoning_effort":"max"`, name)
+	}
+}
+
+// z.ai errors on thinking.type=disabled, so turning the session's thinking off
+// must not turn it off on the wire either — it only drops the depth knob.
+func TestGLMThinkingCannotBeDisabled(t *testing.T) {
+	for _, name := range []string{"glm-5.3", "glm-5.3-flash"} {
+		p, ok := Lookup(name)
+		require.True(t, ok, name)
+		cfg := p.Config
+		cfg.Think = llm.ThinkConfig{Enabled: false}
+
+		req := openai.BuildRequest(cfg, "", nil, nil)
+		require.NoError(t, p.Hooks.OpenAI.Before(t.Context(), req, cfg))
+		require.NotNil(t, req.ExtraBody, name)
+		require.NotNil(t, req.ExtraBody.Thinking, name)
+		assert.Equal(t, "enabled", req.ExtraBody.Thinking.Type, name)
+		assert.Empty(t, req.ReasoningEffort, "off drops the depth, not thinking itself")
+	}
+}
+
 func TestHooksForUnknownIsZero(t *testing.T) {
 	h := HooksFor("no-such-model")
 	assert.Nil(t, h.OpenAI)

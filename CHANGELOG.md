@@ -20,6 +20,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
   `gemini-3-pro`, `gemini-3-flash`) with provider-native thinking
   config (budget for 2.x, level for 3.x).
 - Built-in Kimi model presets (`kimi-k3`, `kimi-k2.7-code`) with Moonshot API defaults.
+- Built-in GLM presets (`glm-5.3`, `glm-5.3-flash`) on the z.ai coding
+  plan, with Preserved Thinking.
 - Per-model `think_enabled` / `think_level` config keys and
   `PHI_THINK_LEVEL` env var override.
 - Docs: [Supported models](doc/models.md).

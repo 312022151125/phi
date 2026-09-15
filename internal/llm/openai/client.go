@@ -49,9 +49,13 @@ type ExtraBody struct {
 	Thinking *ThinkingConfig `json:"thinking,omitempty"`
 }
 
-// ThinkingConfig is a vendor thinking toggle inside ExtraBody.
+// ThinkingConfig is a vendor thinking toggle inside ExtraBody. ClearThinking is
+// a z.ai addition: false keeps earlier reasoning in context ("preserved
+// thinking"), which interleaved tool calling needs; nil omits the field so
+// providers that do not know it are unaffected.
 type ThinkingConfig struct {
-	Type string `json:"type"`
+	Type          string `json:"type"`
+	ClearThinking *bool  `json:"clear_thinking,omitempty"`
 }
 
 type streamChunk struct {
