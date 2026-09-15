@@ -12,6 +12,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Changed
 
+- Composer pickers: `Tab` completes the highlighted row into the input
+  (`/diff `, `@path `) instead of moving down, and never runs a command —
+  `/clear`-style no-arg commands still run on `Enter` only. The session and
+  diff file pickers accept on `Tab` as well. `Shift+Tab` no longer steps back;
+  use `Up` / `Ctrl+P`.
+
 ### Deprecated
 
 ### Removed
