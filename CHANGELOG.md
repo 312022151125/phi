@@ -24,6 +24,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Cutting mid-turn (compaction lands inside a turn) now sends a turn-prefix
+  summarization prompt with the prefix. The request carried the conversation
+  dump and no instruction at all, so the model's continuation — not a summary —
+  was what got persisted as the session summary.
 - The transcript compaction marker now shows the pre-cut context size
   (`Compacted from 15k tokens`). The count was persisted on every compaction
   entry but nothing ever read it: the marker text was hardcoded in three
