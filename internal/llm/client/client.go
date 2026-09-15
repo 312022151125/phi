@@ -66,28 +66,29 @@ func (c *Client) Stream(ctx context.Context, messages []llm.Message) iter.Seq2[l
 
 // Compact sends a single non-streaming chat request and returns the
 // assistant text. It satisfies llm.Compactor for session compaction.
-func (c *Client) Compact(ctx context.Context, prompt string) (string, error) {
+func (c *Client) Compact(ctx context.Context, req llm.CompactRequest) (llm.CompactResult, error) {
 	switch c.cfg.API {
 	case llm.Anthropic:
-		return anthropic.Compact(ctx, c.httpClient, c.cfg, prompt)
+		return anthropic.Compact(ctx, c.httpClient, c.cfg, req)
 	case llm.Gemini:
-		req := gemini.BuildRequest("", []llm.Message{{Role: llm.RoleUser, Content: prompt}}, nil)
-		if err := c.applyGeminiThinking(ctx, &req); err != nil {
-			return "", err
+		greReq := gemini.BuildRequest("", []llm.Message{{Role: llm.RoleUser, Content: req.Prompt}}, nil)
+		greReq.SetMaxOutputTokens(req.MaxTokens)
+		if err := c.applyGeminiThinking(ctx, &greReq); err != nil {
+			return llm.CompactResult{}, err
 		}
-		return gemini.CompactRequest(ctx, c.httpClient, c.cfg, &req)
+		return gemini.CompactRequest(ctx, c.httpClient, c.cfg, &greReq)
 	case llm.OpenAIResponses:
-		req := responses.NewCompactRequest(c.cfg.Name, prompt)
-		if err := applyHook(ctx, c.hooks.OpenAIResponses, req, c.cfg); err != nil {
-			return "", err
+		respReq := responses.NewCompactRequest(c.cfg.Name, req.Prompt, req.MaxTokens)
+		if err := applyHook(ctx, c.hooks.OpenAIResponses, respReq, c.cfg); err != nil {
+			return llm.CompactResult{}, err
 		}
-		return responses.CompactRequest(ctx, c.httpClient, c.cfg, req)
+		return responses.CompactRequest(ctx, c.httpClient, c.cfg, respReq)
 	default:
-		req := openai.NewCompactRequest(c.cfg.Name, prompt)
-		if err := applyHook(ctx, c.hooks.OpenAI, req, c.cfg); err != nil {
-			return "", err
+		oaiReq := openai.NewCompactRequest(c.cfg.Name, req.Prompt, req.MaxTokens)
+		if err := applyHook(ctx, c.hooks.OpenAI, oaiReq, c.cfg); err != nil {
+			return llm.CompactResult{}, err
 		}
-		return openai.CompactRequest(ctx, c.httpClient, c.cfg, req)
+		return openai.CompactRequest(ctx, c.httpClient, c.cfg, oaiReq)
 	}
 }
 

@@ -244,22 +244,49 @@ func TestProcessStreamThinking(t *testing.T) {
 
 func TestCompactUsesNonStreamingEndpoint(t *testing.T) {
 	var gotPath string
+	var gotGenerationConfig map[string]int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+		var sent struct {
+			GenerationConfig map[string]int `json:"generationConfig"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&sent)
+		gotGenerationConfig = sent.GenerationConfig
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"candidates":[{"content":{"parts":[{"text":"summary"}]}}]}`)
+		fmt.Fprint(w, `{"candidates":[{"content":{"parts":[{"text":"summary"}]},"finishReason":"STOP"}]}`)
 	}))
 	defer srv.Close()
 
-	out, err := Compact(
+	res, err := Compact(
 		t.Context(),
 		srv.Client(),
 		llm.ModelConfig{Name: "gemini-2.5-flash", BaseURL: srv.URL, APIKey: "k"},
-		"summarize",
+		llm.CompactRequest{Prompt: "summarize", MaxTokens: 13107},
 	)
 	require.NoError(t, err)
-	assert.Equal(t, "summary", out)
+	assert.Equal(t, "summary", res.Text)
+	assert.False(t, res.Truncated)
 	assert.Equal(t, "/models/gemini-2.5-flash:generateContent", gotPath)
+	assert.Equal(t, map[string]int{"maxOutputTokens": 13107}, gotGenerationConfig)
+}
+
+// MAX_TOKENS means the model stopped at the cap: the text is a prefix.
+func TestCompactRequestReportsTruncatedCandidate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"candidates":[{"content":{"parts":[{"text":"partial"}]},"finishReason":"MAX_TOKENS"}]}`)
+	}))
+	defer srv.Close()
+
+	res, err := CompactRequest(
+		t.Context(),
+		srv.Client(),
+		llm.ModelConfig{Name: "gemini-2.5-flash", BaseURL: srv.URL, APIKey: "k"},
+		&GeminiRequest{Contents: []content{{Role: "user", Parts: []part{{Text: "x"}}}}},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "partial", res.Text)
+	assert.True(t, res.Truncated)
 }
 
 func TestCompactFormatsAPIError(t *testing.T) {
@@ -276,7 +303,7 @@ func TestCompactFormatsAPIError(t *testing.T) {
 		t.Context(),
 		srv.Client(),
 		llm.ModelConfig{Name: "gemini-2.5-flash", BaseURL: srv.URL, APIKey: "bad"},
-		"summarize",
+		llm.CompactRequest{Prompt: "summarize"},
 	)
 	require.Error(t, err)
 	assert.Equal(t, "gemini API error (400): API key not valid. Please pass a valid API key.", err.Error())

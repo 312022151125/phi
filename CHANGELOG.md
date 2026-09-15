@@ -24,6 +24,12 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Compaction summaries are capped at a fraction of the headroom they free
+  (0.8x `reserveTokens` for history, 0.5x for a turn prefix), and a summary the
+  provider stopped at that cap is rejected instead of persisted. A truncated
+  summary used to overwrite the session checkpoint and drop every message it
+  stood in for, with no way back.
+
 - Compaction now measures the cut budget per message instead of summing the
   provider's reported usage. Each assistant message reports the size of the
   whole conversation up to that turn, so the budget overflowed on the newest

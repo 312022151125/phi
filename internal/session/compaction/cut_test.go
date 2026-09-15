@@ -85,8 +85,8 @@ func TestFindCutIndex_BudgetReachedExactlyCutsThere(t *testing.T) {
 
 	cutIndex := findCutIndex(entries, 0, len(entries), 30, []int{0, 1, 2})
 
-	// 10 + 20 == 30 exactly: the budget is reached at e2 (pi uses >=). A strict
-	// > would keep walking and cut at e1 instead.
+	// 10 + 20 == 30 exactly: the budget is reached at e2 (>= comparison).
+	// A strict > would keep walking and cut at e1 instead.
 	assert.Equal(t, 1, cutIndex)
 }
 

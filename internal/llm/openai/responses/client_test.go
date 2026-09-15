@@ -124,15 +124,58 @@ func TestStreamTextAndTools(t *testing.T) {
 }
 
 func TestCompactRequest(t *testing.T) {
+	var gotMaxOutputTokens int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/responses", r.URL.Path)
+		var sent struct {
+			MaxOutputTokens int `json:"max_output_tokens"`
+		}
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&sent))
+		gotMaxOutputTokens = sent.MaxOutputTokens
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"output":[{"type":"message","content":[{"type":"output_text","text":"summary"}]}]}`))
+		_, _ = w.Write(
+			[]byte(
+				`{"status":"completed","output":[{"type":"message","content":[{"type":"output_text","text":"summary"}]}]}`,
+			),
+		)
 	}))
 	defer srv.Close()
 
 	cfg := llm.ModelConfig{Name: "gpt-5", BaseURL: srv.URL, APIKey: "sk"}
-	out, err := CompactRequest(t.Context(), srv.Client(), cfg, NewCompactRequest("gpt-5", "sum"))
+	res, err := CompactRequest(t.Context(), srv.Client(), cfg, NewCompactRequest("gpt-5", "sum", 13107))
 	require.NoError(t, err)
-	assert.Equal(t, "summary", out)
+	assert.Equal(t, "summary", res.Text)
+	assert.False(t, res.Truncated)
+	assert.Equal(t, 13107, gotMaxOutputTokens)
+}
+
+// status incomplete with reason max_output_tokens means the answer is a prefix.
+func TestCompactRequestReportsIncompleteOutput(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"incomplete","incomplete_details":{"reason":"max_output_tokens"},` +
+			`"output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}]}`))
+	}))
+	defer srv.Close()
+
+	cfg := llm.ModelConfig{Name: "gpt-5", BaseURL: srv.URL, APIKey: "sk"}
+	res, err := CompactRequest(t.Context(), srv.Client(), cfg, NewCompactRequest("gpt-5", "sum", 10))
+	require.NoError(t, err)
+	assert.Equal(t, "partial", res.Text)
+	assert.True(t, res.Truncated)
+}
+
+// Any other incomplete reason (content_filter, …) is not an output cap.
+func TestCompactRequestIgnoresOtherIncompleteReasons(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"incomplete","incomplete_details":{"reason":"content_filter"},` +
+			`"output":[{"type":"message","content":[{"type":"output_text","text":"partial"}]}]}`))
+	}))
+	defer srv.Close()
+
+	cfg := llm.ModelConfig{Name: "gpt-5", BaseURL: srv.URL, APIKey: "sk"}
+	res, err := CompactRequest(t.Context(), srv.Client(), cfg, NewCompactRequest("gpt-5", "sum", 10))
+	require.NoError(t, err)
+	assert.False(t, res.Truncated)
 }

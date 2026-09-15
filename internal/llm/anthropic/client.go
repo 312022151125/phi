@@ -21,6 +21,9 @@ const (
 	apiVersion       = "2023-06-01"
 	messagesPath     = "/messages"
 	defaultMaxTokens = 4096
+	// stopReasonMaxTokens marks a response that hit the output cap: the text is
+	// a prefix, not a finished answer.
+	stopReasonMaxTokens = "max_tokens"
 )
 
 var toolCallIDRegex = regexp.MustCompile(`[^a-zA-Z0-9_-]`)
@@ -453,35 +456,46 @@ func processStream(body io.Reader, yield func(llm.StreamEvent, error) bool) {
 
 // Compact sends a single non-streaming request and returns the assistant
 // text. Satisfies llm.Compactor for session compaction on Claude.
-func Compact(ctx context.Context, httpClient *http.Client, cfg llm.ModelConfig, prompt string) (string, error) {
+func Compact(
+	ctx context.Context,
+	httpClient *http.Client,
+	cfg llm.ModelConfig,
+	req llm.CompactRequest,
+) (llm.CompactResult, error) {
+	// Anthropic requires max_tokens; fall back to the default cap when the
+	// caller has no budget to derive one from.
+	maxTokens := req.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = defaultMaxTokens
+	}
 	body, err := json.Marshal(AnthropicRequest{
 		Model:     cfg.Name,
-		MaxTokens: defaultMaxTokens,
+		MaxTokens: maxTokens,
 		Messages: []anthropicMessage{
-			{Role: "user", Content: prompt},
+			{Role: "user", Content: req.Prompt},
 		},
 	})
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 
 	httpReq, err := newMessagesHTTPRequest(ctx, cfg, body, false)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 
 	httpResp, err := util.DoWithRetry(httpClient, httpReq)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	defer httpResp.Body.Close()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		return "", llm.FormatAPIError("anthropic", httpResp.StatusCode, respBody)
+		return llm.CompactResult{}, llm.FormatAPIError("anthropic", httpResp.StatusCode, respBody)
 	}
 
 	var resp struct {
@@ -489,9 +503,10 @@ func Compact(ctx context.Context, httpClient *http.Client, cfg llm.ModelConfig, 
 			Type string `json:"type"`
 			Text string `json:"text"`
 		} `json:"content"`
+		StopReason string `json:"stop_reason"`
 	}
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	var sb strings.Builder
 	for _, block := range resp.Content {
@@ -500,7 +515,10 @@ func Compact(ctx context.Context, httpClient *http.Client, cfg llm.ModelConfig, 
 		}
 	}
 	if sb.Len() == 0 {
-		return "", errors.New("anthropic API error: empty response")
+		return llm.CompactResult{}, errors.New("anthropic API error: empty response")
 	}
-	return sb.String(), nil
+	return llm.CompactResult{
+		Text:      sb.String(),
+		Truncated: resp.StopReason == stopReasonMaxTokens,
+	}, nil
 }

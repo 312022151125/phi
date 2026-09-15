@@ -21,6 +21,9 @@ type CompactionPreparation struct {
 	IsMidTurnCut        bool
 	TokensBefore        int
 	PreviousSummary     string
+	// ReserveTokens is the headroom compaction keeps from the context window;
+	// summaries are capped at a fraction of it.
+	ReserveTokens int
 	// TODO: wire into Compact / AppendCompaction so hook preserveData
 	// survives across compaction rounds (currently collected but unused).
 	PreviousPreserveData map[string]any
@@ -116,6 +119,7 @@ func PrepareCompact(
 		PreviousPreserveData: previousPreserveData,
 		FileOps:              *fileOps,
 		IsMidTurnCut:         cutPoint.isMidTurnCut,
+		ReserveTokens:        settings.reverseTokens,
 	}, nil
 }
 
@@ -184,6 +188,7 @@ func summarizeMidTurnCut(
 			llm,
 			preparation.MessagesToSummarize,
 			preparation.PreviousSummary,
+			summarizationCap(preparation.ReserveTokens, historySummaryRatio),
 		)
 	}()
 
@@ -193,6 +198,7 @@ func summarizeMidTurnCut(
 			ctx,
 			llm,
 			preparation.TurnPrefixMessages,
+			summarizationCap(preparation.ReserveTokens, turnPrefixSummaryRatio),
 		)
 	}()
 
@@ -222,6 +228,7 @@ func summarizeHistory(
 		llm,
 		preparation.MessagesToSummarize,
 		preparation.PreviousSummary,
+		summarizationCap(preparation.ReserveTokens, historySummaryRatio),
 	)
 }
 

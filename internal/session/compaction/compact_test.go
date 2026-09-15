@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/session"
@@ -159,4 +160,28 @@ func TestPrepareCompact_MidTurnCut_SplitsTurnPrefix(t *testing.T) {
 	assert.Equal(t, llm.RoleAssistant, prep.MessagesToSummarize[1].Role)
 	assert.Len(t, prep.TurnPrefixMessages, 1)
 	assert.Equal(t, llm.RoleUser, prep.TurnPrefixMessages[0].Role)
+}
+
+// The summary cap follows the headroom compaction frees, and a summary that
+// stopped at that cap must abort the compaction instead of becoming the new
+// session summary.
+func TestCompact_TruncatedSummary_ReturnsError(t *testing.T) {
+	entries := []session.MessageEntry{
+		msgEntry("e1", llm.RoleUser, 10, 0),
+		msgEntry("e2", llm.RoleAssistant, 20, 20),
+		msgEntry("e3", llm.RoleUser, 30, 0),
+	}
+	settings := Settings{reverseTokens: 16384, keepRecentTokens: 25}
+
+	prep, err := PrepareCompact(entries, settings)
+	require.NoError(t, err)
+	require.Equal(t, 16384, prep.ReserveTokens)
+
+	c := &captureCompactor{truncated: true}
+	comp, err := Compact(t.Context(), *prep, c)
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "generation hit the token cap")
+	assert.Empty(t, comp.Summary)
+	assert.Equal(t, []int{13107}, c.maxTokens, "0.8 * reserveTokens")
 }
