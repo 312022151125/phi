@@ -155,6 +155,9 @@ func (c *ComposerPane) Wire(
 	c.mention.OnAccept = c.acceptMention
 	c.slash.OnAccept = c.acceptSlash
 	c.question.OnAccept = c.acceptQuestion
+	// Tab must never run a command, so slash gets a fill-only completer.
+	// mention/question edit the composer already: accept is the fallback.
+	c.slash.OnComplete = c.completeSlash
 }
 
 // HideCompleters closes mention, slash, question, and @ pickers.
@@ -947,17 +950,7 @@ func (c *ComposerPane) acceptSlash(item mention.Item) {
 	if c == nil {
 		return
 	}
-	_, start, end, ok := chat.ActiveSlash(c.Chat.Value, c.Chat.Cursor)
-	if !ok {
-		start, end = 0, c.Chat.Cursor
-	}
-	insert := ""
-	if c.commands != nil {
-		insert = c.commands.LookupInsert(item.Path)
-	}
-	if insert == "" {
-		insert = "/" + item.Path
-	}
+	start, end, insert := c.slashTarget(item)
 	c.Chat.ReplaceRange(start, end, insert)
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
@@ -967,6 +960,38 @@ func (c *ComposerPane) acceptSlash(item mention.Item) {
 			c.drainBus()
 		}
 	}
+}
+
+// completeSlash fills the composer with the command and stops there.
+// Enter on a no-arg command runs it; Tab must only complete.
+func (c *ComposerPane) completeSlash(item mention.Item) {
+	if c == nil {
+		return
+	}
+	start, end, insert := c.slashTarget(item)
+	// The trailing space closes the command token; without it ActiveSlash keeps
+	// matching and the picker would reopen on the command just inserted.
+	if !strings.HasSuffix(insert, " ") {
+		insert += " "
+	}
+	c.Chat.ReplaceRange(start, end, insert)
+	c.slash.Hide()
+	c.Chat.SlashOpen = false
+}
+
+// slashTarget resolves the composer range to replace and the insert text.
+func (c *ComposerPane) slashTarget(item mention.Item) (start, end int, insert string) {
+	_, start, end, ok := chat.ActiveSlash(c.Chat.Value, c.Chat.Cursor)
+	if !ok {
+		start, end = 0, c.Chat.Cursor
+	}
+	if c.commands != nil {
+		insert = c.commands.LookupInsert(item.Path)
+	}
+	if insert == "" {
+		insert = "/" + item.Path
+	}
+	return start, end, insert
 }
 
 func newChatInput(theme components.Theme, model, cwd string) chat.ChatInput {

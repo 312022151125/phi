@@ -27,8 +27,14 @@ type Picker struct {
 	Prefix string
 	// NoPrefix suppresses the default "@" when Prefix is empty (shortcut help list).
 	NoPrefix bool
+	// OnAccept applies the highlighted item on Enter. It may execute something
+	// (accepting `/clear` submits it).
 	OnAccept func(Item)
-	OnCancel func()
+	// OnComplete applies the highlighted item on Tab, which must never execute
+	// anything. nil falls back to OnAccept, which is correct when accept only
+	// edits the composer (`@path`, `?` help).
+	OnComplete func(Item)
+	OnCancel   func()
 
 	// AnchorBottomY is the screen Y of the top edge of the composer.
 	// The picker sits just above this row.
@@ -86,24 +92,38 @@ func (p *Picker) clampSelected() {
 	}
 }
 
-// Accept selects the current item (if any) and closes.
+// Accept applies the highlighted item via OnAccept and closes.
 // With no items, it still closes so Enter does not leave a stuck overlay.
 func (p *Picker) Accept() bool {
+	return p.apply(p.OnAccept)
+}
+
+// Complete applies the highlighted item via OnComplete (Tab) and closes.
+// Enter may run a slash command; Tab only fills the composer, so callers whose
+// accept executes register a fill-only OnComplete instead.
+func (p *Picker) Complete() bool {
+	fn := p.OnComplete
+	if fn == nil {
+		fn = p.OnAccept
+	}
+	return p.apply(fn)
+}
+
+// apply hides the picker and hands the highlighted item to fn (nil-safe).
+// It returns false when there was nothing to apply; the picker closes anyway so
+// a stray Enter / Tab cannot leave a stuck overlay.
+func (p *Picker) apply(fn func(Item)) bool {
 	if !p.Open {
 		return false
 	}
-	if len(p.Items) == 0 {
-		p.Hide()
-		return false
-	}
-	if p.Selected < 0 || p.Selected >= len(p.Items) {
+	if len(p.Items) == 0 || p.Selected < 0 || p.Selected >= len(p.Items) {
 		p.Hide()
 		return false
 	}
 	item := p.Items[p.Selected]
 	p.Hide()
-	if p.OnAccept != nil {
-		p.OnAccept(item)
+	if fn != nil {
+		fn(item)
 	}
 	return true
 }
@@ -143,13 +163,10 @@ func (p *Picker) HandleNav(ev xui.KeyEvent) bool {
 		}
 		return true
 	case xui.KeyTab:
-		if ev.Mods.Has(xui.ModShift) {
-			if p.Selected > 0 {
-				p.Selected--
-			}
-		} else if p.Selected < len(p.Items)-1 {
-			p.Selected++
-		}
+		// Tab completes rather than moves: Up / Down / Ctrl+P / Ctrl+N already
+		// cover navigation, and a picker that only walks a list is a dead end.
+		// Shift+Tab completes too — previous-row went away with it.
+		p.Complete()
 		return true
 	case xui.KeyRune:
 		if ev.Mods.Has(xui.ModCtrl) {
