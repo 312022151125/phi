@@ -10,8 +10,9 @@ import (
 	"github.com/pulseaiclub/phi/internal/session"
 )
 
-// seedSession writes n user/assistant turns, each assistant reporting tokens,
-// and returns the persisted session file.
+// seedSession writes n user/assistant turns of growing size, each assistant
+// reporting a much larger cumulative context size, and returns the persisted
+// session file.
 func seedSession(t *testing.T, turns int) (path string, live []session.MessageEntry) {
 	t.Helper()
 	dir := t.TempDir()
@@ -19,12 +20,12 @@ func seedSession(t *testing.T, turns int) (path string, live []session.MessageEn
 	require.NoError(t, err)
 
 	for i := range turns {
-		_, err = m.Append(llm.Message{Role: llm.RoleUser, Content: "u"})
+		_, err = m.Append(llm.Message{Role: llm.RoleUser, Content: sizedContent(10)})
 		require.NoError(t, err)
 		_, err = m.Append(llm.Message{
 			Role:    llm.RoleAssistant,
-			Content: "a",
-			Usage:   llm.Usage{TotalTokens: 10 * (i + 1)},
+			Content: sizedContent(10 * (i + 1)),
+			Usage:   llm.Usage{TotalTokens: 5000 * (i + 1)},
 		})
 		require.NoError(t, err)
 	}
@@ -32,15 +33,16 @@ func seedSession(t *testing.T, turns int) (path string, live []session.MessageEn
 }
 
 // Compaction reads usage from the entry wrapper, which is the only copy that
-// survives persistence. Reading llm.Message.Usage instead made every resumed
-// session look like it had spent zero tokens: the cut collapsed to the earliest
-// cut point, so the first auto-compaction after a resume summarized nothing.
+// survives persistence: reading llm.Message.Usage instead made every resumed
+// session look like it had spent zero tokens, so TokensBefore was lost. The cut
+// itself must come out identical in memory and after a reload.
 func TestPrepareCompact_ReloadedSessionMatchesInMemory(t *testing.T) {
 	path, liveEntries := seedSession(t, 4)
-	settings := Settings{keepRecentTokens: 25}
+	settings := Settings{keepRecentTokens: 100}
 
 	inMemory, err := PrepareCompact(liveEntries, settings)
 	require.NoError(t, err)
+	require.NotEmpty(t, inMemory.FirstKeptEntryId)
 
 	reloaded, err := session.OpenSession(path)
 	require.NoError(t, err)
@@ -50,7 +52,10 @@ func TestPrepareCompact_ReloadedSessionMatchesInMemory(t *testing.T) {
 
 	assert.Equal(t, inMemory.FirstKeptEntryId, afterReload.FirstKeptEntryId)
 	assert.Equal(t, inMemory.TokensBefore, afterReload.TokensBefore)
+	assert.NotZero(t, afterReload.TokensBefore)
 	assert.NotEmpty(t, afterReload.MessagesToSummarize)
+	// The trailing budget is kept, not just the newest message.
+	assert.NotEqual(t, liveEntries[len(liveEntries)-1].GetID(), afterReload.FirstKeptEntryId)
 }
 
 func TestFindCutIndex_ReloadedEntriesRespectTokenBudget(t *testing.T) {
@@ -67,8 +72,9 @@ func TestFindCutIndex_ReloadedEntriesRespectTokenBudget(t *testing.T) {
 		}
 	}
 
-	// 10+20+30+40 = 100 tokens; a 25-token budget is blown by the tail alone,
-	// so the cut must not fall back to the earliest cut point.
+	// Message sizes are 10, 10, 10, 20, 10, 30, 10, 40 tokens; a 25-token budget
+	// is blown by the tail alone, so the cut must not fall back to the earliest
+	// cut point.
 	cutIndex := findCutIndex(entries, 0, len(entries), 25, cutPoints)
 	assert.NotEqual(t, cutPoints[0], cutIndex)
 }

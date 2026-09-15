@@ -85,6 +85,15 @@ func PrepareCompact(
 		}
 	}
 
+	// Nothing falls outside keepRecentTokens: the cut point is the first entry,
+	// so there is nothing to summarize. Persisting a summary here would replace
+	// the previous summary with "No prior history." (and only add a message to
+	// the context), so report an empty preparation instead; the caller skips
+	// compaction on an empty FirstKeptEntryId.
+	if len(messagesToSummarize) == 0 && len(turnPrefixMessages) == 0 {
+		return &CompactionPreparation{}, nil
+	}
+
 	previousSummary := ""
 	var previousPreserveData map[string]any
 	if preCompactionIndex >= 0 {

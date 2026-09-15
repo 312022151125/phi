@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -16,6 +17,11 @@ import (
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tools"
 )
+
+// compactionSeed is one seeded turn's content, about 12k estimated tokens (4
+// chars per token). Two of them exceed the default keepRecentTokens (20k), so
+// force-compact finds an older prefix to summarize.
+var compactionSeed = strings.Repeat("x", 12000*4)
 
 // sseToolCallChunk encodes one SSE data line carrying a full tool-call delta.
 func sseToolCallChunk(id, name, args string) string {
@@ -249,13 +255,15 @@ func TestLoopOverflowCompactsAndRetries(t *testing.T) {
 
 	sess, err := NewSession(WithCwd(t.TempDir()))
 	require.NoError(t, err)
-	// Seed enough prior usage that force-compact has a summarizable prefix
-	// (default keepRecentTokens is 20k).
+	// Seed a history larger than force-compact's budget (default
+	// keepRecentTokens is 20k). The cut weighs message size, not the reported
+	// usage, so the content has to be big: the last two messages alone must
+	// exceed the budget, leaving an older prefix to summarize.
 	require.NoError(t, sess.Append(
-		llm.Message{Role: llm.RoleUser, Content: "old1", Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleAssistant, Content: "old2", Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleUser, Content: "old3", Usage: llm.Usage{TotalTokens: 5000}},
-		llm.Message{Role: llm.RoleAssistant, Content: "old4", Usage: llm.Usage{TotalTokens: 5000}},
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
 	))
 
 	engine, err := NewEngine(
@@ -313,10 +321,10 @@ func TestLoopOverflowFailsClosedAfterOneRetry(t *testing.T) {
 	sess, err := NewSession(WithCwd(t.TempDir()))
 	require.NoError(t, err)
 	require.NoError(t, sess.Append(
-		llm.Message{Role: llm.RoleUser, Content: "old1", Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleAssistant, Content: "old2", Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleUser, Content: "old3", Usage: llm.Usage{TotalTokens: 5000}},
-		llm.Message{Role: llm.RoleAssistant, Content: "old4", Usage: llm.Usage{TotalTokens: 5000}},
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
 	))
 
 	engine, err := NewEngine(

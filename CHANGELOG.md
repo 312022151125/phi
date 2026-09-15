@@ -24,6 +24,13 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Compaction now measures the cut budget per message instead of summing the
+  provider's reported usage. Each assistant message reports the size of the
+  whole conversation up to that turn, so the budget overflowed on the newest
+  message: the recent window was never kept, the cut was always mid-turn, and a
+  previous summary could be replaced with `No prior history.`
+- Compaction no-ops instead of persisting a summary when nothing falls outside
+  the recent window.
 - Cutting mid-turn (compaction lands inside a turn) now sends a turn-prefix
   summarization prompt with the prefix. The request carried the conversation
   dump and no instruction at all, so the model's continuation — not a summary —
