@@ -24,6 +24,35 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Compaction summaries are capped at a fraction of the headroom they free
+  (0.8x `reserveTokens` for history, 0.5x for a turn prefix), and a summary the
+  provider stopped at that cap is rejected instead of persisted. A truncated
+  summary used to overwrite the session checkpoint and drop every message it
+  stood in for, with no way back.
+
+- Compaction now measures the cut budget per message instead of summing the
+  provider's reported usage. Each assistant message reports the size of the
+  whole conversation up to that turn, so the budget overflowed on the newest
+  message: the recent window was never kept, the cut was always mid-turn, and a
+  previous summary could be replaced with `No prior history.`
+- Compaction no-ops instead of persisting a summary when nothing falls outside
+  the recent window.
+- Cutting mid-turn (compaction lands inside a turn) now sends a turn-prefix
+  summarization prompt with the prefix. The request carried the conversation
+  dump and no instruction at all, so the model's continuation — not a summary —
+  was what got persisted as the session summary.
+- The transcript compaction marker now shows the pre-cut context size
+  (`Compacted from 15k tokens`). The count was persisted on every compaction
+  entry but nothing ever read it: the marker text was hardcoded in three
+  places, and a resumed session dropped the value entirely.
+- Resuming a session (`/sessions`) now refreshes the composer token readout
+  from the resumed session instead of keeping the previous session's counts;
+  sessions without reported usage clear the label.
+- Compaction now reads token usage from the persisted entry instead of the
+  in-memory message field, which is dropped on load. Resumed sessions were
+  seen as having spent zero tokens, so the first auto-compaction summarized
+  nothing and context-overflow recovery did not compact at all.
+
 ### Security
 
 ## [0.27.0] - 2026-09-15

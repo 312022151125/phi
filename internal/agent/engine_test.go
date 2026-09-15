@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 
@@ -16,6 +17,11 @@ import (
 	"github.com/pulseaiclub/phi/internal/session"
 	"github.com/pulseaiclub/phi/internal/tools"
 )
+
+// compactionSeed is one seeded turn's content, about 12k estimated tokens (4
+// chars per token). Two of them exceed the default keepRecentTokens (20k), so
+// force-compact finds an older prefix to summarize.
+var compactionSeed = strings.Repeat("x", 12000*4)
 
 // sseToolCallChunk encodes one SSE data line carrying a full tool-call delta.
 func sseToolCallChunk(id, name, args string) string {
@@ -249,13 +255,15 @@ func TestLoopOverflowCompactsAndRetries(t *testing.T) {
 
 	sess, err := NewSession(WithCwd(t.TempDir()))
 	require.NoError(t, err)
-	// Seed enough prior usage that force-compact has a summarizable prefix
-	// (default keepRecentTokens is 20k).
+	// Seed a history larger than force-compact's budget (default
+	// keepRecentTokens is 20k). The cut weighs message size, not the reported
+	// usage, so the content has to be big: the last two messages alone must
+	// exceed the budget, leaving an older prefix to summarize.
 	require.NoError(t, sess.Append(
-		llm.Message{Role: llm.RoleUser, Content: "old1", Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleAssistant, Content: "old2", Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleUser, Content: "old3", Usage: llm.Usage{TotalTokens: 5000}},
-		llm.Message{Role: llm.RoleAssistant, Content: "old4", Usage: llm.Usage{TotalTokens: 5000}},
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
 	))
 
 	engine, err := NewEngine(
@@ -313,10 +321,10 @@ func TestLoopOverflowFailsClosedAfterOneRetry(t *testing.T) {
 	sess, err := NewSession(WithCwd(t.TempDir()))
 	require.NoError(t, err)
 	require.NoError(t, sess.Append(
-		llm.Message{Role: llm.RoleUser, Content: "old1", Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleAssistant, Content: "old2", Usage: llm.Usage{TotalTokens: 12000}},
-		llm.Message{Role: llm.RoleUser, Content: "old3", Usage: llm.Usage{TotalTokens: 5000}},
-		llm.Message{Role: llm.RoleAssistant, Content: "old4", Usage: llm.Usage{TotalTokens: 5000}},
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
 	))
 
 	engine, err := NewEngine(
@@ -338,6 +346,73 @@ func TestLoopOverflowFailsClosedAfterOneRetry(t *testing.T) {
 	require.Error(t, lastErr)
 	require.True(t, llm.IsContextOverflow(lastErr))
 	require.Equal(t, int32(2), streamHits.Load(), "one recovery attempt then fail")
+}
+
+// A summary that stopped at the output cap is incomplete. It must not become
+// the session checkpoint: the loop surfaces the original overflow and the
+// history stays where it was.
+func TestLoopOverflowRejectsCappedSummary(t *testing.T) {
+	var streamHits atomic.Int32
+	var compactMaxTokens float64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if stream, _ := body["stream"].(bool); stream {
+			streamHits.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = w.Write([]byte(`{"error":{"message":"prompt is too long: 210000 > 200000 tokens"}}`))
+			return
+		}
+		compactMaxTokens, _ = body["max_tokens"].(float64)
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"choices": []any{map[string]any{
+				"message":       map[string]any{"role": "assistant", "content": "truncated summary"},
+				"finish_reason": "length",
+			}},
+		})
+	}))
+	defer server.Close()
+
+	sess, err := NewSession(WithCwd(t.TempDir()))
+	require.NoError(t, err)
+	require.NoError(t, sess.Append(
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 12000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 24000}},
+		llm.Message{Role: llm.RoleUser, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 36000}},
+		llm.Message{Role: llm.RoleAssistant, Content: compactionSeed, Usage: llm.Usage{TotalTokens: 50000}},
+	))
+
+	engine, err := NewEngine(
+		llm.ModelConfig{Name: "fake", BaseURL: server.URL, APIKey: "x", ContextWindow: 200_000},
+		sess,
+		WithGate(permission.AllowAll{}),
+		WithTools([]tools.Tool{}),
+	)
+	require.NoError(t, err)
+
+	var lastErr error
+	var sawFailure bool
+	for ev, err := range engine.Loop(t.Context(), "continue", LoopOpts{}) {
+		if err != nil {
+			lastErr = err
+			break
+		}
+		if e, ok := ev.(session.CompactionComplete); ok && e.Failed {
+			sawFailure = true
+		}
+	}
+
+	require.True(t, sawFailure, "a capped summary must report a failed compaction")
+	require.Error(t, lastErr)
+	require.True(t, llm.IsContextOverflow(lastErr), "the original overflow surfaces unchanged")
+	require.Equal(t, int32(1), streamHits.Load(), "no retry on a failed compact")
+	// Default reserveTokens is 16384, so the history summary is capped at 0.8x.
+	require.InDelta(t, 13107, compactMaxTokens, 0.5)
+	for _, entry := range sess.PathEntries() {
+		require.NotEqual(t, session.EntryCompaction, entry.GetType(), "no checkpoint was persisted")
+	}
 }
 
 func TestLoopNonOverflowErrorDoesNotCompact(t *testing.T) {

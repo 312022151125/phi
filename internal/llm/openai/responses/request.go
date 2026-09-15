@@ -17,6 +17,9 @@ type Request struct {
 	Stream    bool        `json:"stream,omitempty"`
 	Store     bool        `json:"store"`
 	Reasoning *Reasoning  `json:"reasoning,omitempty"`
+	// MaxOutputTokens caps the completion length. Compaction sets it so a
+	// runaway summary cannot outgrow the context the summary is meant to free.
+	MaxOutputTokens int `json:"max_output_tokens,omitempty"`
 }
 
 // Reasoning maps ThinkConfig onto Responses reasoning.effort / summary.
@@ -176,7 +179,7 @@ func callID(id string) string {
 }
 
 // NewCompactRequest builds a minimal non-streaming Responses body for Compact.
-func NewCompactRequest(model, prompt string) *Request {
+func NewCompactRequest(model, prompt string, maxTokens int) *Request {
 	return &Request{
 		Model: model,
 		Input: []InputItem{{
@@ -186,6 +189,7 @@ func NewCompactRequest(model, prompt string) *Request {
 				Text: prompt,
 			}},
 		}},
-		Store: false,
+		Store:           false,
+		MaxOutputTokens: maxTokens,
 	}
 }

@@ -15,7 +15,12 @@ import (
 	"github.com/pulseaiclub/phi/internal/util"
 )
 
-const defaultBaseURL = "https://generativelanguage.googleapis.com/v1beta"
+const (
+	defaultBaseURL = "https://generativelanguage.googleapis.com/v1beta"
+	// finishReasonMaxTokens is the Gemini finish reason for a candidate that hit
+	// the output cap: the text is a prefix, not a finished answer.
+	finishReasonMaxTokens = "MAX_TOKENS"
+)
 
 type part struct {
 	Text             string            `json:"text,omitempty"`
@@ -65,6 +70,25 @@ type GeminiRequest struct {
 	// ThinkingConfig opts Gemini 2.x+ out of default thinking so reasoning text
 	// stays out of the visible stream unless the model cannot disable it.
 	ThinkingConfig *thinkingConfig `json:"thinkingConfig,omitempty"`
+	// GenerationConfig carries the output cap Compaction sets so a runaway
+	// summary cannot outgrow the context the summary is meant to free.
+	GenerationConfig *generationConfig `json:"generationConfig,omitempty"`
+}
+
+type generationConfig struct {
+	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
+}
+
+// SetMaxOutputTokens caps how many tokens the model may generate. n <= 0 keeps
+// the provider default.
+func (req *GeminiRequest) SetMaxOutputTokens(n int) {
+	if n <= 0 {
+		return
+	}
+	if req.GenerationConfig == nil {
+		req.GenerationConfig = &generationConfig{}
+	}
+	req.GenerationConfig.MaxOutputTokens = n
 }
 
 // ApplyBudgetThinking maps ThinkConfig to Gemini 2.x thinkingBudget.
@@ -301,6 +325,7 @@ type chunk struct {
 		Content struct {
 			Parts []part `json:"parts"`
 		} `json:"content"`
+		FinishReason string `json:"finishReason"`
 	} `json:"candidates"`
 
 	UsageMetadata struct {
@@ -400,14 +425,16 @@ func toLLMToolCall(p part, index int) llm.ToolCall {
 	return toolCall
 }
 
+// Compact builds a minimal non-streaming Gemini body for one summarization call.
 func Compact(
 	ctx context.Context,
 	client *http.Client,
 	cfg llm.ModelConfig,
-	prompt string,
-) (string, error) {
-	req := BuildRequest("", []llm.Message{{Role: llm.RoleUser, Content: prompt}}, nil)
-	return CompactRequest(ctx, client, cfg, &req)
+	req llm.CompactRequest,
+) (llm.CompactResult, error) {
+	body := BuildRequest("", []llm.Message{{Role: llm.RoleUser, Content: req.Prompt}}, nil)
+	body.SetMaxOutputTokens(req.MaxTokens)
+	return CompactRequest(ctx, client, cfg, &body)
 }
 
 // CompactRequest POSTs a non-streaming Gemini body and returns assistant text.
@@ -416,10 +443,10 @@ func CompactRequest(
 	client *http.Client,
 	cfg llm.ModelConfig,
 	req *GeminiRequest,
-) (string, error) {
+) (llm.CompactResult, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	request, err := http.NewRequestWithContext(
 		ctx,
@@ -428,34 +455,36 @@ func CompactRequest(
 		bytes.NewReader(body),
 	)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	setGeminiAuth(request, cfg.BaseURL, cfg.APIKey)
 	httpResp, err := util.DoWithRetry(client, request)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	defer httpResp.Body.Close()
 	raw, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		return "", llm.FormatAPIError("gemini", httpResp.StatusCode, raw)
+		return llm.CompactResult{}, llm.FormatAPIError("gemini", httpResp.StatusCode, raw)
 	}
 	var resp chunk
 	if err := json.Unmarshal(raw, &resp); err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 
 	var b strings.Builder
+	truncated := false
 	for _, c := range resp.Candidates {
 		for _, p := range c.Content.Parts {
 			b.WriteString(p.Text)
 		}
+		truncated = truncated || c.FinishReason == finishReasonMaxTokens
 	}
 	if b.Len() == 0 {
-		return "", errors.New("gemini API error: empty response")
+		return llm.CompactResult{}, errors.New("gemini API error: empty response")
 	}
-	return b.String(), nil
+	return llm.CompactResult{Text: b.String(), Truncated: truncated}, nil
 }

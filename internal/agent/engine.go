@@ -450,7 +450,7 @@ func (engine *Engine) runCompact(
 		_ = yield(session.CompactionComplete{ID: id, Failed: true}, nil)
 		return false, err
 	}
-	if !yield(session.CompactionComplete{ID: id}, nil) {
+	if !yield(session.CompactionComplete{ID: id, TokensBefore: comp.TokensBefore}, nil) {
 		return false, context.Canceled
 	}
 	engine.extensions.EmitSessionCompact("auto")
@@ -600,12 +600,7 @@ func emitMessage(
 		StopReason: reason,
 		Content:    buildContent(thinking, text, tools),
 		Text:       text,
-		Usage: session.TokenUsage{
-			PromptTokens:     usage.PromptTokens,
-			CompletionTokens: usage.CompletionTokens,
-			CachedTokens:     usage.CachedTokens(),
-			TotalTokens:      usage.TotalTokens,
-		},
+		Usage:      session.TokenUsageFrom(usage),
 	}}
 }
 

@@ -14,6 +14,12 @@ import (
 	"github.com/pulseaiclub/phi/internal/util"
 )
 
+// Responses completion states that mark a capped (partial) answer.
+const (
+	statusIncomplete          = "incomplete"
+	incompleteMaxOutputTokens = "max_output_tokens"
+)
+
 func responsesURL(baseURL string) string {
 	base := strings.TrimRight(baseURL, "/")
 	if strings.HasSuffix(base, responsesPath) {
@@ -36,43 +42,54 @@ func newHTTPRequest(ctx context.Context, url, apiKey string, body []byte, stream
 }
 
 // CompactRequest POSTs a non-streaming Responses create and returns assistant text.
-func CompactRequest(ctx context.Context, httpClient *http.Client, cfg llm.ModelConfig, req *Request) (string, error) {
+func CompactRequest(
+	ctx context.Context,
+	httpClient *http.Client,
+	cfg llm.ModelConfig,
+	req *Request,
+) (llm.CompactResult, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 
 	httpReq, err := newHTTPRequest(ctx, responsesURL(cfg.BaseURL), cfg.APIKey, body, false)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 
 	httpResp, err := util.DoWithRetry(httpClient, httpReq)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	defer httpResp.Body.Close()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		return "", llm.FormatAPIError("LLM", httpResp.StatusCode, respBody)
+		return llm.CompactResult{}, llm.FormatAPIError("LLM", httpResp.StatusCode, respBody)
 	}
 
 	var resp compactResponse
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	text := resp.outputText()
 	if text == "" {
-		return "", errors.New("LLM API error: empty Responses output")
+		return llm.CompactResult{}, errors.New("LLM API error: empty Responses output")
 	}
-	return text, nil
+	return llm.CompactResult{Text: text, Truncated: resp.truncated()}, nil
 }
 
 type compactResponse struct {
+	Status string `json:"status"`
+	// IncompleteDetails carries why status is "incomplete"; only max_output_tokens
+	// means the text is a prefix rather than a finished answer.
+	IncompleteDetails *struct {
+		Reason string `json:"reason"`
+	} `json:"incomplete_details"`
 	Output []struct {
 		Type    string `json:"type"`
 		Content []struct {
@@ -80,6 +97,12 @@ type compactResponse struct {
 			Text string `json:"text"`
 		} `json:"content"`
 	} `json:"output"`
+}
+
+// truncated reports whether the response stopped at the output cap.
+func (r compactResponse) truncated() bool {
+	return r.Status == statusIncomplete &&
+		r.IncompleteDetails != nil && r.IncompleteDetails.Reason == incompleteMaxOutputTokens
 }
 
 func (r compactResponse) outputText() string {

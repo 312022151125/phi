@@ -30,6 +30,9 @@ type Item struct {
 	Interrupted bool
 
 	ToolRun ToolRun
+
+	// TokensBefore is the pre-cut context size on ItemCompaction rows.
+	TokensBefore int
 }
 
 // Project flattens Snapshot into list items in content order:
@@ -50,9 +53,9 @@ func Project(s Snapshot) []Item {
 			items = append(items, projectAssistant(m, s.Tools)...)
 		case RoleCompaction:
 			items = append(items, Item{
-				ID:   m.ID,
-				Kind: ItemCompaction,
-				Text: "Compacted",
+				ID:           m.ID,
+				Kind:         ItemCompaction,
+				TokensBefore: m.TokensBefore,
 			})
 		case RoleLocalBash:
 			items = append(items, Item{

@@ -14,7 +14,12 @@ import (
 	"github.com/pulseaiclub/phi/internal/util"
 )
 
-const chatCompletionsPath = "/chat/completions"
+const (
+	chatCompletionsPath = "/chat/completions"
+	// finishReasonLength is the OpenAI finish reason for a completion that hit
+	// the output cap: the content is a prefix, not a finished answer.
+	finishReasonLength = "length"
+)
 
 type streamOptions struct {
 	IncludeUsage bool `json:"include_usage"`
@@ -42,6 +47,9 @@ type Request struct {
 	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
 	ExtraBody       *ExtraBody     `json:"extra_body,omitempty"`
 	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	// MaxTokens caps the completion length. Compaction sets it so a runaway
+	// summary cannot outgrow the context the summary is meant to free.
+	MaxTokens int `json:"max_tokens,omitempty"`
 }
 
 // ExtraBody holds vendor extensions nested under extra_body (e.g. DeepSeek).
@@ -152,47 +160,61 @@ func newChatRequest(ctx context.Context, url, apiKey string, body []byte, stream
 }
 
 // NewCompactRequest builds a minimal non-streaming chat body for Compact.
-func NewCompactRequest(model, prompt string) *Request {
+func NewCompactRequest(model, prompt string, maxTokens int) *Request {
 	return &Request{
-		Model:    model,
-		Messages: []apiMessage{{Role: llm.RoleUser, Content: prompt}},
+		Model:     model,
+		Messages:  []apiMessage{{Role: llm.RoleUser, Content: prompt}},
+		MaxTokens: maxTokens,
 	}
 }
 
 // CompactRequest POSTs a non-streaming chat request body and returns assistant text.
-func CompactRequest(ctx context.Context, httpClient *http.Client, cfg llm.ModelConfig, req *Request) (string, error) {
+func CompactRequest(
+	ctx context.Context,
+	httpClient *http.Client,
+	cfg llm.ModelConfig,
+	req *Request,
+) (llm.CompactResult, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 
 	httpReq, err := newChatRequest(ctx, chatCompletionsURL(cfg.BaseURL), cfg.APIKey, body, false)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 
 	httpResp, err := util.DoWithRetry(httpClient, httpReq)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	defer httpResp.Body.Close()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		return "", llm.FormatAPIError("LLM", httpResp.StatusCode, respBody)
+		return llm.CompactResult{}, llm.FormatAPIError("LLM", httpResp.StatusCode, respBody)
 	}
 
-	var resp llm.Response
+	var resp struct {
+		Choices []struct {
+			Message      llm.Message `json:"message"`
+			FinishReason string      `json:"finish_reason"`
+		} `json:"choices"`
+	}
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	if len(resp.Choices) == 0 {
-		return "", errors.New("LLM API error: empty choices")
+		return llm.CompactResult{}, errors.New("LLM API error: empty choices")
 	}
-	return resp.Choices[0].Message.Content, nil
+	return llm.CompactResult{
+		Text:      resp.Choices[0].Message.Content,
+		Truncated: resp.Choices[0].FinishReason == finishReasonLength,
+	}, nil
 }
 
 // StreamChatCompletion POSTs a streaming chat completion and yields normalized events.

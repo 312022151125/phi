@@ -119,9 +119,11 @@ func (f *FooterChrome) SetTheme(th components.Theme) {
 	f.syncStatusSlot()
 }
 
-// UpdateTokenDisplay stores usage and refreshes the status slot when idle.
+// UpdateTokenDisplay stores usage and refreshes the status slot. Zero usage
+// clears the label, so a session switch never leaves the previous session's
+// counts on screen.
 func (f *FooterChrome) UpdateTokenDisplay(usage session.TokenUsage) {
-	if f == nil || !usage.Reported() {
+	if f == nil {
 		return
 	}
 	f.lastUsage = usage
@@ -133,8 +135,7 @@ func (f *FooterChrome) ClearTokenDisplay() {
 	if f == nil {
 		return
 	}
-	f.lastUsage = session.TokenUsage{}
-	f.syncStatusSlot()
+	f.UpdateTokenDisplay(session.TokenUsage{})
 }
 
 // SetExtensionStatus sets the extension status shown on the bottom footer row.

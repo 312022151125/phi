@@ -2,10 +2,25 @@ package llm
 
 import "context"
 
+// CompactRequest is one summarization call: the prompt plus the output cap
+// the provider may spend on it. MaxTokens <= 0 leaves the provider default.
+type CompactRequest struct {
+	Prompt    string
+	MaxTokens int
+}
+
+// CompactResult is the model's summary. Truncated reports that the provider
+// stopped at the output cap, so Text is a partial summary that must not be
+// persisted as a session checkpoint.
+type CompactResult struct {
+	Text      string
+	Truncated bool
+}
+
 // Compactor compresses conversation history into a concise summary.
 // Implemented by *client.Client; consumed by session compaction.
 type Compactor interface {
-	Compact(ctx context.Context, summary string) (string, error)
+	Compact(ctx context.Context, req CompactRequest) (CompactResult, error)
 }
 
 type RouterType string

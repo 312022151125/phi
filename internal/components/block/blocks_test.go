@@ -75,3 +75,18 @@ func TestAgentBlockRendersTreeAndMarkdown(t *testing.T) {
 func TestUserBlockImplementsWidget(_ *testing.T) {
 	var _ components.Widget = &block.UserBlock{Text: "x", Theme: components.DefaultTheme()}
 }
+
+func TestCompactionBlockShowsTokensBefore(t *testing.T) {
+	b := &block.CompactionBlock{Theme: components.DefaultTheme(), TokensBefore: 15000}
+	got := components.SurfaceText(b.Draw(components.DrawContext{Max: components.Size{Width: 60}}))
+	require.Contains(t, got, "Compacted from 15k tokens")
+}
+
+// An unknown count (older entries, or a compaction that never reported usage)
+// keeps the plain marker instead of printing "from 0 tokens".
+func TestCompactionBlockWithoutTokens(t *testing.T) {
+	b := &block.CompactionBlock{Theme: components.DefaultTheme()}
+	got := components.SurfaceText(b.Draw(components.DrawContext{Max: components.Size{Width: 60}}))
+	require.Contains(t, got, "Compacted")
+	require.NotContains(t, got, "tokens")
+}

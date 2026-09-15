@@ -132,6 +132,20 @@ func TestCompactionEvents(t *testing.T) {
 	require.Equal(t, 1, nMarkers)
 }
 
+// The pre-cut context size rides on the marker so the transcript can show it.
+func TestCompactionMarkerCarriesTokensBefore(t *testing.T) {
+	var s Snapshot
+	s = Apply(s, CompactionComplete{ID: "c1", TokensBefore: 15000})
+
+	require.Len(t, s.Messages, 1)
+	require.Equal(t, 15000, s.Messages[0].TokensBefore)
+
+	items := Project(s)
+	require.Len(t, items, 1)
+	require.Equal(t, ItemCompaction, items[0].Kind)
+	require.Equal(t, 15000, items[0].TokensBefore)
+}
+
 func TestLocalBash(t *testing.T) {
 	var s Snapshot
 	s = Apply(s, LocalBashStart{ID: "b1", Command: "echo hi"})

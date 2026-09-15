@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -144,10 +145,12 @@ func TestClientStreamOpenAIResponsesEndToEnd(t *testing.T) {
 
 func TestClientCompactAnthropic(t *testing.T) {
 	var gotPath string
+	var body []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+		body, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"summary here"}]}`))
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"summary here"}],"stop_reason":"end_turn"}`))
 	}))
 	defer srv.Close()
 
@@ -157,26 +160,85 @@ func TestClientCompactAnthropic(t *testing.T) {
 		nil,
 		"",
 	)
-	out, err := client.Compact(t.Context(), "summarize")
+	res, err := client.Compact(t.Context(), llm.CompactRequest{Prompt: "summarize", MaxTokens: 13107})
 	require.NoError(t, err)
 	require.Equal(t, "/v1/messages", gotPath)
-	require.Equal(t, "summary here", out)
+	require.Equal(t, "summary here", res.Text)
+	require.False(t, res.Truncated)
+	require.Equal(t, 13107, jsonField(t, body, "max_tokens"), "the summary cap must reach the provider")
 }
 
 func TestClientCompactOpenAI(t *testing.T) {
 	var gotPath string
+	var body []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+		body, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"summary here"}}]}`))
+		_, _ = w.Write(
+			[]byte(`{"choices":[{"message":{"role":"assistant","content":"summary here"},"finish_reason":"stop"}]}`),
+		)
 	}))
 	defer srv.Close()
 
 	client := NewClient(llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"}, Hooks{}, nil, "")
-	out, err := client.Compact(t.Context(), "summarize")
+	res, err := client.Compact(t.Context(), llm.CompactRequest{Prompt: "summarize", MaxTokens: 13107})
 	require.NoError(t, err)
 	require.Equal(t, "/chat/completions", gotPath)
-	require.Equal(t, "summary here", out)
+	require.Equal(t, "summary here", res.Text)
+	require.False(t, res.Truncated)
+	require.Equal(t, 13107, jsonField(t, body, "max_tokens"))
+}
+
+// A provider that stopped at the cap returns partial text, and the caller must
+// be able to tell it apart from a finished summary.
+func TestClientCompactReportsCappedOutput(t *testing.T) {
+	cases := []struct {
+		name string
+		api  llm.RouterType
+		body string
+	}{
+		{
+			name: "anthropic",
+			api:  llm.Anthropic,
+			body: `{"content":[{"type":"text","text":"partial"}],"stop_reason":"max_tokens"}`,
+		},
+		{
+			name: "openai",
+			api:  llm.OpenAI,
+			body: `{"choices":[{"message":{"role":"assistant","content":"partial"},"finish_reason":"length"}]}`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+
+			client := NewClient(
+				llm.ModelConfig{Name: "m", BaseURL: srv.URL, APIKey: "sk-test", API: tc.api},
+				Hooks{},
+				nil,
+				"",
+			)
+			res, err := client.Compact(t.Context(), llm.CompactRequest{Prompt: "summarize", MaxTokens: 100})
+			require.NoError(t, err)
+			require.True(t, res.Truncated, "capped output must be reported as truncated")
+			require.Equal(t, "partial", res.Text)
+		})
+	}
+}
+
+// jsonField reads one numeric field out of a captured request body.
+func jsonField(t *testing.T, body []byte, field string) int {
+	t.Helper()
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(body, &raw))
+	n, ok := raw[field].(float64)
+	require.True(t, ok, "field %q missing from the request body", field)
+	return int(n)
 }
 
 type openAIExtraThinking struct{}

@@ -10,6 +10,8 @@ import (
 // (Cursor-style italic "Compacted").
 type CompactionBlock struct {
 	Theme components.Theme
+	// TokensBefore is the context size before the cut; 0 hides the count.
+	TokensBefore int
 }
 
 func (b *CompactionBlock) theme() components.Theme {
@@ -22,7 +24,7 @@ func (b *CompactionBlock) theme() components.Theme {
 // Handle is a no-op; the compaction marker is not interactive.
 func (*CompactionBlock) Handle(_ *components.EventContext, _ xui.Event) {}
 
-// Draw renders the italic "Compacted" marker line.
+// Draw renders the italic marker line, with the pre-cut context size when known.
 func (b *CompactionBlock) Draw(ctx components.DrawContext) components.Surface {
 	th := b.theme()
 	w := ctx.Max.Width
@@ -32,8 +34,12 @@ func (b *CompactionBlock) Draw(ctx components.DrawContext) components.Surface {
 	st := th.Muted
 	st.Italic = true
 	st.Dim = true
+	label := "Compacted"
+	if b.TokensBefore > 0 {
+		label = "Compacted from " + components.FormatTokens(b.TokensBefore) + " tokens"
+	}
 	lines := components.WrapSpans([]components.Span{
-		{Text: "Compacted", Style: st},
+		{Text: label, Style: st},
 	}, w, ctx.Method)
 	return components.PaintRichLines(w, lines, ctx.Method, b)
 }

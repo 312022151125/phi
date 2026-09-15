@@ -2,7 +2,6 @@ package footer
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 
 	"github.com/pulseaiclub/xui"
@@ -21,26 +20,6 @@ const (
 	contextFillWarning
 	contextFillDanger
 )
-
-// formatTokens formats counts as 999, 1.2k, 15k, 1.5M.
-func formatTokens(count int) string {
-	if count < 0 {
-		count = 0
-	}
-	if count < 1000 {
-		return strconv.Itoa(count)
-	}
-	if count < 10000 {
-		return strconv.FormatFloat(float64(count)/1000, 'f', 1, 64) + "k"
-	}
-	if count < 1000000 {
-		return strconv.Itoa(count/1000) + "k"
-	}
-	if count < 10000000 {
-		return strconv.FormatFloat(float64(count)/1000000, 'f', 1, 64) + "M"
-	}
-	return strconv.Itoa(count/1000000) + "M"
-}
 
 func contextFillRatio(used, window int) float64 {
 	if window <= 0 || used <= 0 {
@@ -83,7 +62,7 @@ func formatContextLabel(usage session.TokenUsage, window int) string {
 	}
 	pct := min(max(int(contextFillRatio(used, window)*100), 0), 100)
 	if window >= 1000 {
-		return fmt.Sprintf("%d%%/%s", pct, formatTokens(window))
+		return fmt.Sprintf("%d%%/%s", pct, components.FormatTokens(window))
 	}
 	return fmt.Sprintf("%d%%", pct)
 }
@@ -95,20 +74,20 @@ func formatUsageStats(usage session.TokenUsage) string {
 	}
 	parts := make([]string, 0, 4)
 	if usage.PromptTokens > 0 {
-		parts = append(parts, "↑"+formatTokens(usage.PromptTokens))
+		parts = append(parts, "↑"+components.FormatTokens(usage.PromptTokens))
 	}
 	if usage.CompletionTokens > 0 {
-		parts = append(parts, "↓"+formatTokens(usage.CompletionTokens))
+		parts = append(parts, "↓"+components.FormatTokens(usage.CompletionTokens))
 	}
 	if usage.CachedTokens > 0 {
-		parts = append(parts, "C"+formatTokens(usage.CachedTokens))
+		parts = append(parts, "C"+components.FormatTokens(usage.CachedTokens))
 	}
 	total := usage.TotalTokens
 	if total <= 0 {
 		total = usage.PromptTokens + usage.CompletionTokens
 	}
 	if total > 0 {
-		parts = append(parts, "Σ"+formatTokens(total))
+		parts = append(parts, "Σ"+components.FormatTokens(total))
 	}
 	if len(parts) == 0 {
 		return ""

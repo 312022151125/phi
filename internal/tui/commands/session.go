@@ -131,9 +131,13 @@ func (s *SessionCommands) resume(id string) {
 	if s.SyncHooks != nil {
 		s.SyncHooks()
 	}
-	s.Transcript.LoadReplay(s.Ctrl.ReplaySnapshot())
+	snap := s.Ctrl.ReplaySnapshot()
+	s.Transcript.LoadReplay(snap)
 	s.Transcript.Sync()
 	s.Transcript.StickToBottom()
+	// The resumed session carries its own last usage; without this the footer
+	// keeps showing the counts of the session we just left.
+	s.Footer.UpdateTokenDisplay(snap.LastUsage())
 	msg := "Resumed " + shortSessionID(s.Ctrl.SessionID())
 	if warn != "" {
 		publishToast(s.Bus, msg+" · "+warn, toast.ToastWarning, 4*time.Second)

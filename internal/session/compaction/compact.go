@@ -21,6 +21,9 @@ type CompactionPreparation struct {
 	IsMidTurnCut        bool
 	TokensBefore        int
 	PreviousSummary     string
+	// ReserveTokens is the headroom compaction keeps from the context window;
+	// summaries are capped at a fraction of it.
+	ReserveTokens int
 	// TODO: wire into Compact / AppendCompaction so hook preserveData
 	// survives across compaction rounds (currently collected but unused).
 	PreviousPreserveData map[string]any
@@ -85,6 +88,15 @@ func PrepareCompact(
 		}
 	}
 
+	// Nothing falls outside keepRecentTokens: the cut point is the first entry,
+	// so there is nothing to summarize. Persisting a summary here would replace
+	// the previous summary with "No prior history." (and only add a message to
+	// the context), so report an empty preparation instead; the caller skips
+	// compaction on an empty FirstKeptEntryId.
+	if len(messagesToSummarize) == 0 && len(turnPrefixMessages) == 0 {
+		return &CompactionPreparation{}, nil
+	}
+
 	previousSummary := ""
 	var previousPreserveData map[string]any
 	if preCompactionIndex >= 0 {
@@ -107,6 +119,7 @@ func PrepareCompact(
 		PreviousPreserveData: previousPreserveData,
 		FileOps:              *fileOps,
 		IsMidTurnCut:         cutPoint.isMidTurnCut,
+		ReserveTokens:        settings.reverseTokens,
 	}, nil
 }
 
@@ -175,6 +188,7 @@ func summarizeMidTurnCut(
 			llm,
 			preparation.MessagesToSummarize,
 			preparation.PreviousSummary,
+			summarizationCap(preparation.ReserveTokens, historySummaryRatio),
 		)
 	}()
 
@@ -184,6 +198,7 @@ func summarizeMidTurnCut(
 			ctx,
 			llm,
 			preparation.TurnPrefixMessages,
+			summarizationCap(preparation.ReserveTokens, turnPrefixSummaryRatio),
 		)
 	}()
 
@@ -213,16 +228,19 @@ func summarizeHistory(
 		llm,
 		preparation.MessagesToSummarize,
 		preparation.PreviousSummary,
+		summarizationCap(preparation.ReserveTokens, historySummaryRatio),
 	)
 }
 
+// getLastAssistantUsage reads usage from the entry, not llm.Message: the
+// latter is json:"-" and so reads as zero for every reloaded session.
 func getLastAssistantUsage(entries []session.MessageEntry) llm.Usage {
 	for i := range slices.Backward(entries) {
 		entry := entries[i]
 		if entry.GetType() == session.EntryMessage {
 			msgEntry := entry.(session.SessionMessageEntry)
 			if msgEntry.Message.Role == llm.RoleAssistant {
-				return msgEntry.Message.Usage
+				return msgEntry.Usage
 			}
 		}
 	}
