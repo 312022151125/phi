@@ -24,6 +24,10 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- The transcript compaction marker now shows the pre-cut context size
+  (`Compacted from 15k tokens`). The count was persisted on every compaction
+  entry but nothing ever read it: the marker text was hardcoded in three
+  places, and a resumed session dropped the value entirely.
 - Resuming a session (`/sessions`) now refreshes the composer token readout
   from the resumed session instead of keeping the previous session's counts;
   sessions without reported usage clear the label.

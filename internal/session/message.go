@@ -157,6 +157,8 @@ type Message struct {
 	// Usage is token consumption for the latest assistant turn (UI + diagnostics).
 	// Zero means unknown / not yet reported by the provider.
 	Usage TokenUsage
+	// TokensBefore is the context size before a compaction cut (RoleCompaction rows).
+	TokensBefore int
 }
 
 // TokenUsage is a UI-facing copy of provider token counts for one completion.
@@ -259,10 +261,12 @@ type CompactionStarted struct{}
 func (CompactionStarted) isSessionEvent() {}
 
 // CompactionComplete clears the compacting activity and, when Failed is false,
-// appends a "Compacted" transcript marker.
+// appends a compaction transcript marker. TokensBefore is the context size
+// before the cut, which that marker shows.
 type CompactionComplete struct {
-	ID     string
-	Failed bool
+	ID           string
+	TokensBefore int
+	Failed       bool
 }
 
 func (CompactionComplete) isSessionEvent() {}

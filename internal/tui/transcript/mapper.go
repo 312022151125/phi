@@ -141,7 +141,9 @@ func (m *Mapper) patchItem(w components.Widget, it session.Item) (ok, dirty bool
 			return false, false
 		}
 		c.Theme = m.theme
-		return true, false
+		dirty := c.TokensBefore != it.TokensBefore
+		c.TokensBefore = it.TokensBefore
+		return true, dirty
 	case session.ItemTool:
 		return m.patchTool(w, it)
 	}
@@ -269,7 +271,7 @@ func (m *Mapper) widgetFor(it session.Item) components.Widget {
 			},
 		}
 	case session.ItemCompaction:
-		return &block.CompactionBlock{Theme: m.theme}
+		return &block.CompactionBlock{Theme: m.theme, TokensBefore: it.TokensBefore}
 	case session.ItemTool:
 		return m.toolWidget(it, exp)
 	default:

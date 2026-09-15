@@ -133,9 +133,9 @@ func Apply(s Snapshot, ev Event) Snapshot {
 				id = fmt.Sprintf("compaction-%d", len(out.Messages)+1)
 			}
 			out.Messages = append(out.Messages, Message{
-				ID:   id,
-				Role: RoleCompaction,
-				Text: "Compacted",
+				ID:           id,
+				Role:         RoleCompaction,
+				TokensBefore: e.TokensBefore,
 			})
 		}
 	}

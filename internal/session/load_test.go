@@ -156,6 +156,37 @@ func TestSessionPersistCompaction(t *testing.T) {
 	assert.Equal(t, want, got)
 }
 
+// A resumed session rebuilds its marker from the persisted entry, so the
+// pre-cut token count has to survive the round trip too.
+func TestReplaySnapshotCompactionTokensBefore(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewSessionManager(dir, WithSessionDir(dir), WithShouldFlush(true))
+	require.NoError(t, err)
+
+	keptID, err := m.Append(llm.Message{Role: llm.RoleAssistant, Content: "kept"})
+	require.NoError(t, err)
+	_, err = m.AppendCompaction(Compaction{
+		Summary:          "conversation summary",
+		FirstKeptEntryID: keptID,
+		TokensBefore:     15000,
+	})
+	require.NoError(t, err)
+
+	loaded, err := OpenSession(m.File())
+	require.NoError(t, err)
+
+	snap := ReplaySnapshot(loaded.BuildContext(), nil)
+	require.NotEmpty(t, snap.Messages)
+	marker := snap.Messages[0]
+	assert.Equal(t, RoleCompaction, marker.Role)
+	assert.Equal(t, 15000, marker.TokensBefore)
+
+	items := Project(snap)
+	require.NotEmpty(t, items)
+	assert.Equal(t, ItemCompaction, items[0].Kind)
+	assert.Equal(t, 15000, items[0].TokensBefore)
+}
+
 func TestFindSessionFilePrefix(t *testing.T) {
 	dir := t.TempDir()
 

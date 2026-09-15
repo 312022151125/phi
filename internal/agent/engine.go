@@ -450,7 +450,7 @@ func (engine *Engine) runCompact(
 		_ = yield(session.CompactionComplete{ID: id, Failed: true}, nil)
 		return false, err
 	}
-	if !yield(session.CompactionComplete{ID: id}, nil) {
+	if !yield(session.CompactionComplete{ID: id, TokensBefore: comp.TokensBefore}, nil) {
 		return false, context.Canceled
 	}
 	engine.extensions.EmitSessionCompact("auto")
