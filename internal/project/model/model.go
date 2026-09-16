@@ -48,6 +48,77 @@ var (
 // provider's public API docs; re-check the linked page when refreshing a
 // model — context length, base URL, and capabilities change between versions.
 var presets = []Preset{
+	// Source: https://platform.openai.com/docs/models
+	{
+		Config: llm.ModelConfig{
+			Name:          "gpt-6-astra",
+			BaseURL:       "https://api.openai.com/v1",
+			ContextWindow: 272_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAIResponses,
+			Think:         thinkMax,
+		},
+	},
+	{
+		Config: llm.ModelConfig{
+			Name:          "gpt-5.6-sol",
+			BaseURL:       "https://api.openai.com/v1",
+			ContextWindow: 272_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAIResponses,
+			Think:         thinkHigh,
+		},
+	},
+	{
+		Config: llm.ModelConfig{
+			Name:          "gpt-5.6-terra",
+			BaseURL:       "https://api.openai.com/v1",
+			ContextWindow: 272_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAIResponses,
+			Think:         thinkHigh,
+		},
+	},
+	{
+		Config: llm.ModelConfig{
+			Name:          "gpt-5.6-luna",
+			BaseURL:       "https://api.openai.com/v1",
+			ContextWindow: 272_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAIResponses,
+			Think:         thinkHigh,
+		},
+	},
+	{
+		Config: llm.ModelConfig{
+			Name:          "gpt-5-chat-latest",
+			BaseURL:       "https://api.openai.com/v1",
+			ContextWindow: 128_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAIResponses,
+		},
+	},
+	// Source: https://platform.openai.com/docs/models
+	{
+		Config: llm.ModelConfig{
+			Name:          "gpt-5.5",
+			BaseURL:       "https://api.openai.com/v1",
+			ContextWindow: 272_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAIResponses,
+			Think:         thinkHigh,
+		},
+	},
+	{
+		Config: llm.ModelConfig{
+			Name:          "gpt-5.5-pro",
+			BaseURL:       "https://api.openai.com/v1",
+			ContextWindow: 1_050_000,
+			ImageEnabled:  true,
+			API:           llm.OpenAIResponses,
+			Think:         thinkHigh,
+		},
+	},
 	// Source: https://api-docs.deepseek.com/zh-cn/quick_start/pricing
 	{
 		Config: llm.ModelConfig{

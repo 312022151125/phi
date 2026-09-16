@@ -257,7 +257,7 @@ func processStream(body io.Reader, yield func(llm.StreamEvent, error) bool) {
 			}
 			id := ev.Item.CallID
 			if ev.Item.ID != "" {
-				id = ev.Item.CallID + "|" + ev.Item.ID
+				id += "|" + ev.Item.ID
 			}
 			tc := llm.ToolCall{
 				Index: len(toolCalls),

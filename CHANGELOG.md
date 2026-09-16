@@ -10,6 +10,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Add built-in `gpt-5.5` and `gpt-5.5-pro` presets using the OpenAI Responses API.
+
 ### Changed
 
 ### Deprecated
