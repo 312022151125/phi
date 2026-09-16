@@ -3,6 +3,7 @@ package job
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -76,7 +77,16 @@ func (m *Manager) HandleWait(ctx context.Context, raw json.RawMessage) (WaitResu
 		waitCtx, cancel = context.WithTimeout(ctx, time.Duration(args.TimeoutSec)*time.Second)
 		defer cancel()
 	}
-	return m.Wait(waitCtx, args.JobID)
+	result, err := m.Wait(waitCtx, args.JobID)
+	if err != nil && args.TimeoutSec > 0 && errors.Is(err, ErrWaitTimeout) {
+		// An explicit polling timeout is a normal non-terminal result for tools.
+		info, getErr := m.Get(ctx, args.JobID)
+		if getErr != nil {
+			return WaitResult{}, getErr
+		}
+		return WaitResult{Info: info}, nil
+	}
+	return result, err
 }
 
 // HandleCancel is a JSON-tool style entry for agent_cancel.
