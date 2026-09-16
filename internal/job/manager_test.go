@@ -3,7 +3,6 @@ package job_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -169,9 +168,10 @@ func TestHandleWaitTimeoutDoesNotCancelJob(t *testing.T) {
 	require.NoError(t, err)
 
 	raw, _ := json.Marshal(job.WaitArgs{JobID: info.ID, TimeoutSec: 1})
-	_, err = m.HandleWait(t.Context(), raw)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, job.ErrWaitTimeout) || errors.Is(err, context.DeadlineExceeded))
+	result, err := m.HandleWait(t.Context(), raw)
+	require.NoError(t, err)
+	assert.Equal(t, info.ID, result.Info.ID)
+	assert.False(t, result.Info.Status.Terminal())
 
 	// Job still live until Cancel.
 	got, err := m.Get(t.Context(), info.ID)
