@@ -3,6 +3,8 @@ package phi
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"os"
 	"sync"
 	"sync/atomic"
@@ -33,6 +35,10 @@ type ExtensionAPI struct {
 	wr *pxb.Writer
 	rd *pxb.Reader
 
+	deferred      []pxb.Frame
+	deferredBytes int
+	shutdown      bool
+	writeErr      error
 	host          HelloInfo
 	pendingSubmit string
 	nextHostID    atomic.Uint32
@@ -169,7 +175,7 @@ func (extension *ExtensionAPI) Notify(level, message string) {
 	if extension.wr == nil {
 		return
 	}
-	_ = extension.wr.Write(pxb.TypeNotify, 0, 0, pxb.EncodeNotify(pxb.NotifyMsg{Level: level, Message: message}))
+	extension.write(pxb.TypeNotify, 0, 0, pxb.EncodeNotify(pxb.NotifyMsg{Level: level, Message: message}))
 }
 
 // SetStatus updates the host footer extension status (empty clears).
@@ -177,7 +183,7 @@ func (extension *ExtensionAPI) SetStatus(text string) {
 	if extension.wr == nil {
 		return
 	}
-	_ = extension.wr.Write(pxb.TypeNotify, 0, 0, pxb.EncodeNotify(pxb.NotifyMsg{Status: text, StatusSet: true}))
+	extension.write(pxb.TypeNotify, 0, 0, pxb.EncodeNotify(pxb.NotifyMsg{Status: text, StatusSet: true}))
 }
 
 // Submit queues a prompt for the host to send after the current slash command returns.
@@ -193,7 +199,7 @@ func (extension *ExtensionAPI) SendUserMessage(text string) {
 	if extension.wr == nil || text == "" {
 		return
 	}
-	_ = extension.wr.Write(pxb.TypeHostRequest, 0, 0, pxb.EncodeHostRequest(pxb.HostRequest{
+	extension.write(pxb.TypeHostRequest, 0, 0, pxb.EncodeHostRequest(pxb.HostRequest{
 		Method: "send_user_message", Arg: text,
 	}))
 }
@@ -206,20 +212,22 @@ func (extension *ExtensionAPI) Confirm(title, message string) bool {
 
 // ConfirmOpts is Confirm with labels / danger styling.
 func (extension *ExtensionAPI) ConfirmOpts(req ext.ConfirmRequest) ext.ConfirmReply {
-	if extension.wr == nil || extension.rd == nil {
+	if extension.wr == nil || extension.rd == nil || extension.stopped() {
 		return ext.ConfirmReply{}
 	}
 	payload, _ := json.Marshal(req)
 	id := extension.nextHostID.Add(1)
-	if err := extension.wr.Write(pxb.TypeHostRequest, pxb.FlagHasID, id, pxb.EncodeHostRequest(pxb.HostRequest{
+	extension.write(pxb.TypeHostRequest, pxb.FlagHasID, id, pxb.EncodeHostRequest(pxb.HostRequest{
 		Method: "confirm", Arg: string(payload),
-	})); err != nil {
-		return ext.ConfirmReply{}
+	}))
+	if extension.stopped() {
+		panic(confirmStopped{})
 	}
 	for {
 		fr, err := extension.rd.Read()
 		if err != nil {
-			return ext.ConfirmReply{}
+			extension.fail(err)
+			panic(confirmStopped{})
 		}
 		body := pxb.CloneBody(fr)
 		switch fr.Type {
@@ -229,46 +237,52 @@ func (extension *ExtensionAPI) ConfirmOpts(req ext.ConfirmRequest) ext.ConfirmRe
 			}
 			res, err := pxb.DecodeHostResult(body)
 			if err != nil {
-				return ext.ConfirmReply{}
+				extension.fail(err)
+				panic(confirmStopped{})
 			}
 			return ext.ConfirmReply{OK: res.OK}
-		case pxb.TypeSessionMeta:
-			meta, err := pxb.DecodeSessionMeta(body)
-			if err != nil {
-				continue
-			}
-			extension.mu.Lock()
-			if meta.SessionID != "" {
-				extension.host.SessionID = meta.SessionID
-			}
-			if meta.Cwd != "" {
-				extension.host.Cwd = meta.Cwd
-			}
-			extension.mu.Unlock()
-		case pxb.TypeEvent:
-			ev, err := pxb.DecodeEventNotify(body)
-			if err != nil {
-				continue
-			}
-			extension.mu.Lock()
-			fn := extension.onEvent[ev.Event]
-			extension.mu.Unlock()
-			if fn != nil {
-				fn(ev)
-			}
 		case pxb.TypeShutdown:
-			_ = extension.wr.Write(pxb.TypeShutdownAck, 0, 0, nil)
-			return ext.ConfirmReply{}
-		default:
-			// Ignore unrelated frames while blocked on confirm.
+			extension.write(pxb.TypeShutdownAck, 0, 0, nil)
+			extension.mu.Lock()
+			extension.shutdown = true
+			extension.mu.Unlock()
+			panic(confirmStopped{})
+		case pxb.TypeToolInvoke, pxb.TypeToolDetailInvoke, pxb.TypeCommandInvoked, pxb.TypeIntercept,
+			pxb.TypeEvent, pxb.TypeSessionMeta:
+			if len(extension.deferred) >= maxDeferredFrames || len(body) > maxDeferredBytes-extension.deferredBytes {
+				extension.fail(errors.New("phi: confirmation deferred request queue is full"))
+				panic(confirmStopped{})
+			}
+			fr.Body = body
+			extension.deferred = append(extension.deferred, fr)
+			extension.deferredBytes += len(body)
+		}
+		if extension.stopped() {
+			panic(confirmStopped{})
 		}
 	}
 }
 
 // Run speaks PXB on stdin/stdout until shutdown.
 func (extension *ExtensionAPI) Run() error {
-	extension.wr = pxb.NewWriter(os.Stdout)
-	extension.rd = pxb.NewReader(os.Stdin)
+	return extension.run(os.Stdin, os.Stdout)
+}
+
+func (extension *ExtensionAPI) run(r io.Reader, w io.Writer) (err error) {
+	defer func() {
+		extension.deferred = nil
+		extension.deferredBytes = 0
+		if v := recover(); v != nil {
+			if _, ok := v.(confirmStopped); !ok {
+				panic(v)
+			}
+			extension.mu.Lock()
+			err = extension.writeErr
+			extension.mu.Unlock()
+		}
+	}()
+	extension.wr = pxb.NewWriter(w)
+	extension.rd = pxb.NewReader(r)
 
 	caps := uint32(0)
 	extension.mu.Lock()
@@ -357,18 +371,18 @@ func (extension *ExtensionAPI) Run() error {
 		cmdByName[c.name] = c.def
 	}
 
-	var running atomic.Bool
-	running.Store(true)
-	for running.Load() {
-		fr, err := extension.rd.Read()
+	for !extension.stopped() {
+		fr, err := extension.nextFrame()
 		if err != nil {
 			return err
 		}
 		body := pxb.CloneBody(fr)
 		switch fr.Type {
 		case pxb.TypeShutdown:
-			_ = extension.wr.Write(pxb.TypeShutdownAck, 0, 0, nil)
-			running.Store(false)
+			extension.write(pxb.TypeShutdownAck, 0, 0, nil)
+			extension.mu.Lock()
+			extension.shutdown = true
+			extension.mu.Unlock()
 		case pxb.TypeCommandInvoked:
 			inv, err := pxb.DecodeCommandInvoked(body)
 			if err != nil {
@@ -393,7 +407,7 @@ func (extension *ExtensionAPI) Run() error {
 			resp.Submit = extension.pendingSubmit
 			extension.pendingSubmit = ""
 			extension.mu.Unlock()
-			_ = extension.wr.Write(pxb.TypeCommandResponse, fr.Flags, fr.ID, pxb.EncodeCommandResponse(resp))
+			extension.write(pxb.TypeCommandResponse, fr.Flags, fr.ID, pxb.EncodeCommandResponse(resp))
 		case pxb.TypeToolInvoke:
 			inv, err := pxb.DecodeToolInvoke(body)
 			if err != nil {
@@ -413,7 +427,7 @@ func (extension *ExtensionAPI) Run() error {
 				tr.IsError = true
 				tr.Error = "unknown tool"
 			}
-			_ = extension.wr.Write(pxb.TypeToolResult, fr.Flags, fr.ID, pxb.EncodeToolResult(tr))
+			extension.write(pxb.TypeToolResult, fr.Flags, fr.ID, pxb.EncodeToolResult(tr))
 		case pxb.TypeToolDetailInvoke:
 			inv, err := pxb.DecodeToolInvoke(body)
 			if err != nil {
@@ -423,7 +437,7 @@ func (extension *ExtensionAPI) Run() error {
 			if tool, ok := toolByName[inv.Name]; ok && tool.DetailFromArgs != nil {
 				detail = tool.DetailFromArgs(inv.Args)
 			}
-			_ = extension.wr.Write(
+			extension.write(
 				pxb.TypeToolDetailResult,
 				fr.Flags,
 				fr.ID,
@@ -435,7 +449,7 @@ func (extension *ExtensionAPI) Run() error {
 				return err
 			}
 			resp := extension.handleIntercept(req)
-			_ = extension.wr.Write(pxb.TypeInterceptResponse, fr.Flags, fr.ID, pxb.EncodeInterceptResp(resp))
+			extension.write(pxb.TypeInterceptResponse, fr.Flags, fr.ID, pxb.EncodeInterceptResp(resp))
 		case pxb.TypeEvent:
 			ev, err := pxb.DecodeEventNotify(body)
 			if err != nil {
@@ -462,7 +476,9 @@ func (extension *ExtensionAPI) Run() error {
 			extension.mu.Unlock()
 		}
 	}
-	return nil
+	extension.mu.Lock()
+	defer extension.mu.Unlock()
+	return extension.writeErr
 }
 
 func (extension *ExtensionAPI) handleIntercept(req pxb.InterceptReq) pxb.InterceptResp {

@@ -32,16 +32,12 @@ ext/go/pxb/fields.go FieldWriter.Reset
 ext/go/pxb/msg.go DecodeCommandInvoked
 ext/go/pxb/msg.go DecodeEventNotify
 ext/go/pxb/msg.go DecodeHelloAck
-ext/go/pxb/msg.go DecodeHostResult
 ext/go/pxb/msg.go DecodeInterceptReq
 ext/go/pxb/msg.go DecodeSessionMeta
 ext/go/pxb/msg.go DecodeToolInvoke
 ext/go/pxb/msg.go EncodeToolDetailResult
-ext/go/pxb/msg.go EncodeCommandResponse
 ext/go/pxb/msg.go EncodeHello
-ext/go/pxb/msg.go EncodeHostRequest
 ext/go/pxb/msg.go EncodeInterceptResp
-ext/go/pxb/msg.go EncodeNotify
 ext/go/pxb/msg.go EncodeRegisterCommand
 ext/go/pxb/msg.go EncodeRegisterTool
 ext/go/pxb/msg.go EncodeSubscribe
