@@ -10,6 +10,20 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+### Security
+
+## [0.27.2] - 2026-09-16
+
+### Added
+
 - Add built-in `gpt-5.5` and `gpt-5.5-pro` presets using the OpenAI Responses API.
 
 ### Changed
@@ -596,7 +610,8 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.27.1...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.27.2...HEAD
+[0.27.2]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.2
 [0.27.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.1
 [0.27.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.0
 [0.26.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.26.0
