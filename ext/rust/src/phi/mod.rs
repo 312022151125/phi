@@ -26,7 +26,7 @@
 //! single-threaded tokio runtime, so network / IO calls just work.
 
 use crate::pxb;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::future::Future;
 use std::io;
 use std::pin::Pin;
@@ -304,6 +304,38 @@ struct Handlers {
     events: EventHandlers,
 }
 
+// Bound both frame overhead and payload memory while a command waits on the host.
+const MAX_DEFERRED_FRAMES: usize = 32;
+
+#[derive(Default)]
+struct Inbox {
+    deferred: VecDeque<pxb::Frame>,
+    bytes: usize,
+    terminal: Option<Result<(), Error>>,
+}
+
+impl Inbox {
+    fn defer(&mut self, frame: pxb::Frame) -> Result<(), Error> {
+        if self.deferred.len() >= MAX_DEFERRED_FRAMES
+            || self.bytes + frame.body.len() > pxb::MAX_PAYLOAD
+        {
+            return Err(io::Error::other(
+                "confirm deferred queue full; reduce host request backlog",
+            )
+            .into());
+        }
+        self.bytes += frame.body.len();
+        self.deferred.push_back(frame);
+        Ok(())
+    }
+
+    fn pop(&mut self) -> Option<pxb::Frame> {
+        let frame = self.deferred.pop_front()?;
+        self.bytes -= frame.body.len();
+        Some(frame)
+    }
+}
+
 /// Bundles all mutable state owned by the run loop, so `serve` and
 /// `serve_command` can borrow individual fields without passing 7+
 /// separate `&mut` parameters.
@@ -316,6 +348,7 @@ struct ServeState<'a> {
     handlers: Handlers,
     pending_submit: Option<String>,
     next_host_id: u32,
+    inbox: Inbox,
     rt: &'a tokio::runtime::Runtime,
 }
 
@@ -433,7 +466,9 @@ impl Extension {
 
         // One single-threaded runtime drives every async tool handler; it
         // blocks the read loop exactly like a sync handler would.
-        let rt = tokio::runtime::Builder::new_current_thread().build()?;
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?;
 
         let host = handshake(&mut rd, &mut wr, &self)?;
         register(&mut wr, &self)?;
@@ -453,6 +488,7 @@ impl Extension {
             handlers,
             pending_submit: None,
             next_host_id: 0,
+            inbox: Inbox::default(),
             rt: &rt,
         };
         serve(&mut state)
@@ -538,7 +574,13 @@ fn register(wr: &mut Wr, ext: &Extension) -> Result<(), Error> {
 /// focused handler that borrows only the state it mutates.
 fn serve(state: &mut ServeState<'_>) -> Result<(), Error> {
     loop {
-        let f = pxb::read_frame(state.rd)?;
+        if let Some(result) = state.inbox.terminal.take() {
+            return result;
+        }
+        let f = match state.inbox.pop() {
+            Some(frame) => frame,
+            None => pxb::read_frame(state.rd)?,
+        };
         match pxb::FrameType::from_u16(f.header.typ) {
             pxb::FrameType::Shutdown => {
                 pxb::write_frame(state.wr, pxb::TYPE_SHUTDOWN_ACK, 0, 0, &[])?;
@@ -583,10 +625,9 @@ fn serve_command(state: &mut ServeState<'_>, frame: &pxb::Frame) -> Result<(), E
             has_ui: true,
             rd: state.rd,
             wr: state.wr,
-            host: &mut state.host,
             pending_submit: &mut state.pending_submit,
             next_host_id: &mut state.next_host_id,
-            events: &mut state.handlers.events,
+            inbox: &mut state.inbox,
         };
         if let Err(e) = (cmd.handler)(&inv.args, &mut ctx) {
             resp.ok = false;
@@ -595,6 +636,9 @@ fn serve_command(state: &mut ServeState<'_>, frame: &pxb::Frame) -> Result<(), E
     } else {
         resp.ok = false;
         resp.error = "unknown command".into();
+    }
+    if state.inbox.terminal.is_some() {
+        return Ok(());
     }
     resp.submit = state.pending_submit.take().unwrap_or_default();
     let body = resp.encode();
@@ -632,7 +676,14 @@ fn serve_tool(
         },
         None => tool_error("unknown tool"),
     };
-    let body = tr.encode();
+    let mut body = tr.encode();
+    if body.len() > pxb::MAX_PAYLOAD {
+        body = tool_error(format!(
+            "tool response exceeds PXB payload limit ({} bytes); reduce tool output",
+            pxb::MAX_PAYLOAD
+        ))
+        .encode();
+    }
     pxb::write_frame(
         wr,
         pxb::TYPE_TOOL_RESULT,
@@ -819,10 +870,9 @@ pub struct Context<'a> {
     pub has_ui: bool,
     rd: &'a mut Rd,
     wr: &'a mut Wr,
-    host: &'a mut HostInfo,
     pending_submit: &'a mut Option<String>,
     next_host_id: &'a mut u32,
-    events: &'a mut EventHandlers,
+    inbox: &'a mut Inbox,
 }
 
 impl Context<'_> {
@@ -894,14 +944,20 @@ impl Context<'_> {
 
     /// [`confirm`](Self::confirm) with labels / danger styling.
     pub fn confirm_opts(&mut self, req: ConfirmRequest) -> ConfirmReply {
+        if self.inbox.terminal.is_some() {
+            return ConfirmReply::default();
+        }
         let Some(id) = self.send_host_request("confirm", &confirm_request_json(&req)) else {
             return ConfirmReply::default();
         };
-        // Nested read: keep servicing SessionMeta pushes and subscribed
-        // events while waiting for the HostResult that matches our id.
+        // Replay incoming work only after this command returns: handlers stay serial.
         loop {
-            let Ok(f) = pxb::read_frame(self.rd) else {
-                return ConfirmReply::default();
+            let f = match pxb::read_frame(self.rd) {
+                Ok(frame) => frame,
+                Err(error) => {
+                    self.inbox.terminal = Some(Err(error));
+                    return ConfirmReply::default();
+                }
             };
             if let Some(reply) = self.nested_reply(f, id) {
                 return reply;
@@ -919,7 +975,10 @@ impl Context<'_> {
             arg: arg.into(),
         }
         .encode();
-        if pxb::write_frame(self.wr, pxb::TYPE_HOST_REQUEST, pxb::FLAG_HAS_ID, id, &body).is_err() {
+        if let Err(error) =
+            pxb::write_frame(self.wr, pxb::TYPE_HOST_REQUEST, pxb::FLAG_HAS_ID, id, &body)
+        {
+            self.inbox.terminal = Some(Err(error));
             return None;
         }
         Some(id)
@@ -939,21 +998,22 @@ impl Context<'_> {
                 };
                 Some(ConfirmReply { ok: res.ok })
             }
-            pxb::FrameType::SessionMeta => {
-                if let Ok(meta) = pxb::SessionMeta::decode(&f.body) {
-                    apply_session_meta(self.host, meta);
-                }
-                None
-            }
-            pxb::FrameType::Event => {
-                if let Ok(ev) = pxb::EventNotify::decode(&f.body) {
-                    dispatch_event(self.events, ev);
-                }
-                None
-            }
             pxb::FrameType::Shutdown => {
-                let _ = pxb::write_frame(self.wr, pxb::TYPE_SHUTDOWN_ACK, 0, 0, &[]);
+                self.inbox.terminal =
+                    Some(pxb::write_frame(self.wr, pxb::TYPE_SHUTDOWN_ACK, 0, 0, &[]));
                 Some(ConfirmReply::default())
+            }
+            pxb::FrameType::CommandInvoked
+            | pxb::FrameType::ToolInvoke
+            | pxb::FrameType::ToolDetailInvoke
+            | pxb::FrameType::Intercept
+            | pxb::FrameType::Event
+            | pxb::FrameType::SessionMeta => {
+                if let Err(error) = self.inbox.defer(f) {
+                    self.inbox.terminal = Some(Err(error));
+                    return Some(ConfirmReply::default());
+                }
+                None
             }
             _ => None,
         }
@@ -978,6 +1038,33 @@ fn push_unique(xs: &mut Vec<pxb::Event>, v: pxb::Event) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn deferred_queue_bounds_and_reclaims_payload() {
+        let frame = |id, size| pxb::Frame {
+            header: pxb::Header {
+                typ: pxb::TYPE_TOOL_INVOKE,
+                flags: pxb::FLAG_HAS_ID,
+                id,
+                payload: size as u32,
+            },
+            body: vec![0; size],
+        };
+        let mut inbox = Inbox::default();
+        for id in 0..MAX_DEFERRED_FRAMES {
+            inbox.defer(frame(id as u32, 0)).unwrap();
+        }
+        assert!(inbox.defer(frame(999, 0)).is_err());
+        for id in 0..MAX_DEFERRED_FRAMES {
+            assert_eq!(inbox.pop().unwrap().header.id, id as u32);
+        }
+        inbox.defer(frame(1, pxb::MAX_PAYLOAD)).unwrap();
+        assert!(inbox.defer(frame(2, 1)).is_err());
+        assert_eq!(inbox.pop().unwrap().body.len(), pxb::MAX_PAYLOAD);
+        inbox.defer(frame(3, 1)).unwrap();
+        assert_eq!(inbox.pop().unwrap().header.id, 3);
+        assert!(inbox.pop().is_none());
+    }
 
     #[test]
     fn confirm_json_matches_go_field_names() {

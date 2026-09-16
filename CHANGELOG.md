@@ -18,6 +18,15 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Extension RPCs distinguish host requests from replies, bound blocked writes and
+  shutdown, and terminate the plugin on in-flight cancellation or timeout.
+- Go and Rust SDKs preserve requests received during confirmation dialogs and
+  report oversized tool results explicitly. Rust async tools support network IO
+  and timers on the SDK runtime.
+- Plugin updates use the installed directory independently of the manifest name,
+  prepare replacements before moving the working version, and honor explicit
+  version pin changes and downgrades.
+
 ### Security
 
 ## [0.27.1] - 2026-09-15

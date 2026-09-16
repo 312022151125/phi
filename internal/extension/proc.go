@@ -46,10 +46,11 @@ type Proc struct {
 	events    map[uint16]struct{}
 	intercept map[uint16]struct{}
 
-	mu      sync.Mutex
-	nextID  atomic.Uint32
-	pending map[uint32]chan frameResult
-	closed  atomic.Bool
+	mu       sync.Mutex
+	nextID   atomic.Uint32
+	pending  map[uint32]chan frameResult
+	closed   atomic.Bool
+	stopOnce sync.Once
 
 	onNotify      func(pxb.NotifyMsg)
 	onHostRequest func(id uint32, hasID bool, req pxb.HostRequest)
@@ -165,7 +166,7 @@ func (p *Proc) handshake(ctx context.Context, cwd, sessionID string) error {
 		SessionID:    sessionID,
 		ExtensionDir: p.Dir,
 	})
-	if err := p.wr.Write(pxb.TypeHelloAck, 0, 0, ack); err != nil {
+	if err := p.write(ctx, pxb.TypeHelloAck, 0, 0, ack); err != nil {
 		return err
 	}
 
@@ -233,12 +234,12 @@ func (p *Proc) readLoop() {
 	for {
 		f, err := p.rd.Read()
 		if err != nil {
-			p.failPending(err)
+			p.terminate()
 			return
 		}
 		body := pxb.CloneBody(f)
 		f.Body = body
-		if f.Flags&pxb.FlagHasID != 0 {
+		if f.Flags&pxb.FlagHasID != 0 && isResponseType(f.Type) {
 			p.mu.Lock()
 			ch, ok := p.pending[f.ID]
 			if ok {
@@ -286,6 +287,15 @@ func (p *Proc) failPending(err error) {
 	}
 }
 
+func isResponseType(typ uint16) bool {
+	switch typ {
+	case pxb.TypeCommandResponse, pxb.TypeToolResult, pxb.TypeInterceptResponse, pxb.TypeToolDetailResult:
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *Proc) rpc(ctx context.Context, typ uint16, body []byte, want uint16) (pxb.Frame, error) {
 	return p.rpcWait(ctx, typ, body, want, 0)
 }
@@ -303,35 +313,40 @@ func (p *Proc) rpcWait(
 	if p == nil || p.closed.Load() {
 		return pxb.Frame{}, errors.New("extension: process closed")
 	}
+	if err := ctx.Err(); err != nil {
+		return pxb.Frame{}, err
+	}
+	waitCtx, cancel := context.WithTimeout(ctx, rpcWaitDuration(ctx, override))
+	defer cancel()
+	stop := p.watch(waitCtx)
+	defer stop()
 	id := p.nextID.Add(1)
 	ch := make(chan frameResult, 1)
 	p.mu.Lock()
+	if p.closed.Load() {
+		p.mu.Unlock()
+		return pxb.Frame{}, errors.New("extension: process closed")
+	}
 	p.pending[id] = ch
 	p.mu.Unlock()
 
 	if err := p.wr.Write(typ, pxb.FlagHasID, id, body); err != nil {
-		p.mu.Lock()
-		delete(p.pending, id)
-		p.mu.Unlock()
+		p.terminate()
+		if waitCtx.Err() != nil {
+			return pxb.Frame{}, waitCtx.Err()
+		}
 		return pxb.Frame{}, err
 	}
 
-	deadline := rpcWaitDuration(ctx, override)
-	timer := time.NewTimer(deadline)
-	defer timer.Stop()
 	select {
-	case <-ctx.Done():
-		p.mu.Lock()
-		delete(p.pending, id)
-		p.mu.Unlock()
-		return pxb.Frame{}, ctx.Err()
-	case <-timer.C:
-		p.mu.Lock()
-		delete(p.pending, id)
-		p.mu.Unlock()
-		return pxb.Frame{}, fmt.Errorf("extension %q: rpc timeout", p.Manifest.Name)
+	case <-waitCtx.Done():
+		p.terminate()
+		return pxb.Frame{}, waitCtx.Err()
 	case res := <-ch:
 		if res.err != nil {
+			if waitCtx.Err() != nil {
+				return pxb.Frame{}, waitCtx.Err()
+			}
 			return pxb.Frame{}, res.err
 		}
 		if want != 0 && res.frame.Type != want {
@@ -449,7 +464,7 @@ func (p *Proc) Emit(ev pxb.EventNotify) {
 		return
 	}
 	body := pxb.EncodeEventNotify(ev)
-	if err := p.wr.Write(pxb.TypeEvent, 0, 0, body); err != nil {
+	if err := p.write(context.Background(), pxb.TypeEvent, 0, 0, body); err != nil {
 		debuglog.Logf("extension %q: emit: %v", p.Manifest.Name, err)
 	}
 }
@@ -460,7 +475,7 @@ func (p *Proc) PushSessionMeta(sessionID, cwd string) {
 		return
 	}
 	body := pxb.EncodeSessionMeta(pxb.SessionMeta{SessionID: sessionID, Cwd: cwd})
-	if err := p.wr.Write(pxb.TypeSessionMeta, 0, 0, body); err != nil {
+	if err := p.write(context.Background(), pxb.TypeSessionMeta, 0, 0, body); err != nil {
 		debuglog.Logf("extension %q: session meta: %v", p.Manifest.Name, err)
 	}
 }
@@ -470,7 +485,13 @@ func (p *Proc) ReplyHost(id uint32, res pxb.HostResult) {
 	if p == nil || p.closed.Load() {
 		return
 	}
-	if err := p.wr.Write(pxb.TypeHostResult, pxb.FlagHasID, id, pxb.EncodeHostResult(res)); err != nil {
+	if err := p.write(
+		context.Background(),
+		pxb.TypeHostResult,
+		pxb.FlagHasID,
+		id,
+		pxb.EncodeHostResult(res),
+	); err != nil {
 		debuglog.Logf("extension %q: host result: %v", p.Manifest.Name, err)
 	}
 }
@@ -481,7 +502,7 @@ func (p *Proc) PushEvent(ev pxb.EventNotify) {
 		return
 	}
 	body := pxb.EncodeEventNotify(ev)
-	if err := p.wr.Write(pxb.TypeEvent, 0, 0, body); err != nil {
+	if err := p.write(context.Background(), pxb.TypeEvent, 0, 0, body); err != nil {
 		debuglog.Logf("extension %q: push event: %v", p.Manifest.Name, err)
 	}
 }
@@ -492,29 +513,84 @@ func (p *Proc) WantsIntercept(code uint16) bool {
 	return ok
 }
 
-// Close asks the child to shut down and reaps it.
-func (p *Proc) Close() error {
-	if p == nil || !p.closed.CompareAndSwap(false, true) {
-		return nil
-	}
-	_ = p.wr.Write(pxb.TypeShutdown, 0, 0, nil)
+// watch covers synchronous writes as well as response waits. Cancellation kills
+// and reaps the entire extension: older Go/Rust peers cannot cancel an in-flight
+// operation. All concurrent calls fail and the extension must be restarted.
+func (p *Proc) watch(ctx context.Context) func() {
 	done := make(chan struct{})
-	go func() {
-		_ = p.cmd.Wait()
+	stop := context.AfterFunc(ctx, func() {
+		p.terminate()
 		close(done)
-	}()
-	select {
-	case <-done:
-	case <-time.After(shutdownWait):
+	})
+	return func() {
+		if !stop() {
+			<-done
+		}
+	}
+}
+
+func (p *Proc) write(ctx context.Context, typ, flags uint16, id uint32, body []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if p.closed.Load() {
+		return errors.New("extension: process closed")
+	}
+	ctx, cancel := context.WithTimeout(ctx, rpcTimeout)
+	defer cancel()
+	stop := p.watch(ctx)
+	defer stop()
+	if err := p.wr.Write(typ, flags, id, body); err != nil {
+		p.terminate()
+		return err
+	}
+	return ctx.Err()
+}
+
+// kill closes pipes independently of the writer lock, releasing blocked sends.
+func (p *Proc) kill() {
+	if p.cmd != nil && p.cmd.Process != nil {
 		_ = p.cmd.Process.Kill()
-		<-done
 	}
-	_ = p.stdin.Close()
-	_ = p.stdout.Close()
-	if p.logFile != nil {
-		_ = p.logFile.Close()
+	if p.stdin != nil {
+		_ = p.stdin.Close()
 	}
-	p.failPending(errors.New("extension: closed"))
+	if p.stdout != nil {
+		_ = p.stdout.Close()
+	}
+}
+
+func (p *Proc) terminate() {
+	p.closed.Store(true)
+	p.kill()
+	p.finish(false)
+}
+
+func (p *Proc) finish(graceful bool) {
+	p.stopOnce.Do(func() {
+		p.closed.Store(true)
+		p.failPending(errors.New("extension: process closed"))
+		if graceful {
+			// Start the kill budget before writing: the child may no longer read.
+			timer := time.AfterFunc(shutdownWait, p.kill)
+			defer timer.Stop()
+			_ = p.wr.Write(pxb.TypeShutdown, 0, 0, nil)
+		}
+		if p.cmd != nil {
+			_ = p.cmd.Wait()
+		}
+		p.kill()
+		if p.logFile != nil {
+			_ = p.logFile.Close()
+		}
+	})
+}
+
+// Close asks the child to shut down within a bounded budget and reaps it.
+func (p *Proc) Close() error {
+	if p != nil {
+		p.finish(true)
+	}
 	return nil
 }
 

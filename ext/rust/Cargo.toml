@@ -12,4 +12,8 @@ categories = ["development-tools"]
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-tokio = { version = "1", default-features = false, features = ["rt"] }
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time"] }
+
+[[example]]
+name = "sdk-probe"
+path = "tests/fixtures/probe.rs"
