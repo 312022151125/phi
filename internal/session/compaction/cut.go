@@ -61,11 +61,11 @@ func findCutPoint(
 	}
 }
 
-// findCutIndex walks entries backward from endIndex and
-// accumulates token counts until they exceed keepRecentTokens. It then
-// finds the first valid cut point that is at or after the position where
-// the limit was exceeded. If no such point is found, it falls back to
-// the earliest candidate cut point.
+// findCutIndex walks entries backward from endIndex accumulating each
+// message's own estimated size until it reaches keepRecentTokens. It then
+// finds the first valid cut point at or after the position where the budget
+// was reached. If the budget is never reached, it falls back to the earliest
+// candidate cut point.
 func findCutIndex(
 	entries []session.MessageEntry,
 	startIndex int,
@@ -82,10 +82,13 @@ func findCutIndex(
 			continue
 		}
 
-		msgEntry := entry.(session.SessionMessageEntry)
-		accumulatedTokens += msgEntry.Message.Usage.TotalTokens
+		messageTokens := estimateMessageTokens(entry.(session.SessionMessageEntry).Message)
+		if messageTokens == 0 {
+			continue
+		}
+		accumulatedTokens += messageTokens
 
-		if accumulatedTokens > keepRecentTokens {
+		if accumulatedTokens >= keepRecentTokens {
 			for _, point := range cutPoints {
 				if point >= i {
 					cutIndex = point
@@ -97,6 +100,26 @@ func findCutIndex(
 	}
 
 	return cutIndex
+}
+
+// estimatedImageChars is the stand-in size for one attached image. Images
+// arrive base64-encoded, so their string length says nothing about the tokens
+// the model spends on them.
+const estimatedImageChars = 4800
+
+// estimateMessageTokens estimates one message's size with a chars/4 heuristic.
+// The budget is spent per message, so this must never fall back to provider
+// usage: an assistant message reports the size of the whole conversation up to
+// that turn (and only assistant messages report anything), so accumulating it
+// overflows keepRecentTokens on the newest message and collapses the cut to
+// the last entry.
+func estimateMessageTokens(msg llm.Message) int {
+	chars := len(msg.Content) + len(msg.ReasoningContent)
+	for _, call := range msg.ToolCalls {
+		chars += len(call.Function.Name) + len(call.Function.Arguments)
+	}
+	chars += len(msg.Images) * estimatedImageChars
+	return (chars + 3) / 4
 }
 
 // collectCutPoints returns the indices of every user/assistant message

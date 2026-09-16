@@ -50,7 +50,7 @@ func newTestSubmitter(
 		activity,
 		composer,
 		nil,
-		func() commands.CommandContext { return commands.CommandContext{} },
+		func() commands.Context { return commands.NewContext(nil, nil) },
 		nil, nil, nil,
 		nil, nil, nil,
 	)
@@ -77,7 +77,7 @@ func TestSubmitter_Submit_unknownSlashFallsThroughToAgent(t *testing.T) {
 	th := components.DefaultTheme()
 	spin := status.NewSpinner(th.ToolName)
 	tp := transcript.NewTranscriptPane(th, spin, "Phi test")
-	sub := newTestSubmitter(t, tp, nil, nil, commands.NewBuiltinRegistry())
+	sub := newTestSubmitter(t, tp, nil, nil, commands.NewCommandRegistry())
 	sub.Submit("/not-a-real-command")
 	require.Len(t, tp.Snapshot().Messages, 1)
 	assert.Equal(t, "/not-a-real-command", tp.Snapshot().Messages[0].Text)
@@ -99,9 +99,16 @@ func TestSubmitter_Submit_needsArgsRefillsComposer(t *testing.T) {
 	spin := status.NewSpinner(th.ToolName)
 	tp := transcript.NewTranscriptPane(th, spin, "Phi test")
 	comp := &stubComposer{}
-	sub := newTestSubmitter(t, tp, nil, comp, commands.NewBuiltinRegistry())
-	sub.Submit("/resume")
-	assert.Equal(t, "/resume ", comp.input)
+	reg := commands.NewCommandRegistry()
+	reg.Register(commands.Command{
+		Name:      "plan",
+		Slash:     true,
+		NeedsArgs: true,
+		Run:       func(commands.Context, []string) error { return nil },
+	})
+	sub := newTestSubmitter(t, tp, nil, comp, reg)
+	sub.Submit("/plan")
+	assert.Equal(t, "/plan ", comp.input)
 	assert.Empty(t, tp.Snapshot().Messages)
 }
 

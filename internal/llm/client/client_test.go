@@ -1,31 +1,20 @@
 package client
 
 import (
+	"context"
+	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"github.com/pulseaiclub/phi/internal/llm"
-)
+	"github.com/stretchr/testify/require"
 
-func TestIsAnthropicProvider(t *testing.T) {
-	cases := []struct {
-		cfg  llm.ModelConfig
-		want bool
-	}{
-		{llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: "https://api.anthropic.com"}, true},
-		{llm.ModelConfig{Name: "gpt-4o", BaseURL: "https://api.anthropic.com"}, true},
-		{llm.ModelConfig{Name: "claude-3-5-sonnet", BaseURL: "https://api.openai.com/v1"}, true},
-		{llm.ModelConfig{Name: "gpt-4o", BaseURL: "https://api.openai.com/v1"}, false},
-		{llm.ModelConfig{Name: "deepseek-chat", BaseURL: "https://api.deepseek.com/v1"}, false},
-	}
-	for i, c := range cases {
-		if got := isAnthropicProvider(c.cfg); got != c.want {
-			t.Fatalf("case %d: isAnthropicProvider(%+v) = %v, want %v", i, c.cfg, got, c.want)
-		}
-	}
-}
+	"github.com/pulseaiclub/phi/internal/llm"
+	"github.com/pulseaiclub/phi/internal/llm/openai"
+)
 
 func TestClientStreamAnthropicEndToEnd(t *testing.T) {
 	var gotPath, gotKey, gotVersion string
@@ -48,27 +37,20 @@ func TestClientStreamAnthropicEndToEnd(t *testing.T) {
 	defer srv.Close()
 
 	client := NewClient(
-		llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test"},
+		llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test", API: llm.Anthropic},
+		Hooks{},
 		nil,
 		"be brief",
 	)
 	events := collectEvents(client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hello"}}))
 
-	if gotPath != "/v1/messages" {
-		t.Fatalf("expected POST /v1/messages, got %q", gotPath)
-	}
-	if gotKey != "sk-test" {
-		t.Fatalf("expected X-Api-Key sk-test, got %q", gotKey)
-	}
-	if gotVersion == "" {
-		t.Fatal("expected Anthropic-Version header")
-	}
+	require.Equal(t, "/v1/messages", gotPath)
+	require.Equal(t, "sk-test", gotKey)
+	require.NotEmpty(t, gotVersion, "expected Anthropic-Version header")
 	var text strings.Builder
 	var done *llm.StreamEvent
 	for _, ev := range events {
-		if ev.Err != "" {
-			t.Fatalf("stream error: %v", ev.Err)
-		}
+		require.Empty(t, ev.Err, "stream error")
 		switch ev.Type {
 		case llm.StreamEventTypeDelta:
 			text.WriteString(ev.Delta.Content)
@@ -76,12 +58,10 @@ func TestClientStreamAnthropicEndToEnd(t *testing.T) {
 			done = &ev
 		}
 	}
-	if text.String() != "hi" || done == nil || done.Partial.Choices[0].Message.Content != "hi" {
-		t.Fatalf("unexpected stream result: text=%q done=%v", text.String(), done)
-	}
-	if done.Partial.Usage.TotalTokens != 5 {
-		t.Fatalf("unexpected total tokens: %+v", done.Partial.Usage)
-	}
+	require.Equal(t, "hi", text.String())
+	require.NotNil(t, done, "unexpected stream result")
+	require.Equal(t, "hi", done.Partial.Choices[0].Message.Content)
+	require.Equal(t, 5, done.Partial.Usage.TotalTokens)
 }
 
 func TestClientStreamOpenAIEndToEnd(t *testing.T) {
@@ -102,18 +82,14 @@ func TestClientStreamOpenAIEndToEnd(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	client := NewClient(llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"}, nil, "")
+	client := NewClient(llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"}, Hooks{}, nil, "")
 	events := collectEvents(client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hello"}}))
 
-	if gotPath != "/chat/completions" {
-		t.Fatalf("expected POST /chat/completions, got %q", gotPath)
-	}
+	require.Equal(t, "/chat/completions", gotPath)
 	var text strings.Builder
 	var done *llm.StreamEvent
 	for _, ev := range events {
-		if ev.Err != "" {
-			t.Fatalf("stream error: %v", ev.Err)
-		}
+		require.Empty(t, ev.Err, "stream error")
 		switch ev.Type {
 		case llm.StreamEventTypeDelta:
 			text.WriteString(ev.Delta.Content)
@@ -121,56 +97,196 @@ func TestClientStreamOpenAIEndToEnd(t *testing.T) {
 			done = &ev
 		}
 	}
-	if text.String() != "hello" || done == nil || done.Partial.Choices[0].Message.Content != "hello" {
-		t.Fatalf("unexpected stream result: text=%q done=%v", text.String(), done)
+	require.Equal(t, "hello", text.String())
+	require.NotNil(t, done, "unexpected stream result")
+	require.Equal(t, "hello", done.Partial.Choices[0].Message.Content)
+	require.Equal(t, 6, done.Partial.Usage.TotalTokens)
+}
+
+func TestClientStreamOpenAIResponsesEndToEnd(t *testing.T) {
+	var gotPath string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte(strings.Join([]string{
+			`data: {"type":"response.output_text.delta","delta":"hi"}`,
+			"",
+			`data: {"type":"response.completed","response":{"usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4}}}`,
+			"",
+		}, "\n")))
+	}))
+	defer srv.Close()
+
+	client := NewClient(
+		llm.ModelConfig{Name: "gpt-5", BaseURL: srv.URL, APIKey: "sk-test", API: llm.OpenAIResponses},
+		Hooks{},
+		nil,
+		"",
+	)
+	events := collectEvents(client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hello"}}))
+
+	require.Equal(t, "/responses", gotPath)
+	var text strings.Builder
+	var done *llm.StreamEvent
+	for _, ev := range events {
+		require.Empty(t, ev.Err, "stream error")
+		switch ev.Type {
+		case llm.StreamEventTypeDelta:
+			text.WriteString(ev.Delta.Content)
+		case llm.StreamEventTypeDone:
+			done = &ev
+		}
 	}
-	if done.Partial.Usage.TotalTokens != 6 {
-		t.Fatalf("unexpected total tokens: %+v", done.Partial.Usage)
-	}
+	require.Equal(t, "hi", text.String())
+	require.NotNil(t, done)
+	require.Equal(t, "hi", done.Partial.Choices[0].Message.Content)
+	require.Equal(t, 4, done.Partial.Usage.TotalTokens)
 }
 
 func TestClientCompactAnthropic(t *testing.T) {
 	var gotPath string
+	var body []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+		body, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"summary here"}]}`))
+		_, _ = w.Write([]byte(`{"content":[{"type":"text","text":"summary here"}],"stop_reason":"end_turn"}`))
 	}))
 	defer srv.Close()
 
-	client := NewClient(llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test"}, nil, "")
-	out, err := client.Compact(t.Context(), "summarize")
-	if err != nil {
-		t.Fatalf("compact: %v", err)
-	}
-	if gotPath != "/v1/messages" {
-		t.Fatalf("expected POST /v1/messages, got %q", gotPath)
-	}
-	if out != "summary here" {
-		t.Fatalf("expected 'summary here', got %q", out)
-	}
+	client := NewClient(
+		llm.ModelConfig{Name: "claude-sonnet-4-20250514", BaseURL: srv.URL, APIKey: "sk-test", API: llm.Anthropic},
+		Hooks{},
+		nil,
+		"",
+	)
+	res, err := client.Compact(t.Context(), llm.CompactRequest{Prompt: "summarize", MaxTokens: 13107})
+	require.NoError(t, err)
+	require.Equal(t, "/v1/messages", gotPath)
+	require.Equal(t, "summary here", res.Text)
+	require.False(t, res.Truncated)
+	require.Equal(t, 13107, jsonField(t, body, "max_tokens"), "the summary cap must reach the provider")
 }
 
 func TestClientCompactOpenAI(t *testing.T) {
 	var gotPath string
+	var body []byte
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+		body, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"choices":[{"message":{"role":"assistant","content":"summary here"}}]}`))
+		_, _ = w.Write(
+			[]byte(`{"choices":[{"message":{"role":"assistant","content":"summary here"},"finish_reason":"stop"}]}`),
+		)
 	}))
 	defer srv.Close()
 
-	client := NewClient(llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"}, nil, "")
-	out, err := client.Compact(t.Context(), "summarize")
-	if err != nil {
-		t.Fatalf("compact: %v", err)
+	client := NewClient(llm.ModelConfig{Name: "gpt-4o", BaseURL: srv.URL, APIKey: "sk-test"}, Hooks{}, nil, "")
+	res, err := client.Compact(t.Context(), llm.CompactRequest{Prompt: "summarize", MaxTokens: 13107})
+	require.NoError(t, err)
+	require.Equal(t, "/chat/completions", gotPath)
+	require.Equal(t, "summary here", res.Text)
+	require.False(t, res.Truncated)
+	require.Equal(t, 13107, jsonField(t, body, "max_tokens"))
+}
+
+// A provider that stopped at the cap returns partial text, and the caller must
+// be able to tell it apart from a finished summary.
+func TestClientCompactReportsCappedOutput(t *testing.T) {
+	cases := []struct {
+		name string
+		api  llm.RouterType
+		body string
+	}{
+		{
+			name: "anthropic",
+			api:  llm.Anthropic,
+			body: `{"content":[{"type":"text","text":"partial"}],"stop_reason":"max_tokens"}`,
+		},
+		{
+			name: "openai",
+			api:  llm.OpenAI,
+			body: `{"choices":[{"message":{"role":"assistant","content":"partial"},"finish_reason":"length"}]}`,
+		},
 	}
-	if gotPath != "/chat/completions" {
-		t.Fatalf("expected POST /chat/completions, got %q", gotPath)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer srv.Close()
+
+			client := NewClient(
+				llm.ModelConfig{Name: "m", BaseURL: srv.URL, APIKey: "sk-test", API: tc.api},
+				Hooks{},
+				nil,
+				"",
+			)
+			res, err := client.Compact(t.Context(), llm.CompactRequest{Prompt: "summarize", MaxTokens: 100})
+			require.NoError(t, err)
+			require.True(t, res.Truncated, "capped output must be reported as truncated")
+			require.Equal(t, "partial", res.Text)
+		})
 	}
-	if out != "summary here" {
-		t.Fatalf("expected 'summary here', got %q", out)
+}
+
+// jsonField reads one numeric field out of a captured request body.
+func jsonField(t *testing.T, body []byte, field string) int {
+	t.Helper()
+	var raw map[string]any
+	require.NoError(t, json.Unmarshal(body, &raw))
+	n, ok := raw[field].(float64)
+	require.True(t, ok, "field %q missing from the request body", field)
+	return int(n)
+}
+
+type openAIExtraThinking struct{}
+
+func (openAIExtraThinking) Before(_ context.Context, req *openai.Request, _ llm.ModelConfig) error {
+	req.ExtraBody = &openai.ExtraBody{Thinking: &openai.ThinkingConfig{Type: "enabled"}}
+	return nil
+}
+
+func TestClientStreamOpenAIRunsInterceptor(t *testing.T) {
+	var body []byte
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = w.Write([]byte("data: [DONE]\n\n"))
+	}))
+	defer srv.Close()
+
+	client := NewClient(
+		llm.ModelConfig{Name: "deepseek-flash", BaseURL: srv.URL, APIKey: "sk-test"},
+		Hooks{OpenAI: openAIExtraThinking{}},
+		nil,
+		"",
+	)
+	for _, err := range client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hi"}}) {
+		require.NoError(t, err)
 	}
+	require.Contains(t, string(body), `"extra_body"`)
+	require.Contains(t, string(body), `"thinking"`)
+}
+
+type rejectHook struct{}
+
+func (rejectHook) Before(context.Context, *openai.Request, llm.ModelConfig) error {
+	return errors.New("blocked by hook")
+}
+
+func TestClientStreamOpenAIInterceptorError(t *testing.T) {
+	client := NewClient(
+		llm.ModelConfig{Name: "gpt-4o", BaseURL: "http://127.0.0.1:9", APIKey: "sk-test"},
+		Hooks{OpenAI: rejectHook{}},
+		nil,
+		"",
+	)
+	events := collectEvents(client.Stream(t.Context(), []llm.Message{{Role: llm.RoleUser, Content: "hi"}}))
+	require.Len(t, events, 1)
+	require.Equal(t, llm.StreamEventTypeError, events[0].Type)
+	require.Contains(t, events[0].Err, "blocked by hook")
 }
 
 // collectEvents drains an iter.Seq2 into a slice.

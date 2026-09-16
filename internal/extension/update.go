@@ -39,8 +39,9 @@ func (o UpdateOptions) out() io.Writer {
 	return io.Discard
 }
 
-func (o UpdateOptions) installOptions(spec Spec) InstallOptions {
+func (o UpdateOptions) installOptions(spec Spec, dir string) InstallOptions {
 	return InstallOptions{
+		Dir:          dir,
 		Stdout:       o.Stdout,
 		Spec:         spec,
 		Git:          o.Git,
@@ -54,7 +55,7 @@ func (o UpdateOptions) installOptions(spec Spec) InstallOptions {
 // recorded GitHub source. With Check it only reports what would change.
 // The recorded source ref is re-resolved (a pinned tag stays pinned unless
 // overridden via Ref); release archives are preferred, git clone is the
-// fallback — the directory is swapped atomically either way.
+// fallback. Replacements are staged beside the installed tree before switching.
 func Update(ctx context.Context, opts UpdateOptions) error {
 	installed, err := ListInstalled(opts.Dir)
 	if err != nil {
@@ -101,7 +102,7 @@ func matchTarget(installed []Installed, id string) ([]Installed, error) {
 	for _, in := range installed {
 		matches := in.ID == id
 		if owner != "" {
-			matches = matches || (in.Meta.Spec.Owner == owner && in.Meta.Spec.Repo == id)
+			matches = in.Meta.Spec.Owner == owner && in.Meta.Spec.Repo == id
 		}
 		if !matches {
 			continue
@@ -143,7 +144,7 @@ func reportOne(ctx context.Context, opts UpdateOptions, in Installed, spec Spec)
 		}
 		return fmt.Errorf("query %s: %w", spec.Owner+"/"+spec.Repo, err)
 	}
-	if in.Meta.Source == SourceRelease && in.Meta.ReleaseTag != "" &&
+	if opts.Ref == "" && in.Meta.Source == SourceRelease && in.Meta.ReleaseTag != "" &&
 		!update.VersionLess(in.Meta.ReleaseTag, rel.TagName) {
 		printf(opts.out(), "%s: up to date (%s)\n", in.ID, in.Meta.ReleaseTag)
 		return nil
@@ -152,10 +153,10 @@ func reportOne(ctx context.Context, opts UpdateOptions, in Installed, spec Spec)
 	return nil
 }
 
-// installOne re-resolves the plugin's GitHub source and atomically swaps the
+// installOne re-resolves the plugin's GitHub source and replaces the installed
 // directory, skipping when the installed release tag is already current.
 func installOne(ctx context.Context, opts UpdateOptions, in Installed, spec Spec) error {
-	dest := filepath.Join(opts.Dir, in.ID)
+	dest := in.Path
 	if _, err := os.Stat(dest); err != nil {
 		if os.IsNotExist(err) {
 			return fmt.Errorf(
@@ -167,11 +168,11 @@ func installOne(ctx context.Context, opts UpdateOptions, in Installed, spec Spec
 		}
 		return fmt.Errorf("stat %s: %w", dest, err)
 	}
-	ioOpts := opts.installOptions(spec)
+	ioOpts := opts.installOptions(spec, filepath.Dir(dest))
 
 	rel, relErr := fetchReleaseFor(ctx, opts, spec)
 	if relErr == nil {
-		if in.Meta.Source == SourceRelease && in.Meta.ReleaseTag != "" &&
+		if opts.Ref == "" && in.Meta.Source == SourceRelease && in.Meta.ReleaseTag != "" &&
 			!update.VersionLess(in.Meta.ReleaseTag, rel.TagName) {
 			printf(opts.out(), "%s: up to date (%s)\n", in.ID, in.Meta.ReleaseTag)
 			return nil
@@ -196,19 +197,18 @@ func fetchReleaseFor(ctx context.Context, opts UpdateOptions, spec Spec) (github
 // Remove deletes a phi-managed extension directory. Unmanaged or missing
 // directories are refused so phi never removes user-built plugins.
 func Remove(dir, id string) error {
-	dest := filepath.Join(dir, id)
-	if _, err := readInstallMeta(dest); err != nil {
-		if os.IsNotExist(err) {
-			if _, statErr := os.Stat(dest); statErr == nil {
-				return fmt.Errorf(
-					"%s exists at %s but was not installed via 'phi plugin install' (no %s); remove it manually",
-					id, dest, installMetaFile,
-				)
-			}
-			return fmt.Errorf("plugin %q is not installed", id)
-		}
-		return fmt.Errorf("read install metadata for %s: %w", id, err)
+	if id == "" {
+		return errors.New("plugin ID is required")
 	}
+	installed, err := ListInstalled(dir)
+	if err != nil {
+		return err
+	}
+	targets, err := matchTarget(installed, id)
+	if err != nil {
+		return err
+	}
+	dest := targets[0].Path
 	if err := os.RemoveAll(dest); err != nil {
 		return fmt.Errorf("remove %s: %w", dest, err)
 	}

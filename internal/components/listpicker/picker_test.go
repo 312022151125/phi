@@ -38,6 +38,22 @@ func TestPickerFilterAndAccept(t *testing.T) {
 	assert.False(t, p.Open)
 }
 
+func TestPickerTabAccepts(t *testing.T) {
+	var got string
+	p := &Picker{
+		Theme:    components.DefaultTheme(),
+		OnAccept: func(item Item) { got = item.ID },
+	}
+	p.Show([]Item{{ID: "a", Primary: "a"}, {ID: "b", Primary: "b"}}, ShowConfig{})
+
+	ctx := &components.EventContext{}
+	p.Handle(ctx, xui.KeyEvent{Code: xui.KeyTab, Press: true})
+
+	assert.Equal(t, "a", got, "Tab should pick the highlighted row")
+	assert.Equal(t, 0, p.Selected, "Tab must not move the selection")
+	assert.False(t, p.Open)
+}
+
 func TestPickerEscapeCloses(t *testing.T) {
 	p := &Picker{Theme: components.DefaultTheme()}
 	p.Show([]Item{{ID: "abc", Primary: "abc", Detail: "x"}}, ShowConfig{})

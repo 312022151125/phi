@@ -10,6 +10,8 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
+- Add built-in `gpt-5.5` and `gpt-5.5-pro` presets using the OpenAI Responses API.
+
 ### Changed
 
 ### Deprecated
@@ -18,10 +20,198 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Fixed
 
+- Extension RPCs distinguish host requests from replies, bound blocked writes and
+  shutdown, and terminate the plugin on in-flight cancellation or timeout.
+- Go and Rust SDKs preserve requests received during confirmation dialogs and
+  report oversized tool results explicitly. Rust async tools support network IO
+  and timers on the SDK runtime.
+- Plugin updates use the installed directory independently of the manifest name,
+  prepare replacements before moving the working version, and honor explicit
+  version pin changes and downgrades.
+
+### Security
+
+## [0.27.1] - 2026-09-15
+
+### Added
+
+### Changed
+
+- Composer pickers: `Tab` completes the highlighted row into the input
+  (`/diff`, `@path`, each with a trailing space) instead of moving down, and never runs a command —
+  `/clear`-style no-arg commands still run on `Enter` only. The session and
+  diff file pickers accept on `Tab` as well. `Shift+Tab` no longer steps back;
+  use `Up` / `Ctrl+P`.
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+- Compaction summaries are capped at a fraction of the headroom they free
+  (0.8x `reserveTokens` for history, 0.5x for a turn prefix), and a summary the
+  provider stopped at that cap is rejected instead of persisted. A truncated
+  summary used to overwrite the session checkpoint and drop every message it
+  stood in for, with no way back.
+
+- Compaction now measures the cut budget per message instead of summing the
+  provider's reported usage. Each assistant message reports the size of the
+  whole conversation up to that turn, so the budget overflowed on the newest
+  message: the recent window was never kept, the cut was always mid-turn, and a
+  previous summary could be replaced with `No prior history.`
+- Compaction no-ops instead of persisting a summary when nothing falls outside
+  the recent window.
+- Cutting mid-turn (compaction lands inside a turn) now sends a turn-prefix
+  summarization prompt with the prefix. The request carried the conversation
+  dump and no instruction at all, so the model's continuation — not a summary —
+  was what got persisted as the session summary.
+- The transcript compaction marker now shows the pre-cut context size
+  (`Compacted from 15k tokens`). The count was persisted on every compaction
+  entry but nothing ever read it: the marker text was hardcoded in three
+  places, and a resumed session dropped the value entirely.
+- Resuming a session (`/sessions`) now refreshes the composer token readout
+  from the resumed session instead of keeping the previous session's counts;
+  sessions without reported usage clear the label.
+- Compaction now reads token usage from the persisted entry instead of the
+  in-memory message field, which is dropped on load. Resumed sessions were
+  seen as having spent zero tokens, so the first auto-compaction summarized
+  nothing and context-overflow recovery did not compact at all.
+
+### Security
+
+## [0.27.0] - 2026-09-15
+
+### Added
+
+- OpenAI Responses API route (`api: OpenAIResponses`) via
+  `/v1/responses`, for models that no longer speak chat-completions
+  (e.g. GPT-5 tool calling).
+- Built-in DeepSeek model presets: config entries named `deepseek-flash`
+  or `deepseek-v4-pro` auto-fill base_url / context_window /
+  image_enabled from the catalog, so only name + api_key is required.
+- Built-in Gemini model presets (`gemini-2.5-pro`, `gemini-2.5-flash`,
+  `gemini-3-pro`, `gemini-3-flash`) with provider-native thinking
+  config (budget for 2.x, level for 3.x).
+- Built-in Kimi model presets (`kimi-k3`, `kimi-k2.7-code`) with Moonshot API defaults.
+- Built-in GLM presets (`glm-5.3`, `glm-5.3-flash`) on the z.ai coding
+  plan, with Preserved Thinking.
+- Per-model `think_enabled` / `think_level` config keys and
+  `PHI_THINK_LEVEL` env var override.
+- Rust SDK (`ext/rust`, crate `phi-ext`): `Context` gains `cwd()`,
+  `session_id()`, and `has_ui()` accessors.
+- Docs: [Supported models](doc/models.md).
+
+### Changed
+
+- Provider routing uses explicit `models[].api` (`OpenAI` /
+  `OpenAIResponses` / `Anthropic` / `Gemini`) instead of guessing from
+  model name or base URL.
+- Vendor thinking wire shape (DeepSeek `extra_body`, Gemini budget/level)
+  lives on model preset request interceptors, not client name matching.
+- Rust SDK: PXB messages are built by the declarative `pxb_message!` macro —
+  `pxb::Hello::encode()` / `decode()` replace the free `pxb::encode_hello` /
+  `decode_hello` functions (and likewise per message type). Wire format
+  unchanged.
+- `/diff`: an empty overlay names the comparison (`No changes vs <rev>`) and
+  reminds that untracked files never show up; git failures collapse to one
+  line with the next step (`fetch first`, `open inside the repo`).
+
+### Deprecated
+
+### Removed
+
+- `/resume` slash command — use `/sessions` picker or `phi run --session <id>` instead.
+
+### Fixed
+
+- Windows: `fd` / `rg` installed in `~/.phi/bin` as `fd.exe` / `rg.exe` are
+  found again — the bin dir probe now tries the `.exe` suffix, so `find` and
+  `grep` no longer report "fd is not available".
+- Windows: Git Bash is found for per-user installs
+  (`%LocalAppData%\Programs\Git`) and for custom roots reached through the
+  Git on PATH (`D:\Git`), instead of falling through to WSL's legacy
+  `bash.exe` shim and failing with `execvpe(/bin/bash): No such file or
+  directory`.
+
+### Security
+
+## [0.26.0] - 2026-09-10
+
+### Added
+
+- Extensions: `ToolResult.Expanded` opens the TUI tool row by default (e.g. plan
+  body). User toggle still wins after the first interaction.
+- CI / `make lint-markdown`: markdownlint on `**/*.md`.
+- TUI `/diff`: full-screen git diff review (working tree / staged / HEAD),
+  line notes in `.phi/review.json`, `a` sends notes to the agent.
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+- Compaction file-op details are a typed `session.CompactionDetails` (not `any`),
+  so persist/reload and later compact rounds keep prior read/modified files.
+- `/diff`: cursor movement no longer leaves a blue trail on swept rows; help
+  overlay no longer fills with selection background. Notes autosave; drop
+  unused GitHub-shaped comment fields and the redundant `w` save key.
+
 ### Security
 
 <!-- Released section -->
 <!-- Don't change this section unless doing release -->
+
+## [0.25.1] - 2026-09-10
+
+### Added
+
+### Changed
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+- MCP HTTP transport: SSE bodies that interleave server notifications
+  (e.g. `notifications/message` log frames, no `id`) before the JSON-RPC
+  response frame now resolve to the response frame instead of the first
+  parseable frame, which previously made `tools/call` return an empty
+  result when a server streams log frames before answering.
+- Preserve Unicode when copying TUI text to the Windows clipboard.
+
+### Security
+
+## [0.25.0] - 2026-09-09
+
+### Added
+
+- Sub-agents: optional per-role model defaults in `agents.models` (`explore` /
+  `review` / `worker`). Palette: settings → agents → models → role → model
+  (session-only; `(inherit parent)` clears). Omitted roles inherit the parent
+  model. (`project`, `agent`, `tui`)
+
+### Changed
+
+- Sub-agents: child gates use `BashDefault=Allow` (hard deny list still applies), so explore/review/worker can run non-allowlisted shell (`make`, pipelines, tests) without Ask→Deny folding. Role hints and parent spawn guidance emphasize task contracts (recon / review report / scoped implement) rather than allowlisted bash. Hard deny now also blocks piping into `sh`/`bash`.
+
+### Deprecated
+
+### Removed
+
+### Fixed
+
+- Agent: mid-loop context-window overflow (`prompt is too long` and similar
+  provider errors) now force-compacts once and retries the stream instead of
+  failing the turn cold. A second overflow still fails closed. (`agent`, `llm`)
+- Config: `agents.enabled` omitted under an `agents:` block (e.g. only
+  `agents.models` set) no longer decodes as false; default stays on. (`project`)
+
+### Security
 
 ## [0.24.0] - 2026-09-08
 
@@ -100,7 +290,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 
 ### Added
 
-- Slash commands can declare `NeedsArgs` (Go) / `needs_args` (Rust). Picker accept or bare submit of `/name` leaves `/name ` in the composer so the user can type arguments instead of auto-running and toasting usage. Built-in `/resume` uses this.
+- Slash commands can declare `NeedsArgs` (Go) / `needs_args` (Rust). Picker accept or bare submit of `/name` leaves `/name` plus a trailing space in the composer so the user can type arguments instead of auto-running and toasting usage. Built-in `/resume` uses this.
 
 ### Changed
 
@@ -361,9 +551,11 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ## [0.13.0] - 2026-08-18
 
 ### Added
+
 - TUI hot-reloads the git branch in the path label: switching branches outside the app (another terminal, an editor) refreshes the label automatically.
 
 ### Changed
+
 - TUI activity: tool rows keep a 1-cell braille spinner; the footer uses an
   Knight-Rider scan bar so the two don't share the same glyph.
 - Tool routing: bash is no longer described as an inspection tool; grep/glob no
@@ -376,6 +568,7 @@ This project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.htm
 ### Deprecated
 
 ### Removed
+
 - Per-hook `hook.json` directories. Use `plugin.json` instead.
 
 ### Fixed
@@ -403,7 +596,12 @@ Earlier releases are available from GitHub tags only.
 
 <!-- Released section ended -->
 
-[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/pulseaiclub/phi/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.1
+[0.27.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.27.0
+[0.26.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.26.0
+[0.25.1]: https://github.com/pulseaiclub/phi/releases/tag/v0.25.1
+[0.25.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.25.0
 [0.24.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.24.0
 [0.23.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.23.0
 [0.22.0]: https://github.com/pulseaiclub/phi/releases/tag/v0.22.0

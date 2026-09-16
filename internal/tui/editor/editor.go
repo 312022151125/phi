@@ -9,10 +9,12 @@ import (
 	"github.com/pulseaiclub/phi/internal/components"
 	"github.com/pulseaiclub/phi/internal/components/app"
 	"github.com/pulseaiclub/phi/internal/components/listpicker"
+	"github.com/pulseaiclub/phi/internal/components/palette"
 	"github.com/pulseaiclub/phi/internal/components/toast"
 	"github.com/pulseaiclub/phi/internal/tui/commands"
 	"github.com/pulseaiclub/phi/internal/tui/composer"
 	"github.com/pulseaiclub/phi/internal/tui/controller"
+	"github.com/pulseaiclub/phi/internal/tui/diffpane"
 	"github.com/pulseaiclub/phi/internal/tui/footer"
 	"github.com/pulseaiclub/phi/internal/tui/overlays"
 	"github.com/pulseaiclub/phi/internal/tui/pathutil"
@@ -27,9 +29,9 @@ import (
 // Draw drains and Update applies. Agent lifecycle lives in controller.EngineController;
 // session→widget projection lives in TranscriptPane (Mapper/SubagentStore).
 //
-// Construction: cmd assembles App, controller.Bus, controller.EngineController and passes
-// them into NewEditor, which builds the CommandRegistry (commands.NewBuiltinRegistry).
-// Editor does not create controller.EngineController or fetch the project singleton.
+// cmd constructs Bus/Controller/App and passes them into NewEditor, which builds
+// builtins via commands.NewBuiltinRegistry. Editor does not create
+// controller.EngineController or fetch the project singleton.
 type Editor struct {
 	vx    *xui.XUI
 	App   *app.App
@@ -42,13 +44,11 @@ type Editor struct {
 	footer     *footer.FooterChrome
 	overlays   *overlays.Overlays
 	toast      toast.Toast
+	diff       *diffpane.Pane
 
 	ctrl *controller.EngineController
 
-	commands   *commands.CommandRegistry
-	modelNames []string
-	skillPath  string
-
+	commands  *commands.CommandRegistry
 	sessions  *commands.SessionCommands
 	extCmds   *commands.ExtCommands
 	submitter *submit.Submitter
@@ -66,20 +66,16 @@ func NewEditor(
 	contextWindow int,
 	modelNames []string,
 ) *Editor {
-	registry := commands.NewBuiltinRegistry()
 	e := &Editor{
-		vx:         vx,
-		App:        application,
-		theme:      theme,
-		cwd:        cwd,
-		bus:        bus,
-		ctrl:       ctrl,
-		modelNames: append([]string(nil), modelNames...),
-		skillPath:  skillPath,
-		commands:   registry,
-		toast:      toast.Toast{Theme: theme},
-		composer:   composer.NewComposerPane(theme, model, cwd),
-		footer:     footer.NewFooterChrome(theme, contextWindow),
+		vx:       vx,
+		App:      application,
+		theme:    theme,
+		cwd:      cwd,
+		bus:      bus,
+		ctrl:     ctrl,
+		toast:    toast.Toast{Theme: theme},
+		composer: composer.NewComposerPane(theme, model, cwd),
+		footer:   footer.NewFooterChrome(theme, contextWindow),
 	}
 	e.transcript = transcript.NewTranscriptPane(theme, e.footer.Spinner(), "Phi "+version.Version)
 	e.transcript.SetUsageCallback(e.footer.UpdateTokenDisplay)
@@ -112,22 +108,35 @@ func NewEditor(
 			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
 		},
 	)
-	e.extCmds = &commands.ExtCommands{
-		Registry: e.commands,
-		Ctrl:     e.ctrl,
-		Composer: e.composer,
-		Footer:   e.footer,
-		Bus:      e.bus,
-	}
-	e.sessions = commands.NewSessionCommands(
-		e.ctrl,
-		e.transcript,
-		e.footer,
-		e.bus,
-		e.extCmds.Sync,
+	e.diff = diffpane.New(e.theme, cwd,
+		func(text string) {
+			e.Publish(controller.SubmitMsg{Text: text})
+		},
+		func(text string) bool {
+			return e.vx != nil && e.vx.CopyToClipboard(text) == nil
+		},
+		func(msg string) {
+			e.Publish(controller.ToastMsg{Message: msg, Kind: toast.ToastSuccess, Duration: 2 * time.Second})
+		},
 	)
 
-	var bridge *commandBridge
+	builtins := commands.NewBuiltinRegistry(
+		e.bus,
+		e.ctrl,
+		e.composer,
+		e.transcript,
+		e.footer,
+		modelNames,
+		skillPath,
+		e.openDiff,
+	)
+	e.commands = builtins.Registry
+	e.sessions = builtins.Sessions
+	e.extCmds = builtins.Ext
+
+	cmdCtx := commands.NewContext(e.bus, func(title string, cmds []palette.PaletteCommand) {
+		e.composer.PushPalette(title, cmds)
+	})
 	e.submitter = submit.NewSubmitter(
 		e.ctrl,
 		e.commands,
@@ -135,12 +144,7 @@ func NewEditor(
 		e.footer.Activity(),
 		e.composer,
 		e.bus,
-		func() commands.CommandContext {
-			if bridge == nil {
-				return commands.CommandContext{}
-			}
-			return bridge.context()
-		},
+		func() commands.Context { return cmdCtx },
 		e.overlays.PermissionActive,
 		e.overlays.ContinueActive,
 		e.overlays.ConfirmActive,
@@ -148,23 +152,16 @@ func NewEditor(
 		e.overlays.ResolveContinue,
 		e.overlays.ResolveConfirm,
 	)
-	e.extCmds.Submitter = e.submitter
-	e.sessions.OpenPicker = e.composer.ShowSessionList
-	e.sessions.StreamActive = e.submitter.StreamActive
+	builtins.Bind(
+		e.submitter,
+		func() commands.Context { return cmdCtx },
+		e.composer.ShowSessionList,
+		e.submitter.StreamActive,
+	)
+
 	e.composer.SetListPickHandler(func(item listpicker.Item) {
 		e.sessions.Accept(item.ID)
 	})
-	bridge = newCommandBridge(
-		e.bus,
-		e.composer,
-		e.ctrl,
-		e.submitter,
-		e.sessions,
-		e.extCmds,
-		e.modelNames,
-		e.skillPath,
-	)
-	e.extCmds.CommandCtx = bridge.context
 	e.composer.Wire(
 		e.transcript,
 		e.submitter,
@@ -178,7 +175,7 @@ func NewEditor(
 			}
 		},
 		func() bool { return e.ctrl != nil && e.ctrl.ImageEnabled() },
-		e.overlays.BlocksComposer,
+		e.blocksComposer,
 		e.overlays.HandlePermissionKey,
 		e.overlays.HandleContinueKey,
 		e.overlays.HandleConfirmKey,
@@ -229,6 +226,13 @@ func (e *Editor) Update(m controller.Msg) {
 		e.toast.Show(msg.Message, msg.Kind, msg.Duration)
 	case controller.ThemeMsg:
 		e.applyTheme(msg.Name)
+	case controller.ModelChangeMsg:
+		switch msg.Kind {
+		case "model":
+			e.composer.SetModelLabel(msg.Value, string(e.ctrl.ThinkLevel()))
+		case "think_level":
+			e.composer.SetModelLabel(e.ctrl.ModelName(), msg.Value)
+		}
 	case controller.ExtSessionEffectsMsg:
 		e.footer.ApplySessionEffects(msg)
 		if msg.Toast != "" {
@@ -279,7 +283,44 @@ func (e *Editor) drainBus() {
 	}
 }
 
+func (e *Editor) blocksComposer() bool {
+	if e.overlays != nil && e.overlays.BlocksComposer() {
+		return true
+	}
+	return e.diff != nil && e.diff.Active()
+}
+
+func (e *Editor) openDiff(args []string) {
+	if e.diff == nil {
+		return
+	}
+	e.diff.OpenGit(e.cwd, args)
+	e.captureDiffFocus()
+}
+
+func (e *Editor) captureDiffFocus() {
+	if e.App != nil {
+		e.App.RequestFocus(e)
+	}
+	if e.composer != nil {
+		e.composer.HideCompleters()
+		e.composer.HidePalette()
+	}
+}
+
 func (e *Editor) Handle(ctx *components.EventContext, ev xui.Event) {
+	if ke, ok := ev.(xui.KeyEvent); ok && ke.CtrlC() {
+		e.composer.Handle(ctx, ev)
+		return
+	}
+	if e.diff != nil && e.diff.Active() {
+		e.captureDiffFocus()
+		e.diff.Handle(ctx, ev)
+		if !e.diff.Active() && e.composer != nil {
+			e.composer.FocusChat()
+		}
+		return
+	}
 	e.composer.Handle(ctx, ev)
 }
 
@@ -295,6 +336,23 @@ func (e *Editor) Draw(ctx components.DrawContext) components.Surface {
 		e.footer.AdvanceTick()
 	}
 	_ = e.toast.Visible()
+
+	if e.diff != nil && e.diff.Active() {
+		// Palette/slash leave keyboard focus on Chat; steal it back so keys
+		// don't land in the composer under the overlay.
+		e.captureDiffFocus()
+		root := e.diff.Draw(ctx)
+		root.Widget = e
+		if e.toast.Visible() {
+			toastSurf := e.toast.Draw(ctx)
+			root.Children = append(root.Children, components.SubSurface{
+				Origin:  components.Point{X: 0, Y: 0},
+				Surface: toastSurf,
+				Z:       40,
+			})
+		}
+		return root
+	}
 
 	maxSize := ctx.Max
 	root := components.Surface{Size: maxSize, Widget: e}
@@ -419,6 +477,9 @@ func (e *Editor) applyTheme(name string) {
 	e.transcript.SetTheme(th)
 	e.footer.SetTheme(th)
 	e.overlays.SetTheme(th)
+	if e.diff != nil {
+		e.diff.SetTheme(th)
+	}
 	e.toast.Show("Theme: "+name, toast.ToastSuccess, 2*time.Second)
 	if e.vx != nil {
 		e.vx.QueueRefresh()

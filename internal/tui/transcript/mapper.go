@@ -141,7 +141,9 @@ func (m *Mapper) patchItem(w components.Widget, it session.Item) (ok, dirty bool
 			return false, false
 		}
 		c.Theme = m.theme
-		return true, false
+		dirty := c.TokensBefore != it.TokensBefore
+		c.TokensBefore = it.TokensBefore
+		return true, dirty
 	case session.ItemTool:
 		return m.patchTool(w, it)
 	}
@@ -149,30 +151,27 @@ func (m *Mapper) patchItem(w components.Widget, it session.Item) (ok, dirty bool
 }
 
 func (m *Mapper) patchTool(w components.Widget, it session.Item) (ok, dirty bool) {
-	name := strings.ToLower(it.ToolName)
+	run := it.ToolRun
+	name := strings.ToLower(run.Name)
 	if name == "bash" {
 		b, ok := w.(*block.BashBlock)
 		if !ok {
 			return false, false
 		}
-		cmd := it.ToolInput
-		if it.ToolRun.Detail != "" {
-			cmd = it.ToolRun.Detail
-		}
-		st := bashStatus(it.ToolRun.Status)
+		st := uiToolStatus(run.Status)
 		prevExp := b.Expanded
-		dirty = b.Command != cmd || b.Output != it.ToolRun.Output || b.Status != st || b.ExitCode != it.ToolRun.ExitCode
-		b.Command = cmd
-		b.Output = it.ToolRun.Output
+		dirty = b.Command != run.Detail || b.Output != run.Output || b.Status != st || b.ExitCode != run.ExitCode
+		b.Command = run.Detail
+		b.Output = run.Output
 		b.Status = st
-		b.ExitCode = it.ToolRun.ExitCode
+		b.ExitCode = run.ExitCode
 		b.Theme = m.theme
 		if exp, ok := m.expanded[it.ID]; ok {
 			b.Expanded = exp
-		} else if it.ToolRun.Local {
-			// User "!cmd" results should stay open so output is visible.
+		} else if run.Local || run.Expanded {
+			// User "!cmd" / plugin Expanded: keep body visible.
 			b.Expanded = true
-		} else if b.Status == block.BashRunning && b.Output != "" {
+		} else if b.Status == status.ToolRunning && b.Output != "" {
 			b.Expanded = true
 		}
 		if b.Expanded != prevExp {
@@ -204,23 +203,21 @@ func (m *Mapper) patchTool(w components.Widget, it session.Item) (ok, dirty bool
 	if !ok {
 		return false, false
 	}
-	detail := it.ToolInput
-	if it.ToolRun.Detail != "" {
-		detail = it.ToolRun.Detail
-	}
-	st := uiToolStatus(it.ToolRun.Status)
+	st := uiToolStatus(run.Status)
 	prevExp := t.Expanded
-	dirty = t.Name != it.ToolName || t.Detail != detail || t.Output != it.ToolRun.Output ||
-		t.Error != it.ToolRun.Error || t.Status != st
-	t.Name = it.ToolName
-	t.Detail = detail
-	t.Output = it.ToolRun.Output
-	t.Error = it.ToolRun.Error
+	dirty = t.Name != run.Name || t.Detail != run.Detail || t.Output != run.Output ||
+		t.Error != run.Error || t.Status != st
+	t.Name = run.Name
+	t.Detail = run.Detail
+	t.Output = run.Output
+	t.Error = run.Error
 	t.Status = st
 	t.Theme = m.theme
 	t.Spinner = m.spinner
 	if exp, ok := m.expanded[it.ID]; ok {
 		t.Expanded = exp
+	} else if run.Expanded {
+		t.Expanded = true
 	} else if t.Status == status.ToolRunning && t.Output != "" {
 		t.Expanded = true
 	}
@@ -274,7 +271,7 @@ func (m *Mapper) widgetFor(it session.Item) components.Widget {
 			},
 		}
 	case session.ItemCompaction:
-		return &block.CompactionBlock{Theme: m.theme}
+		return &block.CompactionBlock{Theme: m.theme, TokensBefore: it.TokensBefore}
 	case session.ItemTool:
 		return m.toolWidget(it, exp)
 	default:
@@ -283,25 +280,22 @@ func (m *Mapper) widgetFor(it session.Item) components.Widget {
 }
 
 func (m *Mapper) toolWidget(it session.Item, exp bool) components.Widget {
-	detail := it.ToolInput
-	if it.ToolRun.Detail != "" {
-		detail = it.ToolRun.Detail
-	}
+	run := it.ToolRun
 	autoExp := exp
 	if !exp {
-		if it.ToolRun.Local {
+		if run.Local || run.Expanded {
 			autoExp = true
-		} else if it.ToolRun.Status == session.ToolInProgress && it.ToolRun.Output != "" {
+		} else if run.Status == session.ToolInProgress && run.Output != "" {
 			autoExp = true
 		}
 	}
 	id := it.ID
-	if strings.EqualFold(it.ToolName, "bash") {
+	if strings.EqualFold(run.Name, "bash") {
 		return &block.BashBlock{
-			Command:  detail,
-			Output:   it.ToolRun.Output,
-			Status:   bashStatus(it.ToolRun.Status),
-			ExitCode: it.ToolRun.ExitCode,
+			Command:  run.Detail,
+			Output:   run.Output,
+			Status:   uiToolStatus(run.Status),
+			ExitCode: run.ExitCode,
 			Expanded: autoExp,
 			Theme:    m.theme,
 			OnToggle: func(expanded bool) {
@@ -312,7 +306,7 @@ func (m *Mapper) toolWidget(it session.Item, exp bool) components.Widget {
 			},
 		}
 	}
-	if isAgentTreeTool(it.ToolName) {
+	if isAgentTreeTool(run.Name) {
 		a := &block.AgentBlock{
 			Theme:   m.theme,
 			Spinner: m.spinner,
@@ -327,11 +321,11 @@ func (m *Mapper) toolWidget(it session.Item, exp bool) components.Widget {
 		return a
 	}
 	return &block.ToolBlock{
-		Name:     it.ToolName,
-		Detail:   detail,
-		Output:   it.ToolRun.Output,
-		Error:    it.ToolRun.Error,
-		Status:   uiToolStatus(it.ToolRun.Status),
+		Name:     run.Name,
+		Detail:   run.Detail,
+		Output:   run.Output,
+		Error:    run.Error,
+		Status:   uiToolStatus(run.Status),
 		Expanded: autoExp,
 		Theme:    m.theme,
 		Spinner:  m.spinner,
@@ -354,18 +348,15 @@ func isAgentTreeTool(name string) bool {
 }
 
 func (m *Mapper) fillAgentBlock(a *block.AgentBlock, it session.Item) {
-	detail := it.ToolInput
-	if it.ToolRun.Detail != "" {
-		detail = it.ToolRun.Detail
-	}
-	a.Name = it.ToolName
-	a.Detail = detail
-	a.Status = uiToolStatus(it.ToolRun.Status)
+	run := it.ToolRun
+	a.Name = run.Name
+	a.Detail = run.Detail
+	a.Status = uiToolStatus(run.Status)
 	a.Theme = m.theme
 	a.Spinner = m.spinner
-	a.Error = it.ToolRun.Error
+	a.Error = run.Error
 
-	parsed := tools.ParseAgentResult(it.ToolRun.Output)
+	parsed := tools.ParseAgentResult(run.Output)
 	if sum := parsed.RenderableSummary(); sum != "" {
 		a.Summary = sum
 	} else {
@@ -375,8 +366,8 @@ func (m *Mapper) fillAgentBlock(a *block.AgentBlock, it session.Item) {
 	// agent_wait: summary only — the live tree already lives on agent_spawn.
 	// agent_spawn: nested child tools from SubagentStore.
 	a.Children = nil
-	if !strings.EqualFold(it.ToolName, "agent_wait") && m.Children != nil {
-		a.Children = m.Children(it.ToolUseID)
+	if !strings.EqualFold(run.Name, "agent_wait") && m.Children != nil {
+		a.Children = m.Children(run.ToolUseID)
 		if len(a.Children) == 0 && parsed.JobID != "" && m.ChildrenByJob != nil {
 			a.Children = m.ChildrenByJob(parsed.JobID)
 		}
@@ -386,21 +377,6 @@ func (m *Mapper) fillAgentBlock(a *block.AgentBlock, it session.Item) {
 		a.Expanded = exp
 	} else if a.Status == status.ToolRunning || len(a.Children) > 0 || a.Summary != "" {
 		a.Expanded = true
-	}
-}
-
-func bashStatus(s session.ToolStatus) block.BashStatus {
-	switch s {
-	case session.ToolDone:
-		return block.BashDone
-	case session.ToolError:
-		return block.BashError
-	case session.ToolCancelled:
-		return block.BashCancelled
-	case session.ToolRejected:
-		return block.BashRejected
-	default:
-		return block.BashRunning
 	}
 }
 

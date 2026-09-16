@@ -2,10 +2,61 @@ package llm
 
 import "context"
 
+// CompactRequest is one summarization call: the prompt plus the output cap
+// the provider may spend on it. MaxTokens <= 0 leaves the provider default.
+type CompactRequest struct {
+	Prompt    string
+	MaxTokens int
+}
+
+// CompactResult is the model's summary. Truncated reports that the provider
+// stopped at the output cap, so Text is a partial summary that must not be
+// persisted as a session checkpoint.
+type CompactResult struct {
+	Text      string
+	Truncated bool
+}
+
 // Compactor compresses conversation history into a concise summary.
 // Implemented by *client.Client; consumed by session compaction.
 type Compactor interface {
-	Compact(ctx context.Context, summary string) (string, error)
+	Compact(ctx context.Context, req CompactRequest) (CompactResult, error)
+}
+
+type RouterType string
+
+const (
+	OpenAI          RouterType = "OpenAI"
+	OpenAIResponses RouterType = "OpenAIResponses"
+	Anthropic       RouterType = "Anthropic"
+	Gemini          RouterType = "Gemini"
+)
+
+type ThinkMode string
+
+const (
+	Off     ThinkMode = "off"
+	Minimal ThinkMode = "minimal"
+	Low     ThinkMode = "low"
+	Medium  ThinkMode = "medium"
+	High    ThinkMode = "high"
+	XHigh   ThinkMode = "xhigh"
+	Max     ThinkMode = "max"
+)
+
+// ThinkConfig is the provider-agnostic reasoning level. Provider wire formats
+// (OpenAI reasoning_effort, Gemini thinkingBudget/level, …) are applied by
+// each client or model RequestInterceptor.
+type ThinkConfig struct {
+	Mode    ThinkMode
+	Enabled bool
+}
+
+// RequestInterceptor customizes a provider request after BuildRequest and before
+// the HTTP call. Req is the provider's request type (e.g. openai.Request).
+// cfg is the live session ModelConfig so hooks can read Think and other fields.
+type RequestInterceptor[Req any] interface {
+	Before(ctx context.Context, req *Req, cfg ModelConfig) error
 }
 
 // ModelConfig is the connection config for one LLM endpoint: either an
@@ -24,6 +75,9 @@ type ModelConfig struct {
 	// ImageEnabled opts this model into image attachments (clipboard / @file).
 	// Absent or false keeps the composer from attaching images.
 	ImageEnabled bool
+	API          RouterType
+	// Think controls reasoning effort sent as reasoning_effort.
+	Think ThinkConfig
 }
 
 // Role identifies the participant in a chat message.

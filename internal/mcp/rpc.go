@@ -49,9 +49,9 @@ func nextID(counter *atomic.Int64) int64 {
 	return counter.Add(1)
 }
 
-func decodeToolsList(raw json.RawMessage) ([]ToolDef, error) {
+func decodeToolsList(raw json.RawMessage) ([]ToolDefinition, error) {
 	var parsed struct {
-		Tools []ToolDef `json:"tools"`
+		Tools []ToolDefinition `json:"tools"`
 	}
 	if err := json.Unmarshal(raw, &parsed); err != nil {
 		return nil, fmt.Errorf("decode tools/list: %w", err)
@@ -91,17 +91,32 @@ func extractToolContent(raw json.RawMessage) string {
 }
 
 // parseHTTPOrSSEBody accepts plain JSON or SSE lines starting with "data: ".
+// Servers may interleave log notifications (notifications/message, no id)
+// before the response frame, so the first frame that is an actual response
+// (id set, no method) wins. If none matches, the first parseable frame is
+// returned (previous behavior).
 func parseHTTPOrSSEBody(body []byte) (jsonRPCResponse, error) {
 	text := string(body)
+	var first jsonRPCResponse
+	found := false
 	for line := range strings.SplitSeq(text, "\n") {
 		s := strings.TrimSpace(line)
 		if !strings.HasPrefix(s, "data: ") {
 			continue
 		}
 		var rpc jsonRPCResponse
-		if err := json.Unmarshal([]byte(s[len("data: "):]), &rpc); err == nil {
+		if err := json.Unmarshal([]byte(s[len("data: "):]), &rpc); err != nil {
+			continue
+		}
+		if !found {
+			first, found = rpc, true
+		}
+		if rpc.Method == "" && rpc.ID != nil {
 			return rpc, nil
 		}
+	}
+	if found {
+		return first, nil
 	}
 	var rpc jsonRPCResponse
 	if err := json.Unmarshal(body, &rpc); err != nil {

@@ -12,32 +12,37 @@
   <a href="https://github.com/pulseaiclub/phi/releases"><img src="https://img.shields.io/github/v/release/pulseaiclub/phi?style=flat&colorA=222222&colorB=8957E5" alt="Release"></a>
 </p>
 
-A minimal terminal coding agent harness in Go — a sibling to Pi.
+A lean, high-performance terminal coding agent harness in Go — a sibling to Pi.
 
 **Docs:** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
 
+- **Fast and small** — ~15 MB release binary, ~21 MB idle RSS, ~31 ms to first frame; no Node / Electron / Python runtime
 - **Sub-agents** — spawn isolated jobs and watch the full run unfold in the TUI / job logs, without stuffing every turn into the parent context
 - **Hashline edits** — edit by whole-file `@file path#TAG` plus line `LINE#HASH` anchors (same idea as [oh-my-pi](https://github.com/can1357/oh-my-pi)): the model points at anchors instead of rewriting whole files; stale tags/hashes are rejected so over-edits and silent corruption stop here
 - **Permission gate** — Gate / Ask before destructive tools fire; safety is not optional when an agent can touch your tree
 - **MCP without context death** — configure as many MCP servers as you want; their tool schemas **never** enter the model prompt. The system prompt lists **server names** only (like the Skills catalog); the agent uses three meta-tools (`mcp_list` / `mcp_inspect` / `mcp_call`) to discover and call on demand. Same Gate / Ask / Hooks path as built-in tools. See [MCP](#mcp)
 - **Extensions (Go or Rust)** — native binaries speak the **PXB** binary protocol over stdin/stdout; official author SDKs for Go ([`ext/go`](ext/go)) and Rust ([`ext/rust`](ext/rust)): LLM tools, slash commands, event intercepts, confirm dialogs — no reflection; JSON at the SDK edges via `serde_json`. See [Extensions](#extensions)
-- **Any model** — OpenAI-compatible or Anthropic, no vendor lock-in
+- **In-TUI diff review** — `/diff` opens a full-screen git review (working tree / staged / HEAD): syntax-highlighted hunks, line notes, then `a` sends notes to the agent. See [Diff review](#diff-review)
+- **Any model** — OpenAI-compatible, Anthropic, or Gemini via an explicit `api` field; built-in presets for DeepSeek and Gemini. See [Supported models](doc/models.md)
 
 ![phi welcome](assets/phi.png)
 
 ![phi TUI](assets/image.png)
+
+![phi diff review](assets/diff.png)
 
 - [Docs](https://pulseaiclub.github.io/docs/getting-started/)
 - [Quick start](#quick-start)
 - [Footprint](#footprint)
 - [Configuration](#configuration)
 - [Interactive mode](#interactive-mode)
+- [Diff review](#diff-review)
 - [Commands](#commands)
 - [Sessions](#sessions)
 - [Headless mode](#headless-mode)
 - [Skills](#skills)
 - [Permissions](#permissions)
-- [Hooks](#hooks)
+- [Extensions](#extensions)
 - [MCP](#mcp)
 - [Tools](#tools)
 - [Project layout](doc/project-layout.md)
@@ -92,16 +97,35 @@ fulfill your requests. External HTTP fetch is available via MCP when configured.
 
 ## Footprint
 
-phi aims to stay cheap to run and cheap to hack on. Numbers below are for a
-stripped release build (`CGO_ENABLED=0`, `-ldflags="-s -w"`), measured on
-macOS arm64 unless noted.
+Lean is not enough — phi is built to feel instant and stay cheap under load.
+phi numbers are a stripped release build (`CGO_ENABLED=0`, `-ldflags="-s -w"`)
+on macOS arm64. Other harnesses use published Linux PSS / interactive PTY
+figures.
+
+### Time to first frame
+
+<p align="center">
+  <img src="assets/perf-first-frame.png" alt="Time to first frame: phi 0.031s vs other terminal harnesses" width="900">
+</p>
+
+### Idle RAM · 1 session
+
+<p align="center">
+  <img src="assets/perf-ram-1.png" alt="Idle RAM, 1 session: phi 21.2 MB vs other terminal harnesses" width="900">
+</p>
+
+### Idle RAM · 10 sessions
+
+<p align="center">
+  <img src="assets/perf-ram-10.png" alt="Idle RAM, 10 sessions: phi 221 MB vs other terminal harnesses" width="900">
+</p>
 
 | Metric | phi |
 | --- | ---: |
-| Release binary | **~12 MB** |
+| Release binary | **~15 MB** |
 | Idle RSS (1 session) | **~21 MB** |
-| 10 idle sessions (total RSS) | **~196 MB** (~20 MB each) |
-| Time to first frame | **~40 ms** (27–65 ms) |
+| 10 idle sessions (total RSS) | **~221 MB** |
+| Time to first frame | **~31 ms** (26–49 ms) |
 | Cold `go build` (empty `GOCACHE`) | **~5.5 s** |
 | Warm rebuild | **~0.7 s** |
 | Go source (excl. tests) | **~22k LOC** / 107 files |
@@ -120,20 +144,31 @@ file in your browser.
 ```yaml
 # ~/.phi/config.yaml
 models:
-  - name: gpt-4o            # model name; "claude-*" routes to the Anthropic API
+  - name: gpt-4o
+    api: OpenAI             # OpenAI | OpenAIResponses | Anthropic | Gemini (empty → OpenAI-compatible)
     api_key: sk-...         # or set PHI_API_KEY
     base_url: https://api.openai.com/v1   # default; PHI_BASE_URL overrides
     context_window: 128000  # optional
     default: true           # the model used at startup; first entry wins if absent
-  - name: claude-sonnet-4-20250514   # extra models; switchable at runtime
+  - name: claude-sonnet-4-20250514
+    api: Anthropic          # required — no name/URL guessing
     api_key: sk-ant-...
     base_url: https://api.anthropic.com
     context_window: 200000
+  - name: deepseek-flash    # built-in preset: base_url / context / thinking filled in
+    api_key: sk-...
+  - name: gemini-2.5-flash  # built-in preset (api: Gemini)
+    api_key: ...
+    think_level: high       # optional: off | minimal | low | medium | high | …
 
 skill_path: ~/.phi/skills # where SKILL.md files are loaded from
 
 agents:
   enabled: true           # default; set false to disable agent_* sub-agent tools
+  models:                 # optional per-role defaults; omit → inherit parent model
+    explore: cheap-model
+    review: strong-model
+    worker: coding-model
 
 permissions:
   mode: interactive       # interactive | readonly | autopilot | headless-strict
@@ -145,9 +180,20 @@ permissions:
       - "rm -rf *"
 ```
 
+Built-in presets and thinking wire formats: [doc/models.md](doc/models.md).
+
 ### Recommended model: DeepSeek Flash
 
 phi + DeepSeek Flash — the best pairing: grounded, low hallucination, cache hit rates near 100%.
+
+Use the built-in preset (only `name` + `api_key` required):
+
+```yaml
+models:
+  - name: deepseek-flash
+    api_key: sk-...
+    default: true
+```
 
 Measured data:
 
@@ -177,10 +223,10 @@ Environment overrides:
 | `PHI_MODEL`      | `models[].name` (default model) |
 | `PHI_BASE_URL`   | `models[].base_url` (default model) |
 | `PHI_SKILL_PATH` | `skill_path`       |
+| `PHI_THINK_LEVEL` | `models[].think_level` (default model; `off` disables) |
 
-Provider routing: a base URL containing `anthropic` or a model name starting
-with `claude` uses the Anthropic Messages API; everything else uses the
-OpenAI-compatible `/chat/completions` path.
+Provider routing uses the explicit `api` field (`OpenAI` / `Anthropic` /
+`Gemini`). See [Supported models](doc/models.md).
 
 ### Workspace layout
 
@@ -209,11 +255,11 @@ syntax highlighting. Structural markers (`#`, `` ` ``, `*`) are stripped.
 The editor supports:
 
 - `@` — fuzzy file mention picker (type `@` and start typing a path)
-- `/` — slash command picker (`/sessions`, `/resume`, `/clear`)
+- `/` — slash command picker (`/sessions`, `/clear`, `/diff`)
 - `?` — shortcut help picker (lists `/`, `!`, `@`, and key bindings; `Esc` closes)
 - `!command` — run a shell command locally and stream its output into the
   transcript (see [Commands](#commands))
-- `Ctrl+K` — command palette: settings → model / theme / permissions / agents, skills, hooks
+- `Ctrl+K` — command palette: settings → model / theme / permissions / agents (incl. per-role models), skills, hooks
 
 ### Keyboard shortcuts
 
@@ -230,6 +276,21 @@ The editor supports:
 Themes: `Dark` (default), `Darcula`, `Pink`, and `Terminal`, switchable from
 the palette under settings → theme.
 
+## Diff review
+
+`/diff` is a full-screen git review inside the TUI — read the change, leave
+line notes, then hand them to the agent without leaving the terminal.
+
+| Command | What opens |
+| --- | --- |
+| `/diff` | Working tree (`git diff`) |
+| `/diff staged` | Staged changes |
+| `/diff HEAD` | Last commit (`git show`) |
+
+Slash-picker Enter inserts `/diff` plus a trailing space into the composer; submit to open. Inside the overlay:
+`s` side-by-side, `i` add/edit a note, `x` delete, `a` send notes to the agent,
+`?` help, `q` / `Esc` close. Notes persist under `.phi/review.json`.
+
 ## Commands
 
 | Command            | Description                                   |
@@ -240,8 +301,8 @@ the palette under settings → theme.
 | `phi update --check` | Query the latest release without installing |
 | `phi sessions list`| List persisted sessions for this directory    |
 | `/sessions`        | List sessions for this directory (TUI)        |
-| `/resume <id>`     | Resume a session by id or unique prefix (TUI) |
 | `/clear`           | Start a fresh empty session (TUI)             |
+| `/diff`            | Full-screen git review — see [Diff review](#diff-review) |
 | `!command`         | Run a shell command locally, stream output into the transcript; `Esc` cancels it |
 
 In the TUI, `!command` runs locally via `bash -c` — outside the agent loop. It
@@ -256,7 +317,6 @@ Sessions persist automatically per working directory under
 - `phi sessions list` — list session id, mtime, and preview for the current
   directory
 - `/sessions` in the TUI — same, in-app
-- `/resume <id>` — continue a session (id or unique prefix)
 - `/clear` — start a fresh session (new id, empty transcript)
 - `phi run --session <id>` / `phi run --continue-last` — resume headlessly
 
@@ -429,15 +489,21 @@ agents:
 Or toggle for the current session via the palette: settings → agents.
 When disabled, those tools are not registered and the model cannot spawn jobs.
 
+Per-role model defaults (optional) under `agents.models` pick which configured
+model name each role uses when spawned. Omitted roles inherit the parent
+session model. Switch for the current session only via
+settings → agents → models → explore|review|worker (same session-only semantics
+as settings → model; does not write `config.yaml`).
+
 Sub-agents themselves use a **role** (`explore` default | `review` | `worker`):
 
 | Role | Tools | Use for |
 |------|--------|---------|
-| `explore` | read-only (+ allowlisted bash) | Search / map structure |
-| `review` | read-only (+ allowlisted bash) | Diffs / checks; no edits |
-| `worker` | full tools except nesting | Planned, independent edits |
+| `explore` | no write/edit; bash except hard denies | Multi-hop recon / map structure |
+| `review` | same as explore | Diffs / checks; report only |
+| `worker` | full tools except nesting; bash except hard denies | Scoped, self-contained edits |
 
-Default stays explore (read-only). Prefer worker only after the parent has a concrete plan.
+Default stays explore (no edits). Prefer worker when the task is to implement a scoped change in an isolated context.
 
 ## Tools
 

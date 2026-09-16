@@ -344,11 +344,13 @@
 
   .field { min-width: 0; }
 
-  .field-name { grid-column: span 5; }
-  .field-base { grid-column: span 7; }
-  .field-key { grid-column: span 6; }
-  .field-context { grid-column: span 3; }
-  .field-image { grid-column: span 3; }
+  .field-name { grid-column: span 4; }
+  .field-api { grid-column: span 2; }
+  .field-base { grid-column: span 6; }
+  .field-key { grid-column: span 5; }
+  .field-think { grid-column: span 3; }
+  .field-context { grid-column: span 2; }
+  .field-image { grid-column: span 2; }
 
   .field-label-row {
     display: flex;
@@ -677,8 +679,9 @@
   @media (max-width: 900px) {
     .model-fields { grid-template-columns: repeat(6, minmax(0, 1fr)); }
     .field-name, .field-base { grid-column: span 3; }
+    .field-api, .field-think { grid-column: span 3; }
     .field-key { grid-column: span 4; }
-    .field-context { grid-column: span 2; }
+    .field-context, .field-image { grid-column: span 2; }
   }
 
   @media (max-width: 720px) {
@@ -694,7 +697,7 @@
     .model-card-actions { width: 100%; justify-content: flex-end; }
     .default-control { flex: 1 1 auto; }
     .model-fields, .settings-fields, .rules-grid, .rule-body { grid-template-columns: minmax(0, 1fr); }
-    .field-name, .field-base, .field-key, .field-context, .settings-fields .field-full, .rule-body .field-wide { grid-column: auto; }
+    .field-name, .field-api, .field-base, .field-key, .field-think, .field-context, .field-image, .settings-fields .field-full, .rule-body .field-wide { grid-column: auto; }
     .panel { padding-right: 0; }
     .panel + .panel { margin-top: 26px; padding-top: 26px; padding-left: 0; border-top: 1px solid var(--border); border-left: 0; }
     .rule-group + .rule-group { padding-top: 24px; padding-left: 0; border-top: 1px solid var(--border); border-left: 0; }
@@ -903,7 +906,7 @@ const I18N = {
     configFile: "Config file",
     loadingPath: "Loading...",
     modelsHeading: "Models",
-    modelsHelp: "Keep at least one model; only one can be the startup model.",
+    modelsHelp: "Keep at least one model; only one can be the startup model. Built-in presets (exact name): deepseek-flash, deepseek-v4-pro, gemini-2.5-*, gemini-3-*.",
     addModel: "+ Add model",
     generalHeading: "General",
     generalHelp: "Choose where skill files are loaded from.",
@@ -960,14 +963,31 @@ const I18N = {
     setStartupModel: "Set as startup model",
     unnamedModel: "Untitled model",
     modelName: "Model name",
-    modelNameHelp: "Type a name, or fetch the list from the current API base URL and pick one.",
-    modelNamePlaceholder: "e.g. gpt-4o",
+    modelNameHelp: "Exact preset names auto-fill base URL / context / API. Or type any name and fetch from the provider.",
+    modelNamePlaceholder: "e.g. deepseek-flash or gpt-4o",
+    apiRouter: "API",
+    apiRouterHelp: "Explicit provider route. Empty defaults to OpenAI-compatible.",
+    apiUnset: "(default / OpenAI)",
+    apiOpenAI: "OpenAI",
+    apiOpenAIResponses: "OpenAI Responses",
+    apiAnthropic: "Anthropic",
+    apiGemini: "Gemini",
     apiBase: "API base URL",
-    apiBaseHelp: "OpenAI-compatible or Anthropic-compatible endpoint.",
+    apiBaseHelp: "Provider endpoint. Presets fill this when left empty.",
     apiBasePlaceholder: "e.g. https://api.openai.com/v1",
     apiKey: "API Key",
     apiKeyHelp: "Hidden by default; click Show to reveal temporarily.",
     apiKeyPlaceholder: "Enter API key",
+    thinkLevel: "Thinking level",
+    thinkLevelHelp: "Maps to provider reasoning settings. off disables thinking.",
+    thinkUnset: "(default)",
+    thinkOff: "off",
+    thinkMinimal: "minimal",
+    thinkLow: "low",
+    thinkMedium: "medium",
+    thinkHigh: "high",
+    thinkXHigh: "xhigh",
+    thinkMax: "max",
     contextWindow: "Context window",
     contextWindowHelp: "Maximum context length the model can handle.",
     imageEnabled: "Image enabled",
@@ -1012,7 +1032,7 @@ const I18N = {
     configFile: "配置文件",
     loadingPath: "正在加载...",
     modelsHeading: "模型",
-    modelsHelp: "必须至少保留 1 个模型；只能设置 1 个启动模型。",
+    modelsHelp: "必须至少保留 1 个模型；只能设置 1 个启动模型。内置 preset（精确名称）：deepseek-flash、deepseek-v4-pro、gemini-2.5-*、gemini-3-*。",
     addModel: "+ 添加模型",
     generalHeading: "通用设置",
     generalHelp: "指定技能文件的加载目录。",
@@ -1069,14 +1089,31 @@ const I18N = {
     setStartupModel: "设为启动模型",
     unnamedModel: "未命名模型",
     modelName: "模型名称",
-    modelNameHelp: "可手动填写，也可以从当前 API 地址获取列表后选择。",
-    modelNamePlaceholder: "例如 gpt-4o",
+    modelNameHelp: "精确匹配 preset 名称会自动补齐 base URL / context / API；也可手动填写后从服务商拉取列表。",
+    modelNamePlaceholder: "例如 deepseek-flash 或 gpt-4o",
+    apiRouter: "API",
+    apiRouterHelp: "显式指定提供商。留空则走 OpenAI 兼容协议。",
+    apiUnset: "（默认 / OpenAI）",
+    apiOpenAI: "OpenAI",
+    apiOpenAIResponses: "OpenAI Responses",
+    apiAnthropic: "Anthropic",
+    apiGemini: "Gemini",
     apiBase: "API 地址",
-    apiBaseHelp: "OpenAI-compatible 或 Anthropic 兼容地址。",
+    apiBaseHelp: "服务商 endpoint。使用 preset 时可留空。",
     apiBasePlaceholder: "例如 https://api.openai.com/v1",
     apiKey: "API Key",
     apiKeyHelp: "默认隐藏，仅在点击“显示”时临时展示。",
     apiKeyPlaceholder: "输入 API Key",
+    thinkLevel: "思考等级",
+    thinkLevelHelp: "映射到各家 reasoning 参数；选 off 关闭思考。",
+    thinkUnset: "（默认）",
+    thinkOff: "off",
+    thinkMinimal: "minimal",
+    thinkLow: "low",
+    thinkMedium: "medium",
+    thinkHigh: "high",
+    thinkXHigh: "xhigh",
+    thinkMax: "max",
     contextWindow: "上下文窗口",
     contextWindowHelp: "模型可处理的最大上下文长度。",
     imageEnabled: "图片支持",
@@ -1318,6 +1355,7 @@ async function fetchModels(row) {
         baseUrl: row.base.value.trim(),
         apiKey: row.key.value.trim(),
         model: row.name.value.trim(),
+        api: row.api.value.trim(),
       }),
       signal: controller.signal,
     });
@@ -1351,6 +1389,8 @@ function refreshModelRow(row) {
   row.modelPicker.setAttribute("aria-label", t("selectModel"));
   const pickPlaceholder = row.modelPicker.querySelector('option[value=""]');
   if (pickPlaceholder) pickPlaceholder.textContent = t("chooseFromList");
+  refreshApiOptions(row);
+  refreshThinkOptions(row);
   row.keyToggle.textContent = row.key.type === "text" ? t("hideKey") : t("showKey");
   row.keyToggle.title = t("toggleKeyTitle");
   row.keyToggle.setAttribute("aria-label", t("toggleKeyTitle"));
@@ -1365,6 +1405,37 @@ function refreshModelRow(row) {
   } else if (row.fetchStatusFallback) {
     row.fetchStatus.textContent = row.fetchStatusFallback;
   }
+}
+
+function refreshApiOptions(row) {
+  const current = row.api.value;
+  row.api.innerHTML = "";
+  row.api.appendChild(el("option", { value: "" }, t("apiUnset")));
+  row.api.appendChild(el("option", { value: "OpenAI" }, t("apiOpenAI")));
+  row.api.appendChild(el("option", { value: "OpenAIResponses" }, t("apiOpenAIResponses")));
+  row.api.appendChild(el("option", { value: "Anthropic" }, t("apiAnthropic")));
+  row.api.appendChild(el("option", { value: "Gemini" }, t("apiGemini")));
+  row.api.value = ["OpenAI", "OpenAIResponses", "Anthropic", "Gemini"].includes(current) ? current : "";
+}
+
+function refreshThinkOptions(row) {
+  const current = row.think.value;
+  const levels = [
+    ["", "thinkUnset"],
+    ["off", "thinkOff"],
+    ["minimal", "thinkMinimal"],
+    ["low", "thinkLow"],
+    ["medium", "thinkMedium"],
+    ["high", "thinkHigh"],
+    ["xhigh", "thinkXHigh"],
+    ["max", "thinkMax"],
+  ];
+  row.think.innerHTML = "";
+  for (const [value, key] of levels) {
+    row.think.appendChild(el("option", { value }, t(key)));
+  }
+  const allowed = levels.map(([v]) => v);
+  row.think.value = allowed.includes(current) ? current : "";
 }
 
 function applyLang() {
@@ -1428,6 +1499,14 @@ function addModelRow(model) {
     placeholder: t("contextPlaceholder"),
     inputmode: "numeric",
   });
+  const api = el("select", {
+    id: "model-api-" + id,
+    "aria-label": t("apiRouter"),
+  });
+  const think = el("select", {
+    id: "model-think-" + id,
+    "aria-label": t("thinkLevel"),
+  });
   const image = el("input", {
     id: "model-image-" + id,
     type: "checkbox",
@@ -1473,6 +1552,8 @@ function addModelRow(model) {
     name,
     key,
     base,
+    api,
+    think,
     context,
     image,
     imageTouched: false,
@@ -1493,6 +1574,10 @@ function addModelRow(model) {
     fetchStatusFallback: "",
     dom: null,
   };
+  refreshApiOptions(row);
+  refreshThinkOptions(row);
+  if (value.api) api.value = value.api;
+  if (value.thinkLevel) think.value = value.thinkLevel;
 
   const keyShell = el("div", { class: "input-shell" }, key, keyToggle);
   const nameControl = el("div", { class: "model-name-control" },
@@ -1502,8 +1587,10 @@ function addModelRow(model) {
   );
   const fields = el("div", { class: "model-fields" },
     field("modelName", "modelNameHelp", nameControl, "field-name", name.id, null, fetchButton),
+    field("apiRouter", "apiRouterHelp", api, "field-api", api.id),
     field("apiBase", "apiBaseHelp", base, "field-base", base.id),
     field("apiKey", "apiKeyHelp", keyShell, "field-key", key.id),
+    field("thinkLevel", "thinkLevelHelp", think, "field-think", think.id),
     field("contextWindow", "contextWindowHelp", context, "field-context", context.id, "tokens"),
     field("imageEnabled", "imageEnabledHelp", image, "field-image", image.id),
   );
@@ -1538,6 +1625,8 @@ function addModelRow(model) {
   });
   fetchButton.addEventListener("click", () => fetchModels(row));
   base.addEventListener("input", () => { clearModelOptions(row); markDirty("models"); });
+  api.addEventListener("change", () => { clearModelOptions(row); markDirty("models"); });
+  think.addEventListener("change", () => { markDirty("models"); });
   key.addEventListener("input", () => {
     key.setAttribute("aria-invalid", "false");
     clearModelOptions(row);
@@ -1700,6 +1789,8 @@ function buildPayload() {
       name: row.name.value.trim(),
       apiKey: row.key.value.trim(),
       baseUrl: row.base.value.trim(),
+      api: row.api.value.trim() || null,
+      thinkLevel: row.think.value.trim() || null,
       contextWindow: readOptionalInteger(row.context),
       imageEnabled: row.imageTouched ? row.image.checked : row.origImageEnabled,
       default: row.def.checked,

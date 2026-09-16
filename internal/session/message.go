@@ -1,6 +1,7 @@
 package session
 
 import (
+	"slices"
 	"strings"
 
 	"github.com/pulseaiclub/phi/internal/llm"
@@ -110,6 +111,27 @@ func (s ToolStatus) String() string {
 	}
 }
 
+// ParseToolStatus maps a progress / persist string onto ToolStatus.
+// Unknown values (including "") become ToolInProgress so live rows keep spinning.
+func ParseToolStatus(s string) ToolStatus {
+	switch s {
+	case "queued":
+		return ToolQueued
+	case "in-progress":
+		return ToolInProgress
+	case "done":
+		return ToolDone
+	case "error":
+		return ToolError
+	case "cancelled":
+		return ToolCancelled
+	case "rejected", "rejected-by-user":
+		return ToolRejected
+	default:
+		return ToolInProgress
+	}
+}
+
 // ToolRun is the live execution state for a tool_use id.
 type ToolRun struct {
 	ToolUseID string
@@ -120,6 +142,7 @@ type ToolRun struct {
 	Detail    string // optional one-line detail (path, cmd summary)
 	ExitCode  int    // set when a local bash run finishes (Status Done/Error)
 	Local     bool   // user "!cmd" bash; ignored by agent streaming/busy checks
+	Expanded  bool   // TUI starts the tool row open (user toggle still wins)
 }
 
 // Message is one session message. Assistant rows carry Content blocks and State.
@@ -134,6 +157,8 @@ type Message struct {
 	// Usage is token consumption for the latest assistant turn (UI + diagnostics).
 	// Zero means unknown / not yet reported by the provider.
 	Usage TokenUsage
+	// TokensBefore is the context size before a compaction cut (RoleCompaction rows).
+	TokensBefore int
 }
 
 // TokenUsage is a UI-facing copy of provider token counts for one completion.
@@ -142,6 +167,16 @@ type TokenUsage struct {
 	CompletionTokens int
 	CachedTokens     int // prompt cache reads (c in the composer)
 	TotalTokens      int
+}
+
+// TokenUsageFrom converts provider usage into the UI-facing copy.
+func TokenUsageFrom(u llm.Usage) TokenUsage {
+	return TokenUsage{
+		PromptTokens:     u.PromptTokens,
+		CompletionTokens: u.CompletionTokens,
+		CachedTokens:     u.CachedTokens(),
+		TotalTokens:      u.TotalTokens,
+	}
 }
 
 // Reported is true when the provider sent any non-zero token count.
@@ -226,10 +261,12 @@ type CompactionStarted struct{}
 func (CompactionStarted) isSessionEvent() {}
 
 // CompactionComplete clears the compacting activity and, when Failed is false,
-// appends a "Compacted" transcript marker.
+// appends a compaction transcript marker. TokensBefore is the context size
+// before the cut, which that marker shows.
 type CompactionComplete struct {
-	ID     string
-	Failed bool
+	ID           string
+	TokensBefore int
+	Failed       bool
 }
 
 func (CompactionComplete) isSessionEvent() {}
@@ -239,4 +276,16 @@ type Snapshot struct {
 	Messages   []Message
 	Tools      map[string]ToolRun
 	Compacting bool
+}
+
+// LastUsage returns the newest reported token usage in the snapshot. The UI
+// uses it to restore the token readout after a resume instead of keeping the
+// previous session's counts.
+func (s Snapshot) LastUsage() TokenUsage {
+	for _, m := range slices.Backward(s.Messages) {
+		if m.Usage.Reported() {
+			return m.Usage
+		}
+	}
+	return TokenUsage{}
 }

@@ -229,8 +229,7 @@ func installFromGit(ctx context.Context, opts InstallOptions, spec Spec, dest st
 		}
 	}
 
-	// Clone into a temp sibling of dest so an update can swap directories
-	// atomically on the same volume (no window where dest is missing).
+	// Clone beside dest so installation can rename on the same volume.
 	tmp, err := os.MkdirTemp(filepath.Dir(dest), ".phi-clone-")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
@@ -285,12 +284,11 @@ func installFromGit(ctx context.Context, opts InstallOptions, spec Spec, dest st
 	return nil
 }
 
-// placeTree moves a staged tree into dest. When replace is set, dest is moved
-// aside first so it is never half-written, then the backup is removed.
+// placeTree moves a staged tree into dest. Replacement first copies the complete
+// tree beside dest, then swaps directories so a failed copy leaves dest untouched.
 func placeTree(staging, dest string, replace bool) error {
 	if !replace {
 		if err := os.Rename(staging, dest); err != nil {
-			// Cross-device rename: copy into place.
 			if err2 := copyTree(staging, dest); err2 != nil {
 				_ = os.RemoveAll(dest)
 				return fmt.Errorf("install to %s: rename: %w; copy: %w", dest, err, err2)
@@ -298,19 +296,36 @@ func placeTree(staging, dest string, replace bool) error {
 		}
 		return nil
 	}
+
 	bak := filepath.Join(filepath.Dir(dest), "."+filepath.Base(dest)+".old")
-	_ = os.RemoveAll(bak)
+	if _, err := os.Lstat(bak); err == nil {
+		return fmt.Errorf("refusing to replace %s: unresolved backup %s exists", dest, bak)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("check backup %s: %w", bak, err)
+	}
+
+	incoming, err := os.MkdirTemp(filepath.Dir(dest), ".phi-stage-")
+	if err != nil {
+		return fmt.Errorf("create replacement staging dir: %w", err)
+	}
+	defer func() { _ = os.RemoveAll(incoming) }()
+	if err := copyTree(staging, incoming); err != nil {
+		return fmt.Errorf("stage replacement for %s: %w", dest, err)
+	}
 	if err := os.Rename(dest, bak); err != nil {
 		return fmt.Errorf("move aside %s: %w", dest, err)
 	}
-	if err := os.Rename(staging, dest); err != nil {
-		if err2 := copyTree(staging, dest); err2 != nil {
-			_ = os.Rename(bak, dest) // best-effort restore
-			return fmt.Errorf("install new version to %s: rename: %w; copy: %w", dest, err, err2)
+	if err := os.Rename(incoming, dest); err != nil {
+		if rollbackErr := os.Rename(bak, dest); rollbackErr != nil {
+			return fmt.Errorf(
+				"install new version to %s: %w; rollback failed (backup retained at %s): %w",
+				dest, err, bak, rollbackErr,
+			)
 		}
+		return fmt.Errorf("install new version to %s: %w", dest, err)
 	}
 	if err := os.RemoveAll(bak); err != nil {
-		return fmt.Errorf("installed %s but could not remove backup %s: %w", dest, bak, err)
+		return fmt.Errorf("installed %s but could not remove backup %s (backup retained): %w", dest, bak, err)
 	}
 	return nil
 }

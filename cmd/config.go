@@ -46,8 +46,11 @@ type modelDoc struct {
 	ContextWindow *int   `yaml:"context_window,omitempty" json:"contextWindow,omitempty"`
 	// ImageEnabled is a pointer so the editor can omit the key until the user
 	// toggles it (absent vs false). Runtime parse treats absence as false.
-	ImageEnabled *bool `yaml:"image_enabled,omitempty" json:"imageEnabled,omitempty"`
-	Default      bool  `yaml:"default,omitempty"       json:"default"`
+	ImageEnabled *bool  `yaml:"image_enabled,omitempty" json:"imageEnabled,omitempty"`
+	API          string `yaml:"api,omitempty"           json:"api,omitempty"` // OpenAI | OpenAIResponses | Anthropic | Gemini
+	ThinkEnabled *bool  `yaml:"think_enabled,omitempty" json:"thinkEnabled,omitempty"`
+	ThinkLevel   string `yaml:"think_level,omitempty"   json:"thinkLevel,omitempty"`
+	Default      bool   `yaml:"default,omitempty"       json:"default"`
 }
 
 type permDoc struct {
@@ -65,13 +68,23 @@ type bashDoc struct {
 }
 
 type agentsDoc struct {
-	Enabled bool `yaml:"enabled" json:"enabled"`
+	// Enabled is a pointer so omitting the key in YAML/JSON keeps default-on
+	// when only agents.models is set.
+	Enabled *bool            `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Models  *agentsModelsDoc `yaml:"models,omitempty"  json:"models,omitempty"`
+}
+
+type agentsModelsDoc struct {
+	Explore string `yaml:"explore,omitempty" json:"explore,omitempty"`
+	Review  string `yaml:"review,omitempty"  json:"review,omitempty"`
+	Worker  string `yaml:"worker,omitempty"  json:"worker,omitempty"`
 }
 
 type modelListRequest struct {
 	BaseURL string `json:"baseUrl"`
 	APIKey  string `json:"apiKey"`
 	Model   string `json:"model"`
+	API     string `json:"api"` // OpenAI | OpenAIResponses | Anthropic | Gemini; empty falls back to legacy heuristics
 }
 
 type modelListItem struct {
@@ -170,7 +183,7 @@ func (*configHandler) handleModels(w http.ResponseWriter, r *http.Request) {
 
 	baseURL := strings.TrimSpace(input.BaseURL)
 	apiKey := strings.TrimSpace(input.APIKey)
-	anthropic := isAnthropicModelRequest(baseURL, input.Model)
+	anthropic := isAnthropicAPI(input.API, baseURL, input.Model)
 	if baseURL == "" {
 		if anthropic {
 			baseURL = "https://api.anthropic.com"
@@ -255,7 +268,14 @@ func modelListHTTPClient() *http.Client {
 	return &client
 }
 
-func isAnthropicModelRequest(baseURL, model string) bool {
+func isAnthropicAPI(api, baseURL, model string) bool {
+	switch strings.TrimSpace(api) {
+	case "Anthropic":
+		return true
+	case "OpenAI", "OpenAIResponses", "Gemini":
+		return false
+	}
+	// Empty api: keep legacy heuristics so older editor sessions still fetch.
 	return strings.Contains(strings.ToLower(baseURL), "anthropic") ||
 		strings.HasPrefix(strings.ToLower(strings.TrimSpace(model)), "claude")
 }

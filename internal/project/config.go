@@ -10,6 +10,7 @@ import (
 
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/permission"
+	"github.com/pulseaiclub/phi/internal/project/model"
 )
 
 // Config is the project-level configuration loaded from ~/.phi/config.yaml.
@@ -28,6 +29,16 @@ type Config struct {
 // to keep ordinary sessions lean and avoid loading the extra tool schemas.
 type AgentsConfig struct {
 	Enabled bool // true when absent from config
+	// Models names optional per-role defaults (explore|review|worker).
+	// Empty → inherit the parent session model.
+	Models AgentsRoleModels
+}
+
+// AgentsRoleModels maps sub-agent roles to configured model names.
+type AgentsRoleModels struct {
+	Explore string `yaml:"explore"`
+	Review  string `yaml:"review"`
+	Worker  string `yaml:"worker"`
 }
 
 // Model returns the default model config with the skill path applied, ready
@@ -101,11 +112,6 @@ func loadConfig(global GlobalLayout) (*Config, error) {
 	if def.APIKey == "" {
 		return nil, fmt.Errorf("missing api_key (set PHI_API_KEY or models[].api_key in %s)", global.ConfigFile())
 	}
-	for i := range cfg.Models {
-		if cfg.Models[i].BaseURL == "" {
-			cfg.Models[i].BaseURL = "https://api.openai.com/v1"
-		}
-	}
 	if cfg.SkillPath == "" {
 		cfg.SkillPath = global.SkillsDir()
 	}
@@ -149,15 +155,60 @@ func parseConfigFile(path string) (*Config, error) {
 		applyPermissions(&cfg.Permissions, raw.Permissions)
 	}
 	if raw.Agents != nil {
-		cfg.Agents.Enabled = raw.Agents.Enabled
+		if raw.Agents.Enabled != nil {
+			cfg.Agents.Enabled = *raw.Agents.Enabled
+		}
+		if raw.Agents.Models != nil {
+			cfg.Agents.Models = AgentsRoleModels{
+				Explore: strings.TrimSpace(raw.Agents.Models.Explore),
+				Review:  strings.TrimSpace(raw.Agents.Models.Review),
+				Worker:  strings.TrimSpace(raw.Agents.Models.Worker),
+			}
+		}
 	}
 	return cfg, nil
 }
 
 func modelEntryToConfig(m modelEntry) llm.ModelConfig {
-	cfg := llm.ModelConfig{Name: m.Name, APIKey: m.APIKey, BaseURL: m.BaseURL, ImageEnabled: m.ImageEnabled}
+	cfg := llm.ModelConfig{Name: m.Name, APIKey: m.APIKey, BaseURL: m.BaseURL}
+	// A built-in preset supplies base_url / context_window / image_enabled / api
+	// when the entry omits them; the explicit fields below still win so
+	// users can override any default.
+	if preset, ok := model.Lookup(m.Name); ok {
+		pc := preset.Config
+		if cfg.BaseURL == "" {
+			cfg.BaseURL = pc.BaseURL
+		}
+		if pc.ContextWindow > 0 {
+			cfg.ContextWindow = pc.ContextWindow
+		}
+		cfg.ImageEnabled = pc.ImageEnabled
+		if cfg.API == "" {
+			cfg.API = pc.API
+		}
+		// Inherit the preset's thinking config so models like deepseek-flash
+		// ship with sensible defaults (thinking enabled, high mode).
+		cfg.Think = pc.Think
+	}
+	if m.API != "" {
+		cfg.API = m.API
+	}
 	if m.ContextWindow != nil && *m.ContextWindow > 0 {
 		cfg.ContextWindow = *m.ContextWindow
+	}
+	if m.ImageEnabled != nil {
+		cfg.ImageEnabled = *m.ImageEnabled
+	}
+	if m.ThinkEnabled != nil {
+		cfg.Think.Enabled = *m.ThinkEnabled
+	}
+	if m.ThinkLevel != nil && *m.ThinkLevel != "" {
+		mode := llm.ThinkMode(*m.ThinkLevel)
+		cfg.Think.Mode = mode
+		cfg.Think.Enabled = mode != llm.Off
+	}
+	if cfg.BaseURL == "" {
+		cfg.BaseURL = "https://api.openai.com/v1"
 	}
 	return cfg
 }
@@ -171,17 +222,21 @@ type fileConfig struct {
 }
 
 type agentsConfig struct {
-	Enabled bool `yaml:"enabled"`
+	// Enabled is a pointer so omitting the key keeps the default (on).
+	Enabled *bool             `yaml:"enabled"`
+	Models  *AgentsRoleModels `yaml:"models"`
 }
 
 type modelEntry struct {
-	Name          string `yaml:"name"`
-	APIKey        string `yaml:"api_key"`
-	BaseURL       string `yaml:"base_url"`
-	ContextWindow *int   `yaml:"context_window"`
-	// ImageEnabled is opt-in; YAML absence decodes as false.
-	ImageEnabled bool `yaml:"image_enabled"`
-	Default      bool `yaml:"default"`
+	Name          string         `yaml:"name"`
+	APIKey        string         `yaml:"api_key"`
+	BaseURL       string         `yaml:"base_url"`
+	ContextWindow *int           `yaml:"context_window"`
+	ImageEnabled  *bool          `yaml:"image_enabled"`
+	API           llm.RouterType `yaml:"api"`
+	Default       bool           `yaml:"default"`
+	ThinkEnabled  *bool          `yaml:"think_enabled"`
+	ThinkLevel    *string        `yaml:"think_level"`
 }
 
 type permConfig struct {
@@ -288,6 +343,11 @@ func applyEnvOverrides(c *Config) {
 	}
 	if v := firstEnv("PHI_SKILL_PATH"); v != "" {
 		c.SkillPath = v
+	}
+	if v := firstEnv("PHI_THINK_LEVEL"); v != "" {
+		entry := c.defaultEntry()
+		entry.Think.Mode = llm.ThinkMode(v)
+		entry.Think.Enabled = (v != string(llm.Off))
 	}
 }
 

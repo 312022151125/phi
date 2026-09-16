@@ -64,7 +64,8 @@ func TestConfigHandlerGETAndRoundTrip(t *testing.T) {
 	require.NotNil(t, got.Permissions.Bash)
 	assert.Equal(t, []string{"^git "}, got.Permissions.Bash.Allow)
 	require.NotNil(t, got.Agents)
-	assert.False(t, got.Agents.Enabled)
+	require.NotNil(t, got.Agents.Enabled)
+	assert.False(t, *got.Agents.Enabled)
 	assert.Equal(t, path, got.Path)
 
 	// Edit: drop model-b and change the api_key, keep permissions untouched.
@@ -163,6 +164,8 @@ func TestConfigHandlerServesPage(t *testing.T) {
 	require.Contains(t, body, `type: "password"`)
 	assert.Contains(t, body, "tokens")
 	assert.Contains(t, body, "seconds")
+	assert.Contains(t, body, "apiRouter")
+	assert.Contains(t, body, "thinkLevel")
 	assert.Contains(t, body, "/api/config")
 	assert.Contains(t, body, "/api/models")
 }
@@ -170,6 +173,7 @@ func TestConfigHandlerServesPage(t *testing.T) {
 func TestConfigHandlerListsModels(t *testing.T) {
 	cases := []struct {
 		name       string
+		api        string
 		model      string
 		response   string
 		wantPath   string
@@ -178,6 +182,7 @@ func TestConfigHandlerListsModels(t *testing.T) {
 	}{
 		{
 			name:       "openai compatible",
+			api:        "OpenAI",
 			model:      "gpt-4o",
 			response:   `{"data":[{"id":"z-model"},{"id":"a-model"},{"id":"z-model"}]}`,
 			wantPath:   "/v1/models",
@@ -188,7 +193,8 @@ func TestConfigHandlerListsModels(t *testing.T) {
 			},
 		},
 		{
-			name:       "anthropic",
+			name:       "anthropic explicit api",
+			api:        "Anthropic",
 			model:      "claude-sonnet-4-20250514",
 			response:   `{"data":[{"id":"claude-sonnet-4-20250514","display_name":"Claude Sonnet"}]}`,
 			wantPath:   "/v1/models",
@@ -196,6 +202,18 @@ func TestConfigHandlerListsModels(t *testing.T) {
 			checkAuth: func(t *testing.T, r *http.Request) {
 				assert.Equal(t, "test-key", r.Header.Get("X-Api-Key"))
 				assert.Equal(t, "2023-06-01", r.Header.Get("Anthropic-Version"))
+			},
+		},
+		{
+			name:       "claude name with openai api stays openai",
+			api:        "OpenAI",
+			model:      "claude-via-proxy",
+			response:   `{"data":[{"id":"proxy-model"}]}`,
+			wantPath:   "/v1/models",
+			wantModels: []string{"proxy-model"},
+			checkAuth: func(t *testing.T, r *http.Request) {
+				assert.Equal(t, "Bearer test-key", r.Header.Get("Authorization"))
+				assert.Empty(t, r.Header.Get("X-Api-Key"))
 			},
 		},
 	}
@@ -214,6 +232,7 @@ func TestConfigHandlerListsModels(t *testing.T) {
 				BaseURL: server.URL + "/v1",
 				APIKey:  "test-key",
 				Model:   tc.model,
+				API:     tc.api,
 			})
 			require.NoError(t, err)
 

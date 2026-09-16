@@ -58,3 +58,10 @@ func TestBuildRequestNoImagesKeepsStringContent(t *testing.T) {
 	require.Len(t, raw.Messages, 1)
 	assert.Equal(t, `"hi"`, string(raw.Messages[0].Content))
 }
+
+func TestBuildRequestDoesNotInferDeepSeekExtraBody(t *testing.T) {
+	cfg := llm.ModelConfig{Name: "deepseek-flash", Think: llm.ThinkConfig{Enabled: true, Mode: llm.High}}
+	req := BuildRequest(cfg, "", []llm.Message{{Role: llm.RoleUser, Content: "hi"}}, nil)
+	assert.Nil(t, req.ExtraBody)
+	assert.Equal(t, "high", req.ReasoningEffort)
+}

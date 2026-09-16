@@ -3,6 +3,8 @@ package update_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
+
 	"github.com/pulseaiclub/phi/internal/util/update"
 )
 
@@ -19,20 +21,16 @@ func TestVersionLess(t *testing.T) {
 	}
 	for _, tc := range cases {
 		if got := update.VersionLess(tc.a, tc.b); got != tc.want {
-			t.Fatalf("VersionLess(%q, %q)=%v want %v", tc.a, tc.b, got, tc.want)
+			require.Equal(t, tc.want, got, "VersionLess(%q, %q)", tc.a, tc.b)
 		}
 	}
 }
 
 func TestIsDevBuild(t *testing.T) {
 	for _, v := range []string{"", "dev", "DEV", "dev-c788df9", "DEV-C788DF9", "0.0.0", "v0.0.0"} {
-		if !update.IsDevBuild(v) {
-			t.Fatalf("IsDevBuild(%q)=false, want true", v)
-		}
+		require.True(t, update.IsDevBuild(v), "expected dev build: %q", v)
 	}
 	for _, v := range []string{"v0.1.0", "v0.19.0", "development"} {
-		if update.IsDevBuild(v) {
-			t.Fatalf("IsDevBuild(%q)=true, want false", v)
-		}
+		require.False(t, update.IsDevBuild(v), "%q should not be dev", v)
 	}
 }

@@ -76,9 +76,23 @@ go get github.com/pulseaiclub/phi/ext/go@v0.21.0
 Slow tools (HTTP fetch, long builds, …) should set `TimeoutSec` — the host’s
 default RPC wait is **30s**. Values are clamped to 1–3600.
 
+Cancellation or timeout of an in-flight RPC terminates the extension process,
+including its other pending calls. Reload the extension before using it again.
+This is process-level cancellation, not a cooperative cancellation signal to
+individual handlers; separately spawned background processes may need their own
+cleanup. SDK handlers execute serially. Requests received during a confirmation
+wait are queued with a fixed limit and processed after the handler returns.
+
+PXB limits each encoded payload to **16 MiB**, including all result fields.
+Oversized tool results return an explicit error; keep large output in a file and
+return a concise summary and path.
+
 Set `DetailFromArgs` so the TUI tool row shows a one-line summary (path, URL, …)
 instead of raw JSON while the tool is in progress. The host RPCs the extension
 with a short default timeout (not `TimeoutSec`).
+
+Set `Expanded: true` on `ToolResult` when the tool body should start open in the
+TUI (e.g. a plan). The user can still collapse it; toggle state wins after that.
 
 Set `Readable: true` on side-effect-free tools (read-only lookups, pure
 computation) so the host may run a batch of all-readable calls concurrently.
@@ -180,8 +194,8 @@ Reload: **Ctrl+K → extensions → reload**.
 
 Lean crate under [`ext/rust`](../ext/rust) — same wire protocol,
 byte-for-byte compatible with the Go SDK (golden-tested against the Go
-fixtures). Deps: `serde`/`serde_json` at the JSON edges plus `tokio` (`rt`
-feature) to drive async tool handlers. Requires Rust ≥ 1.75.
+fixtures). Deps: `serde`/`serde_json` at the JSON edges plus `tokio` (`rt`, `net`,
+`time` features) to drive async tool handlers with IO and timer support. Requires Rust ≥ 1.75.
 
 ```bash
 # pre-release: tracks the latest main (crate publishes under ext/rust/vX.Y.Z tags)
@@ -324,9 +338,10 @@ phi plugin remove greet          # uninstall (alias: rm)
 ```
 
 Install records the GitHub source in `.phi-install.json` inside the extension
-directory. `update` re-resolves that source and swaps the directory atomically
-(the old tree is kept as a backup until the swap completes); release archives
-are preferred, with the same git-clone fallback as install. A pinned ref
+directory. `update` prepares the complete replacement beside the installed tree
+before switching directories. The old tree is kept as a backup until the switch
+completes; release archives are preferred, with the same git-clone fallback as
+install. A pinned ref
 (`@v1.2.3`) stays pinned — override it with `phi plugin update greet@latest`
 or another tag.
 

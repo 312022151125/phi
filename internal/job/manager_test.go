@@ -3,7 +3,6 @@ package job_test
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -79,7 +78,7 @@ func TestCancelStopsRunner(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(2 * time.Second):
-		t.Fatal("runner did not start")
+		require.Fail(t, "runner did not start")
 	}
 
 	require.NoError(t, m.Cancel(ctx, info.ID))
@@ -169,9 +168,10 @@ func TestHandleWaitTimeoutDoesNotCancelJob(t *testing.T) {
 	require.NoError(t, err)
 
 	raw, _ := json.Marshal(job.WaitArgs{JobID: info.ID, TimeoutSec: 1})
-	_, err = m.HandleWait(t.Context(), raw)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, job.ErrWaitTimeout) || errors.Is(err, context.DeadlineExceeded))
+	result, err := m.HandleWait(t.Context(), raw)
+	require.NoError(t, err)
+	assert.Equal(t, info.ID, result.Info.ID)
+	assert.False(t, result.Info.Status.Terminal())
 
 	// Job still live until Cancel.
 	got, err := m.Get(t.Context(), info.ID)
@@ -326,7 +326,7 @@ func TestSubscribeProgress(t *testing.T) {
 			require.True(t, ok)
 			got = append(got, p)
 		case <-deadline:
-			t.Fatalf("timeout, got %d events", len(got))
+			require.Failf(t, "timeout", "got %d events", len(got))
 		}
 	}
 	assert.Equal(t, info.ID, got[0].JobID)

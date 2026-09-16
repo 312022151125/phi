@@ -11,6 +11,7 @@ cmd/main.go
        ├─ ComposerPane     chat, @/slash pickers, palette (input only)
        ├─ FooterChrome     status slot (activity↔tokens), bottom row for ext/jobs/hints
        ├─ Overlays         permission ask, continue ask
+       ├─ DiffPane         full-screen git diff review (`/diff`)
        └─ Submitter        submit / cancel / slash / bash → Controller
 ```
 
@@ -23,6 +24,7 @@ cmd/main.go
 | `ComposerPane` | `ChatInput`, pickers, `palette` | callbacks `onSubmit`, `onCancel`, `onRedraw` |
 | `FooterChrome` | `ActivityHandler`, `Spinner` | `labelContext()`, `liveJobs()` closures |
 | `Overlays` | `permAskState`, `continueAskState` | `activity` ref, reply callbacks |
+| `DiffPane` | review overlay (rows, notes, search) | `cwd`, submit/copy/toast callbacks |
 | `Submitter` | `BashRunner` | `Controller`, `Bus`, `CommandRegistry`, pane refs |
 
 **Hard rule:** no `*Editor` back-pointers on handlers. Cross-domain work uses injected refs, callbacks, or `Bus.Publish`. Toast feedback uses `ToastMsg` (Editor owns the overlay); do not inject toast callbacks.
@@ -39,6 +41,7 @@ internal/tui/
 ├── composer/               # ComposerPane, Wire(), Input iface
 ├── footer/                 # FooterChrome, token label helpers
 ├── overlays/               # permission + continue ask
+├── diffpane/               # git diff review overlay (`/diff`)
 ├── submit/                 # Submitter, BashRunner
 ├── commands/               # registry, builtins, SessionCommands, ExtCommands
 └── pathutil/               # short path + git branch labels
@@ -52,6 +55,7 @@ internal/tui/
 | `composer` | Keyboard routing for chat, `/` slash, `@` mention, Ctrl+K palette |
 | `footer` | Composer status slot (activity ↔ tokens), bottom footer row (ext status, jobs, update hint) |
 | `overlays` | Modal permission / continue-ask panels; replaces composer when active |
+| `diffpane` | Full-screen git diff review; comments persist under `.phi/review.json` |
 | `submit` | User submit path: agent prompt, slash commands, `!bash`, cancel |
 | `commands` | Slash/palette registry; session load/clear; extension command bridge |
 | `pathutil` | Cwd shortening and git branch labels for composer chrome |
@@ -77,16 +81,14 @@ ui.StartBranchWatch()
 app.Run(ui)
 ```
 
-Inside `NewEditor`, the `CommandRegistry` (builtins) is built first, then panes in dependency order:
-
-1. `FooterChrome` — status slot + bottom footer row (needs `contextWindow`)
-2. `TranscriptPane` — shares footer spinner; usage callback → footer status slot
-3. `ComposerPane` — chat chrome; footer binds composer for status slot
-4. `Overlays` — permission/continue UI; uses footer activity + composer focus
-5. `SessionCommands`, `ExtCommands`, `Submitter` (owns `BashRunner`) — explicit deps, no `*Editor` fields
-6. `ComposerPane.Wire(...)` — connects composer keyboard path to submitter, overlays, bus
+Inside `NewEditor`, panes are built first, then `commands.NewBuiltinRegistry`
+assembles the registry and domain handlers (`SessionCommands`, `ExtCommands`,
+settings/skills/diff). `Builtin.Bind` attaches Submitter / picker / stream
+guard after `Submitter` exists. `ComposerPane.Wire(...)` connects the keyboard
+path last.
 
 `Editor` does **not** call `project.GetDefaultProject` or construct `Controller`.
+It does **not** own command side effects — those live in `internal/tui/commands`.
 
 ---
 
@@ -194,11 +196,13 @@ Composer input is blocked while an overlay is active (`OverlayBlocksComposer`).
 /something or Ctrl+K
   → ComposerPane local UI OR SubmitMsg with slash text
   → Submitter.dispatchSlash → CommandRegistry
-  → SessionCommands (/clear, /resume, …) or builtins
+  → SessionCommands (/clear) or builtins
   → ExtCommands (async) → ExtCommandResultMsg → palette push / toast
 ```
 
-`commandBridge` in `editor` builds `commands.CommandContext` for builtins (model switch, theme, permissions, …).
+`commands.NewBuiltinRegistry` owns slash/palette registration. Domain handlers
+(`SessionCommands`, `SettingsCommands`, `ExtCommands`, …) call `Ctrl` / `Bus` /
+composer directly — no Editor closures.
 
 ### 6. Background chrome
 

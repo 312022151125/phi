@@ -15,7 +15,12 @@ import (
 	"github.com/pulseaiclub/phi/internal/util"
 )
 
-const defaultBaseURL = "https://generativelanguage.googleapis.com/v1beta"
+const (
+	defaultBaseURL = "https://generativelanguage.googleapis.com/v1beta"
+	// finishReasonMaxTokens is the Gemini finish reason for a candidate that hit
+	// the output cap: the text is a prefix, not a finished answer.
+	finishReasonMaxTokens = "MAX_TOKENS"
+)
 
 type part struct {
 	Text             string            `json:"text,omitempty"`
@@ -65,23 +70,76 @@ type GeminiRequest struct {
 	// ThinkingConfig opts Gemini 2.x+ out of default thinking so reasoning text
 	// stays out of the visible stream unless the model cannot disable it.
 	ThinkingConfig *thinkingConfig `json:"thinkingConfig,omitempty"`
+	// GenerationConfig carries the output cap Compaction sets so a runaway
+	// summary cannot outgrow the context the summary is meant to free.
+	GenerationConfig *generationConfig `json:"generationConfig,omitempty"`
 }
 
-// DisableThinking sets thinkingConfig for models that think by default.
-// Gemini 2.x accepts thinkingBudget 0; Gemini 3 Pro cannot disable thinking and
-// Flash/Flash-Lite have no full off, so use the lowest level without
-// includeThoughts to keep hidden reasoning invisible.
-func (req *GeminiRequest) DisableThinking(model string) {
-	m := strings.ToLower(model)
-	switch {
-	case strings.Contains(m, "gemini-3") && strings.Contains(m, "pro"):
-		req.ThinkingConfig = &thinkingConfig{ThinkingLevel: "LOW"}
-	case strings.Contains(m, "gemini-3"):
-		req.ThinkingConfig = &thinkingConfig{ThinkingLevel: "MINIMAL"}
-	default:
-		// Zero disables thinking; a pointer keeps it on the wire (omitempty would drop it).
+type generationConfig struct {
+	MaxOutputTokens int `json:"maxOutputTokens,omitempty"`
+}
+
+// SetMaxOutputTokens caps how many tokens the model may generate. n <= 0 keeps
+// the provider default.
+func (req *GeminiRequest) SetMaxOutputTokens(n int) {
+	if n <= 0 {
+		return
+	}
+	if req.GenerationConfig == nil {
+		req.GenerationConfig = &generationConfig{}
+	}
+	req.GenerationConfig.MaxOutputTokens = n
+}
+
+// ApplyBudgetThinking maps ThinkConfig to Gemini 2.x thinkingBudget.
+func (req *GeminiRequest) ApplyBudgetThinking(think llm.ThinkConfig) {
+	if !think.Enabled {
 		zero := 0
 		req.ThinkingConfig = &thinkingConfig{ThinkingBudget: &zero}
+		return
+	}
+	budget := mapThinkModeToBudget(think.Mode)
+	req.ThinkingConfig = &thinkingConfig{ThinkingBudget: &budget}
+}
+
+// ApplyLevelThinking maps ThinkConfig to Gemini 3.x thinkingLevel.
+// offLevel is used when thinking is disabled (models that cannot fully turn off).
+func (req *GeminiRequest) ApplyLevelThinking(think llm.ThinkConfig, offLevel string) {
+	if !think.Enabled {
+		if offLevel == "" {
+			offLevel = "MINIMAL"
+		}
+		req.ThinkingConfig = &thinkingConfig{ThinkingLevel: offLevel}
+		return
+	}
+	req.ThinkingConfig = &thinkingConfig{ThinkingLevel: mapThinkModeToGeminiLevel(think.Mode)}
+}
+
+// mapThinkModeToGeminiLevel maps ThinkMode to Gemini 3's thinkingLevel string.
+func mapThinkModeToGeminiLevel(mode llm.ThinkMode) string {
+	switch mode {
+	case llm.Minimal:
+		return "MINIMAL"
+	case llm.Low:
+		return "LOW"
+	case llm.Medium:
+		return "MEDIUM"
+	default: // high, xhigh, max, and anything else
+		return "HIGH"
+	}
+}
+
+// mapThinkModeToBudget maps ThinkMode to a token budget for Gemini 2.x.
+func mapThinkModeToBudget(mode llm.ThinkMode) int {
+	switch mode {
+	case llm.Minimal:
+		return 1024
+	case llm.Low:
+		return 2048
+	case llm.Medium:
+		return 8192
+	default: // high, xhigh, max, and anything else
+		return 16384
 	}
 }
 
@@ -163,11 +221,11 @@ func lastFunctionResponseContent(contents []content) *content {
 func toToolMessage(tools []llm.ToolDefinition) []functionDeclaration {
 	decls := make([]functionDeclaration, 0, len(tools))
 	for _, t := range tools {
-		params, _ := json.Marshal(t.Params)
-		if len(params) == 0 || bytes.Equal(bytes.TrimSpace(params), []byte("null")) {
-			params = json.RawMessage(`{"type":"object"}`)
-		}
-		decls = append(decls, functionDeclaration{Name: t.Name, Description: t.Description, Parameters: params})
+		decls = append(decls, functionDeclaration{
+			Name:        t.Name,
+			Description: t.Description,
+			Parameters:  llm.MarshalToolParams(t.Params, `{"type":"object"}`),
+		})
 	}
 	return decls
 }
@@ -215,8 +273,11 @@ func getURL(model, baseURL, apiKey string, stream bool) string {
 	return u.String()
 }
 
-func getStreamURL(model, baseURL, apiKey string) string {
-	return getURL(model, baseURL, apiKey, true)
+func setGeminiAuth(req *http.Request, baseURL, apiKey string) {
+	req.Header.Set("Content-Type", "application/json")
+	if apiKey != "" && strings.Contains(strings.ToLower(baseURL), "aiplatform.googleapis.com") {
+		req.Header.Set("Authorization", "Bearer "+apiKey)
+	}
 }
 
 func Stream(
@@ -226,8 +287,6 @@ func Stream(
 	req *GeminiRequest,
 ) iter.Seq2[llm.StreamEvent, error] {
 	return func(yield func(llm.StreamEvent, error) bool) {
-		// Gemini 2.x+ thinks by default; opt out unless reasoning was requested.
-		req.DisableThinking(config.Name)
 		body, err := json.Marshal(req)
 		if err != nil {
 			yield(llm.StreamEvent{}, err)
@@ -237,17 +296,14 @@ func Stream(
 		httpReq, err := http.NewRequestWithContext(
 			ctx,
 			http.MethodPost,
-			getStreamURL(config.Name, config.BaseURL, config.APIKey), bytes.NewReader(body),
+			getURL(config.Name, config.BaseURL, config.APIKey, true),
+			bytes.NewReader(body),
 		)
 		if err != nil {
 			yield(llm.StreamEvent{}, err)
 			return
 		}
-
-		httpReq.Header.Set("Content-Type", "application/json")
-		if strings.Contains(strings.ToLower(config.BaseURL), "aiplatform.googleapis.com") && config.APIKey != "" {
-			httpReq.Header.Set("Authorization", "Bearer "+config.APIKey)
-		}
+		setGeminiAuth(httpReq, config.BaseURL, config.APIKey)
 
 		httpResp, err := util.DoWithRetry(client, httpReq)
 		if err != nil {
@@ -269,6 +325,7 @@ type chunk struct {
 		Content struct {
 			Parts []part `json:"parts"`
 		} `json:"content"`
+		FinishReason string `json:"finishReason"`
 	} `json:"candidates"`
 
 	UsageMetadata struct {
@@ -351,20 +408,7 @@ func processStream(body io.Reader, yield func(llm.StreamEvent, error) bool) {
 			}
 		}
 	}
-	yield(llm.StreamEvent{
-		Type: llm.StreamEventTypeDone,
-		Partial: llm.Response{
-			Choices: []llm.Choice{{
-				Message: llm.Message{
-					Role:             llm.RoleAssistant,
-					Content:          text.String(),
-					ReasoningContent: reasoning.String(),
-					ToolCalls:        toolCalls,
-				},
-			}},
-			Usage: usage,
-		},
-	}, nil)
+	yield(llm.AssistantDone(text.String(), reasoning.String(), toolCalls, usage), nil)
 }
 
 func toLLMToolCall(p part, index int) llm.ToolCall {
@@ -381,57 +425,66 @@ func toLLMToolCall(p part, index int) llm.ToolCall {
 	return toolCall
 }
 
+// Compact builds a minimal non-streaming Gemini body for one summarization call.
 func Compact(
 	ctx context.Context,
 	client *http.Client,
 	cfg llm.ModelConfig,
-	prompt string,
-) (string, error) {
-	req := BuildRequest("", []llm.Message{{Role: llm.RoleUser, Content: prompt}}, nil)
-	req.DisableThinking(cfg.Name)
+	req llm.CompactRequest,
+) (llm.CompactResult, error) {
+	body := BuildRequest("", []llm.Message{{Role: llm.RoleUser, Content: req.Prompt}}, nil)
+	body.SetMaxOutputTokens(req.MaxTokens)
+	return CompactRequest(ctx, client, cfg, &body)
+}
+
+// CompactRequest POSTs a non-streaming Gemini body and returns assistant text.
+func CompactRequest(
+	ctx context.Context,
+	client *http.Client,
+	cfg llm.ModelConfig,
+	req *GeminiRequest,
+) (llm.CompactResult, error) {
 	body, err := json.Marshal(req)
 	if err != nil {
-		return "", nil
+		return llm.CompactResult{}, err
 	}
 	request, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		// Non-streaming endpoint: the whole body is a single JSON response.
 		getURL(cfg.Name, cfg.BaseURL, cfg.APIKey, false),
 		bytes.NewReader(body),
 	)
 	if err != nil {
-		return "", nil
+		return llm.CompactResult{}, err
 	}
-	request.Header.Set("Content-Type", "application/json")
-	if strings.Contains(strings.ToLower(cfg.BaseURL), "aiplatform.googleapis.com") && cfg.APIKey != "" {
-		request.Header.Set("Authorization", "Bearer "+cfg.APIKey)
-	}
+	setGeminiAuth(request, cfg.BaseURL, cfg.APIKey)
 	httpResp, err := util.DoWithRetry(client, request)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	defer httpResp.Body.Close()
 	raw, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		return "", llm.FormatAPIError("gemini", httpResp.StatusCode, raw)
+		return llm.CompactResult{}, llm.FormatAPIError("gemini", httpResp.StatusCode, raw)
 	}
 	var resp chunk
 	if err := json.Unmarshal(raw, &resp); err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 
 	var b strings.Builder
+	truncated := false
 	for _, c := range resp.Candidates {
 		for _, p := range c.Content.Parts {
 			b.WriteString(p.Text)
 		}
+		truncated = truncated || c.FinishReason == finishReasonMaxTokens
 	}
 	if b.Len() == 0 {
-		return "", errors.New("gemini API error: empty response")
+		return llm.CompactResult{}, errors.New("gemini API error: empty response")
 	}
-	return b.String(), nil
+	return llm.CompactResult{Text: b.String(), Truncated: truncated}, nil
 }

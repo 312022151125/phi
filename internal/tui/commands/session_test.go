@@ -45,7 +45,7 @@ func TestSessionCommands_ShowEmptyToasts(t *testing.T) {
 		Bus:        bus,
 		SessionDir: func() string { return t.TempDir() },
 		OpenPicker: func([]session.SessionMeta, string) {
-			t.Fatal("picker should not open")
+			require.Fail(t, "picker should not open")
 		},
 	}
 	s.Show()
@@ -60,4 +60,14 @@ func TestSessionCommands_AcceptBlocksWhenBusy(t *testing.T) {
 	}
 	s.Accept("abc")
 	assert.Contains(t, drainToast(t, bus), "Cannot resume")
+}
+
+func TestSessionCommands_ClearBlocksWhenBusy(t *testing.T) {
+	bus := controller.NewBus(nil)
+	s := &SessionCommands{
+		Bus:          bus,
+		StreamActive: func() bool { return true },
+	}
+	s.Clear()
+	assert.Contains(t, drainToast(t, bus), "Cannot clear")
 }

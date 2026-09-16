@@ -3,6 +3,7 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -54,6 +55,19 @@ func TestLookBinPrefersBinDir(t *testing.T) {
 	got, err := p.Global().LookBin("rg")
 	require.NoError(t, err)
 	assert.Equal(t, fake, got)
+}
+
+func TestLookBinFindsWindowsExe(t *testing.T) {
+	if runtime.GOOS != "windows" {
+		t.Skip("Windows binaries are installed with an .exe suffix")
+	}
+	p := discoverInTempHome(t)
+	exe := filepath.Join(p.Global().BinDir(), "fd.exe")
+	require.NoError(t, os.WriteFile(exe, []byte("MZ"), 0o755))
+
+	got, err := p.Global().LookBin("fd")
+	require.NoError(t, err)
+	assert.Equal(t, exe, got)
 }
 
 func TestLookBinFallsBackToPATH(t *testing.T) {
@@ -189,6 +203,64 @@ agents:
 	assert.False(t, p.Config().Agents.Enabled)
 }
 
+func TestLoadConfigAgentsModelsOmitsEnabledKeepsDefaultOn(t *testing.T) {
+	p := discoverInTempHome(t)
+	require.NoError(t, os.WriteFile(p.Global().ConfigFile(), []byte(`
+models:
+  - name: m
+    api_key: k
+agents:
+  models:
+    explore: m
+`), 0o644))
+
+	require.NoError(t, p.LoadConfig())
+	assert.True(t, p.Config().Agents.Enabled)
+	assert.Equal(t, "m", p.Config().Agents.Models.Explore)
+}
+
+func TestLoadConfigAgentsRoleModels(t *testing.T) {
+	p := discoverInTempHome(t)
+	require.NoError(t, os.WriteFile(p.Global().ConfigFile(), []byte(`
+models:
+  - name: parent
+    api_key: k
+    default: true
+  - name: cheap
+    api_key: k
+  - name: strong
+    api_key: k
+agents:
+  enabled: true
+  models:
+    explore: cheap
+    review: strong
+`), 0o644))
+
+	require.NoError(t, p.LoadConfig())
+	cfg := p.Config()
+	assert.Equal(t, "cheap", cfg.Agents.Models.Explore)
+	assert.Equal(t, "strong", cfg.Agents.Models.Review)
+	assert.Empty(t, cfg.Agents.Models.Worker)
+}
+
+func TestLoadConfigAgentsRoleModelUnknownKept(t *testing.T) {
+	p := discoverInTempHome(t)
+	require.NoError(t, os.WriteFile(p.Global().ConfigFile(), []byte(`
+models:
+  - name: parent
+    api_key: k
+agents:
+  models:
+    explore: missing-model
+`), 0o644))
+
+	require.NoError(t, p.LoadConfig())
+	assert.Equal(t, "missing-model", p.Config().Agents.Models.Explore)
+	_, ok := p.Config().FindModel("missing-model")
+	assert.False(t, ok)
+}
+
 func TestLoadConfigScalarOrInlineListForms(t *testing.T) {
 	// The old line scanner only understood block lists (and treated an inline
 	// sequence as one literal string); real YAML handles scalar and flow forms.
@@ -281,4 +353,44 @@ models:
 	cfg := p.Config()
 	assert.Empty(t, cfg.DefaultModel)
 	assert.Equal(t, "first", cfg.Model().Name)
+}
+
+func TestLoadConfigAppliesDeepSeekPresets(t *testing.T) {
+	p := discoverInTempHome(t)
+	require.NoError(t, os.WriteFile(p.Global().ConfigFile(), []byte(`
+models:
+  - name: deepseek-flash
+    api_key: sk-flash
+  - name: deepseek-v4-pro
+    api_key: sk-pro
+    context_window: 50000
+  - name: custom-model
+    api_key: sk-custom
+    base_url: https://custom.example/v1
+`), 0o644))
+
+	require.NoError(t, p.LoadConfig())
+	cfg := p.Config()
+
+	// deepseek-flash: only name + api_key → preset fills the rest.
+	flash, ok := cfg.FindModel("deepseek-flash")
+	require.True(t, ok)
+	assert.Equal(t, "https://api.deepseek.com", flash.BaseURL)
+	assert.Equal(t, 1_000_000, flash.ContextWindow)
+	assert.True(t, flash.ImageEnabled, "flash supports image input")
+
+	// deepseek-v4-pro: explicit context_window overrides the preset; image
+	// stays off because v4-pro has no image understanding.
+	pro, ok := cfg.FindModel("deepseek-v4-pro")
+	require.True(t, ok)
+	assert.Equal(t, "https://api.deepseek.com", pro.BaseURL)
+	assert.Equal(t, 50_000, pro.ContextWindow, "explicit context_window overrides preset")
+	assert.False(t, pro.ImageEnabled, "v4-pro has no image understanding")
+
+	// Unknown names keep the generic OpenAI fallback and no preset.
+	custom, ok := cfg.FindModel("custom-model")
+	require.True(t, ok)
+	assert.Equal(t, "https://custom.example/v1", custom.BaseURL)
+	assert.Zero(t, custom.ContextWindow)
+	assert.False(t, custom.ImageEnabled)
 }

@@ -14,7 +14,12 @@ import (
 	"github.com/pulseaiclub/phi/internal/util"
 )
 
-const chatCompletionsPath = "/chat/completions"
+const (
+	chatCompletionsPath = "/chat/completions"
+	// finishReasonLength is the OpenAI finish reason for a completion that hit
+	// the output cap: the content is a prefix, not a finished answer.
+	finishReasonLength = "length"
+)
 
 type streamOptions struct {
 	IncludeUsage bool `json:"include_usage"`
@@ -33,33 +38,40 @@ type apiMessage struct {
 	ToolCallID       string         `json:"tool_call_id,omitempty"`
 }
 
-type apiRequest struct {
-	Model         string         `json:"model"`
-	Messages      []apiMessage   `json:"messages"`
-	Tools         []apiTool      `json:"tools,omitempty"`
-	Stream        bool           `json:"stream,omitempty"`
-	StreamOptions *streamOptions `json:"stream_options,omitempty"`
-	ExtraBody     *ExtraBody     `json:"extra_body,omitempty"`
+// Request is the OpenAI-compatible chat completions body.
+type Request struct {
+	Model           string         `json:"model"`
+	Messages        []apiMessage   `json:"messages"`
+	Tools           []apiTool      `json:"tools,omitempty"`
+	Stream          bool           `json:"stream,omitempty"`
+	StreamOptions   *streamOptions `json:"stream_options,omitempty"`
+	ExtraBody       *ExtraBody     `json:"extra_body,omitempty"`
+	ReasoningEffort string         `json:"reasoning_effort,omitempty"`
+	// MaxTokens caps the completion length. Compaction sets it so a runaway
+	// summary cannot outgrow the context the summary is meant to free.
+	MaxTokens int `json:"max_tokens,omitempty"`
 }
 
-// ExtraBody holds provider-specific request fields (e.g. DeepSeek thinking).
+// ExtraBody holds vendor extensions nested under extra_body (e.g. DeepSeek).
 type ExtraBody struct {
 	Thinking *ThinkingConfig `json:"thinking,omitempty"`
 }
 
-// ThinkingConfig enables reasoning mode.
+// ThinkingConfig is a vendor thinking toggle inside ExtraBody. ClearThinking is
+// a z.ai addition: false keeps earlier reasoning in context ("preserved
+// thinking"), which interleaved tool calling needs; nil omits the field so
+// providers that do not know it are unaffected.
 type ThinkingConfig struct {
-	Type string `json:"type"`
+	Type          string `json:"type"`
+	ClearThinking *bool  `json:"clear_thinking,omitempty"`
 }
 
-// StreamChunk is a raw SSE chunk from the provider.
-type StreamChunk struct {
-	Choices []StreamChoice `json:"choices"`
+type streamChunk struct {
+	Choices []streamChoice `json:"choices"`
 	Usage   *llm.Usage     `json:"usage,omitempty"`
 }
 
-// StreamChoice is one streaming choice.
-type StreamChoice struct {
+type streamChoice struct {
 	Delta   llm.StreamDelta `json:"delta"`
 	Message *llm.Message    `json:"message,omitempty"`
 }
@@ -96,8 +108,9 @@ func toAPIMessage(m llm.Message) apiMessage {
 
 // BuildRequest converts the normalized messages into an OpenAI-shaped request.
 // The system prompt is prepended as a system message, mirroring the previous
-// in-client behavior.
-func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, tools []llm.ToolDefinition) *apiRequest {
+// in-client behavior. Vendor-specific fields (e.g. DeepSeek extra_body) belong
+// on model presets via RequestInterceptor, not here.
+func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, tools []llm.ToolDefinition) *Request {
 	msgs := make([]apiMessage, 0, len(messages)+1)
 	if strings.TrimSpace(system) != "" {
 		msgs = append(msgs, apiMessage{Role: llm.RoleSystem, Content: system})
@@ -111,70 +124,97 @@ func BuildRequest(cfg llm.ModelConfig, system string, messages []llm.Message, to
 		apiTools[i] = apiTool{Type: "function", Function: t}
 	}
 
-	var extra *ExtraBody
-	if isThinkingModeModel(cfg.Name) {
-		extra = &ExtraBody{Thinking: &ThinkingConfig{Type: "enabled"}}
+	var reasoningEffort string
+	if cfg.Think.Enabled {
+		reasoningEffort = string(cfg.Think.Mode)
 	}
 
-	return &apiRequest{
-		Model:         cfg.Name,
-		Messages:      msgs,
-		Tools:         apiTools,
-		Stream:        true,
-		StreamOptions: &streamOptions{IncludeUsage: true},
-		ExtraBody:     extra,
+	return &Request{
+		Model:           cfg.Name,
+		Messages:        msgs,
+		Tools:           apiTools,
+		Stream:          true,
+		StreamOptions:   &streamOptions{IncludeUsage: true},
+		ReasoningEffort: reasoningEffort,
 	}
 }
 
-func isThinkingModeModel(model string) bool {
-	return strings.HasPrefix(strings.ToLower(model), "deepseek")
+func chatCompletionsURL(baseURL string) string {
+	if strings.HasSuffix(baseURL, chatCompletionsPath) {
+		return baseURL
+	}
+	return baseURL + chatCompletionsPath
 }
 
-// Compact sends a single non-streaming chat request and returns the assistant
-// text. Satisfies llm.Compactor for session compaction.
-func Compact(ctx context.Context, httpClient *http.Client, cfg llm.ModelConfig, prompt string) (string, error) {
-	body, err := json.Marshal(&apiRequest{
-		Model:    cfg.Name,
-		Messages: []apiMessage{{Role: llm.RoleUser, Content: prompt}},
-	})
-	if err != nil {
-		return "", err
-	}
-
-	url := cfg.BaseURL
-	if !strings.HasSuffix(url, chatCompletionsPath) {
-		url += chatCompletionsPath
-	}
-
+func newChatRequest(ctx context.Context, url, apiKey string, body []byte, stream bool) (*http.Request, error) {
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Authorization", "Bearer "+cfg.APIKey)
+	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+	if stream {
+		httpReq.Header.Set("Accept", util.ContentEventStream)
+	}
+	return httpReq, nil
+}
+
+// NewCompactRequest builds a minimal non-streaming chat body for Compact.
+func NewCompactRequest(model, prompt string, maxTokens int) *Request {
+	return &Request{
+		Model:     model,
+		Messages:  []apiMessage{{Role: llm.RoleUser, Content: prompt}},
+		MaxTokens: maxTokens,
+	}
+}
+
+// CompactRequest POSTs a non-streaming chat request body and returns assistant text.
+func CompactRequest(
+	ctx context.Context,
+	httpClient *http.Client,
+	cfg llm.ModelConfig,
+	req *Request,
+) (llm.CompactResult, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return llm.CompactResult{}, err
+	}
+
+	httpReq, err := newChatRequest(ctx, chatCompletionsURL(cfg.BaseURL), cfg.APIKey, body, false)
+	if err != nil {
+		return llm.CompactResult{}, err
+	}
 
 	httpResp, err := util.DoWithRetry(httpClient, httpReq)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	defer httpResp.Body.Close()
 
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	if httpResp.StatusCode != http.StatusOK {
-		return "", llm.FormatAPIError("LLM", httpResp.StatusCode, respBody)
+		return llm.CompactResult{}, llm.FormatAPIError("LLM", httpResp.StatusCode, respBody)
 	}
 
-	var resp llm.Response
+	var resp struct {
+		Choices []struct {
+			Message      llm.Message `json:"message"`
+			FinishReason string      `json:"finish_reason"`
+		} `json:"choices"`
+	}
 	if err := json.Unmarshal(respBody, &resp); err != nil {
-		return "", err
+		return llm.CompactResult{}, err
 	}
 	if len(resp.Choices) == 0 {
-		return "", errors.New("LLM API error: empty choices")
+		return llm.CompactResult{}, errors.New("LLM API error: empty choices")
 	}
-	return resp.Choices[0].Message.Content, nil
+	return llm.CompactResult{
+		Text:      resp.Choices[0].Message.Content,
+		Truncated: resp.Choices[0].FinishReason == finishReasonLength,
+	}, nil
 }
 
 // StreamChatCompletion POSTs a streaming chat completion and yields normalized events.
@@ -192,19 +232,11 @@ func StreamChatCompletion(
 			return
 		}
 
-		url := baseURL
-		if !strings.HasSuffix(url, chatCompletionsPath) {
-			url += chatCompletionsPath
-		}
-
-		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+		httpReq, err := newChatRequest(ctx, chatCompletionsURL(baseURL), apiKey, body, true)
 		if err != nil {
 			yield(llm.StreamEvent{}, err)
 			return
 		}
-		httpReq.Header.Set("Content-Type", "application/json")
-		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-		httpReq.Header.Set("Accept", util.ContentEventStream)
 
 		httpResp, err := util.DoWithRetry(httpClient, httpReq)
 		if err != nil {
@@ -239,7 +271,7 @@ func StreamChatCompletion(
 				decodeData = bytes.ReplaceAll(decodeData, []byte("\t"), []byte(" "))
 			}
 
-			var chunk StreamChunk
+			var chunk streamChunk
 			if err := json.Unmarshal(decodeData, &chunk); err != nil {
 				continue
 			}

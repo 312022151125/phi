@@ -12,22 +12,26 @@
   <a href="https://github.com/pulseaiclub/phi/releases"><img src="https://img.shields.io/github/v/release/pulseaiclub/phi?style=flat&colorA=222222&colorB=8957E5" alt="Release"></a>
 </p>
 
-一个用 Go 编写的最小化终端编码代理框架（harness）——Pi 的姊妹项目。
+一个精简且性能出众的 Go 终端编码代理框架（harness）——Pi 的姊妹项目。
 
 **文档：** [pulseaiclub.github.io](https://pulseaiclub.github.io/)
 
+- **又快又小** — 发布二进制约 15 MB，空闲 RSS 约 21 MB，首帧约 31 ms；无 Node / Electron / Python 运行时
 - **子代理（Sub-agents）** — 拉起隔离任务，在 TUI / job 日志里完整看到执行过程，而不是把每一步都塞进父会话上下文
 - **Hashline 编辑** — 用整文件 `@file path#TAG` 加上行级 `LINE#HASH` 锚点改文件（思路对齐 [oh-my-pi](https://github.com/can1357/oh-my-pi)）：模型瞄锚点改，而不是整文件重写；TAG/哈希对不上就拒绝，避免过度编辑和静默写坏
 - **权限门控** — 危险工具先过 Gate / Ask；代理能碰你的代码树时，安全不是可选项
 - **MCP 不炸上下文** — 随便配多少 MCP 服务器，工具 schema **绝不**进模型 prompt。系统提示只列 **server 名**（像 Skills 目录）；Agent 用三个元工具（`mcp_list` / `mcp_inspect` / `mcp_call`）按需发现再调用；权限仍走 Gate / Ask / Hooks。详见 [MCP](#mcp)
 - **扩展（Go 或 Rust）** — 原生二进制通过 stdin/stdout 讲 **PXB** 协议；官方作者 SDK：Go（[`ext/go`](ext/go)）+ 零依赖 Rust 移植（[`ext/rust`](ext/rust)）：LLM 工具、斜杠命令、事件拦截、确认对话框——无 JSON、无反射。详见 [Extensions（扩展）](#extensions扩展)
-- **任意模型** — OpenAI 兼容或 Anthropic，无厂商锁定
+- **TUI 内 diff 审阅** — `/diff` 全屏审阅 git 改动（工作区 / staged / HEAD）：语法高亮、行级批注，按 `a` 发给代理。详见 [Diff 审阅](#diff-审阅)
+- **任意模型** — 通过显式 `api` 字段支持 OpenAI 兼容、Anthropic、Gemini；内置 DeepSeek / Gemini preset。详见 [支持的模型](doc/models.md)
 
 ![phi 欢迎界面](assets/phi.png)
 
 ![phi TUI](assets/image.png)
 
-你可以通过 [Skills（技能）](#skills技能)、[Hooks（钩子）](#hooks钩子)
+![phi diff 审阅](assets/diff.png)
+
+你可以通过 [Skills（技能）](#skills技能)、[Extensions（扩展）](#extensions扩展)
 和 [MCP](#mcp) 扩展它——不必做成插件框架。
 
 - [文档](https://pulseaiclub.github.io/docs/getting-started/)
@@ -35,12 +39,13 @@
 - [资源占用](#资源占用)
 - [配置](#配置)
 - [交互模式](#交互模式)
+- [Diff 审阅](#diff-审阅)
 - [命令](#命令)
 - [会话](#会话)
 - [无头模式](#无头模式)
 - [Skills（技能）](#skills技能)
 - [权限](#权限)
-- [Hooks（钩子）](#hooks钩子)
+- [Extensions（扩展）](#extensions扩展)
 - [MCP](#mcp)
 - [子代理](#子代理)
 - [工具](#工具)
@@ -93,15 +98,34 @@ TUI 给模型提供四个核心工具——`read`、`write`、`edit` 和 `bash`�
 
 ## 资源占用
 
-phi 的目标是运行便宜、也便于动手改造。以下数据来自剥离的发布构建
-（`CGO_ENABLED=0`，`-ldflags="-s -w"`），除注明外均在 macOS arm64 上测得。
+精简只是底线——phi 还要启动即开、负载下仍省内存。phi 数字来自剥离的发布构建
+（`CGO_ENABLED=0`，`-ldflags="-s -w"`），在 macOS arm64 上测得。其他 harness
+用已公开的 Linux PSS / 交互式 PTY 数据。
+
+### 首帧时间
+
+<p align="center">
+  <img src="assets/perf-first-frame.png" alt="首帧时间：phi 0.031s，对比其他终端 harness" width="900">
+</p>
+
+### 空闲内存 · 1 个会话
+
+<p align="center">
+  <img src="assets/perf-ram-1.png" alt="空闲内存（1 个会话）：phi 21.2 MB，对比其他终端 harness" width="900">
+</p>
+
+### 空闲内存 · 10 个会话
+
+<p align="center">
+  <img src="assets/perf-ram-10.png" alt="空闲内存（10 个会话）：phi 221 MB，对比其他终端 harness" width="900">
+</p>
 
 | 指标 | phi |
 | --- | ---: |
-| 发布二进制 | **约 12 MB** |
+| 发布二进制 | **约 15 MB** |
 | 空闲 RSS（1 个会话） | **约 21 MB** |
-| 10 个空闲会话（RSS 总量） | **约 196 MB**（每个约 20 MB） |
-| 首帧时间 | **约 40 ms**（27–65 ms） |
+| 10 个空闲会话（RSS 总量） | **约 221 MB** |
+| 首帧时间 | **约 31 ms**（26–49 ms） |
 | 冷 `go build`（空 `GOCACHE`） | **约 5.5 s** |
 | 热重建 | **约 0.7 s** |
 | Go 源码（不含测试） | **约 22k 行** / 107 个文件 |
@@ -119,15 +143,22 @@ phi 读取 `~/.phi/config.yaml`（标准 YAML）。环境变量可覆盖配置�
 ```yaml
 # ~/.phi/config.yaml
 models:
-  - name: gpt-4o            # 模型名；"claude-*" 走 Anthropic API
+  - name: gpt-4o
+    api: OpenAI             # OpenAI | OpenAIResponses | Anthropic | Gemini（空则走 OpenAI 兼容）
     api_key: sk-...         # 或设置 PHI_API_KEY
     base_url: https://api.openai.com/v1   # 默认；PHI_BASE_URL 可覆盖
     context_window: 128000  # 可选
     default: true           # 启动时使用的模型；缺省时第一项生效
-  - name: claude-sonnet-4-20250514   # 额外模型；运行时可切换
+  - name: claude-sonnet-4-20250514
+    api: Anthropic          # 必填 — 不再按名字/URL 猜测
     api_key: sk-ant-...
     base_url: https://api.anthropic.com
     context_window: 200000
+  - name: deepseek-flash    # 内置 preset：自动补齐 base_url / context / thinking
+    api_key: sk-...
+  - name: gemini-2.5-flash  # 内置 preset（api: Gemini）
+    api_key: ...
+    think_level: high       # 可选：off | minimal | low | medium | high | …
 
 skill_path: ~/.phi/skills # SKILL.md 文件的加载目录
 
@@ -144,14 +175,18 @@ permissions:
       - "rm -rf *"
 ```
 
+内置 preset 与思考参数上线格式见 [doc/models.md](doc/models.md)。
+
 ### 推荐模型：DeepSeek Flash
 
-**DeepSeek V4 Flash**（`api.deepseek.com` 上的 `deepseek-chat`）——快、便宜，agent 场景下 prefix cache 真能打。
+**DeepSeek Flash**（内置 preset `deepseek-flash`）——快、便宜，agent 场景下 prefix cache 真能打。
+
+只需 name + api_key：
 
 ```yaml
-  - name: deepseek-chat
+models:
+  - name: deepseek-flash
     api_key: sk-...
-    base_url: https://api.deepseek.com/v1
     default: true
 ```
 
@@ -185,9 +220,9 @@ xychart-beta
 | `PHI_MODEL` | `models[].name`（默认模型） |
 | `PHI_BASE_URL` | `models[].base_url`（默认模型） |
 | `PHI_SKILL_PATH` | `skill_path` |
+| `PHI_THINK_LEVEL` | `models[].think_level`（默认模型；`off` 关闭思考） |
 
-提供商路由：base URL 包含 `anthropic` 或模型名以 `claude` 开头时使用
-Anthropic Messages API；其余走 OpenAI 兼容的 `/chat/completions` 路径。
+提供商路由看显式 `api` 字段（`OpenAI` / `Anthropic` / `Gemini`）。详见 [支持的模型](doc/models.md)。
 
 ### 工作区布局
 
@@ -214,7 +249,7 @@ Anthropic Messages API；其余走 OpenAI 兼容的 `/chat/completions` 路径�
 编辑器支持：
 
 - `@` —— 模糊文件选择器（输入 `@` 后开始输入路径）
-- `/` —— 斜杠命令选择器（`/sessions`、`/resume`、`/clear`）
+- `/` —— 斜杠命令选择器（`/sessions`、`/clear`、`/diff`）
 - `?` —— 快捷键帮助选择器（列出 `/`、`!`、`@` 和按键绑定；`Esc` 关闭）
 - `!command` —— 在本地运行 shell 命令，并把输出流式写入对话记录
   （见 [命令](#命令)）
@@ -235,6 +270,21 @@ Anthropic Messages API；其余走 OpenAI 兼容的 `/chat/completions` 路径�
 主题：`Dark`（默认）、`Darcula`、`Pink` 和 `Terminal`，可在面板的
 设置 → 主题中切换。
 
+## Diff 审阅
+
+`/diff` 是 TUI 里的全屏 git 审阅——看改动、写行级批注，再把批注交给代理，
+全程不用离开终端。
+
+| 命令 | 打开内容 |
+| --- | --- |
+| `/diff` | 工作区（`git diff`） |
+| `/diff staged` | 暂存区 |
+| `/diff HEAD` | 最近一次提交（`git show`） |
+
+斜杠选择器里回车会把 `/diff` 连同一个空格填进输入框；再提交才打开。
+审阅层内：`j`/`k` 移动，`s` 左右对照，`i` 添加/编辑批注，`x` 删除，`a` 发给代理，
+`?` 帮助，`q` / `Esc` 关闭。批注保存在 `.phi/review.json`。
+
 ## 命令
 
 | 命令 | 说明 |
@@ -245,8 +295,8 @@ Anthropic Messages API；其余走 OpenAI 兼容的 `/chat/completions` 路径�
 | `phi update --check` | 只查询最新版本，不安装 |
 | `phi sessions list` | 列出当前目录的持久化会话 |
 | `/sessions` | 列出当前目录的会话（TUI 内） |
-| `/resume <id>` | 按 id 或唯一前缀恢复会话（TUI 内） |
 | `/clear` | 开启一个全新的空会话（TUI 内） |
+| `/diff` | 全屏 git 审阅 — 见 [Diff 审阅](#diff-审阅) |
 | `!command` | 在本地运行 shell 命令，把输出流式写入对话记录；`Esc` 取消 |
 
 在 TUI 中，`!command` 通过 `bash -c` 在本地运行——在代理循环之外。它不计入
@@ -259,7 +309,6 @@ Anthropic Messages API；其余走 OpenAI 兼容的 `/chat/completions` 路径�
 
 - `phi sessions list` —— 列出当前目录的会话 id、修改时间和预览
 - TUI 内 `/sessions` —— 同上，在应用内查看
-- `/resume <id>` —— 继续一个会话（id 或唯一前缀）
 - `/clear` —— 开启全新会话（新 id、空对话记录）
 - `phi run --session <id>` / `phi run --continue-last` —— 无头模式恢复会话
 
@@ -422,11 +471,11 @@ agents:
 
 | Role | 工具 | 用途 |
 |------|--------|---------|
-| `explore` | 只读（+ 白名单 bash） | 搜索 / 梳理结构 |
-| `review` | 只读（+ 白名单 bash） | 差异 / 检查；不编辑 |
-| `worker` | 除嵌套外全部工具 | 已规划的独立编辑 |
+| `explore` | 无 write/edit；bash 除硬拒绝外可用 | 多跳侦察 / 梳理结构 |
+| `review` | 与 explore 相同 | 差异 / 检查；只出报告 |
+| `worker` | 除嵌套外全部工具；bash 除硬拒绝外可用 | 范围明确的独立改动 |
 
-默认保持 explore（只读）。只有在父代理已有具体计划时，才优先使用 worker。
+默认保持 explore（不可编辑）。任务是在隔离上下文里落地一块改动时，再用 worker。
 
 ## 工具
 

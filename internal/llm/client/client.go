@@ -4,101 +4,106 @@ import (
 	"context"
 	"iter"
 	"net/http"
-	"strings"
 
 	"github.com/pulseaiclub/phi/internal/llm"
 	"github.com/pulseaiclub/phi/internal/llm/anthropic"
 	"github.com/pulseaiclub/phi/internal/llm/gemini"
 	"github.com/pulseaiclub/phi/internal/llm/openai"
+	"github.com/pulseaiclub/phi/internal/llm/openai/responses"
 	"github.com/pulseaiclub/phi/internal/util"
 )
 
-// Client talks to the configured LLM endpoint: the OpenAI-compatible
-// /chat/completions API by default, or the Anthropic Messages API when the
-// config targets anthropic (see isAnthropicProvider).
+// Client talks to the configured LLM endpoint: OpenAI chat-completions by
+// default, or Anthropic / Gemini / OpenAI Responses when cfg.API is set.
 type Client struct {
 	httpClient *http.Client
 	cfg        llm.ModelConfig
+	hooks      Hooks
 	tools      []llm.ToolDefinition
 	system     string
-	anthropic  bool
-	gemini     bool
 }
 
 // NewClient builds a streaming chat client.
-func NewClient(cfg llm.ModelConfig, tools []llm.ToolDefinition, systemPrompt string) *Client {
+func NewClient(cfg llm.ModelConfig, hooks Hooks, tools []llm.ToolDefinition, systemPrompt string) *Client {
 	return &Client{
 		httpClient: util.DefaultHTTPClient(),
 		cfg:        cfg,
+		hooks:      hooks,
 		tools:      tools,
 		system:     systemPrompt,
-		anthropic:  isAnthropicProvider(cfg),
-		gemini:     isGeminiProvider(cfg),
 	}
 }
 
 // Stream runs a streaming chat completion over messages (+ optional system prompt / tools).
 func (c *Client) Stream(ctx context.Context, messages []llm.Message) iter.Seq2[llm.StreamEvent, error] {
-	return func(yield func(llm.StreamEvent, error) bool) {
-		if c.anthropic {
-			req := anthropic.BuildRequest(c.cfg, c.system, messages, c.tools)
-			for ev, err := range anthropic.Stream(ctx, c.httpClient, c.cfg, &req) {
-				if !yield(ev, err) {
-					return
-				}
-			}
-			return
+	switch c.cfg.API {
+	case llm.Anthropic:
+		req := anthropic.BuildRequest(c.cfg, c.system, messages, c.tools)
+		if err := applyHook(ctx, c.hooks.Anthropic, &req, c.cfg); err != nil {
+			return errorSeq(err)
 		}
-
-		if c.gemini {
-			req := gemini.BuildRequest(c.system, messages, c.tools)
-			for ev, err := range gemini.Stream(ctx, c.httpClient, c.cfg, &req) {
-				if !yield(ev, err) {
-					return
-				}
-			}
-			return
+		return anthropic.Stream(ctx, c.httpClient, c.cfg, &req)
+	case llm.Gemini:
+		req := gemini.BuildRequest(c.system, messages, c.tools)
+		if err := c.applyGeminiThinking(ctx, &req); err != nil {
+			return errorSeq(err)
 		}
-
+		return gemini.Stream(ctx, c.httpClient, c.cfg, &req)
+	case llm.OpenAIResponses:
+		req := responses.BuildRequest(c.cfg, c.system, messages, c.tools)
+		if err := applyHook(ctx, c.hooks.OpenAIResponses, req, c.cfg); err != nil {
+			return errorSeq(err)
+		}
+		return responses.Stream(ctx, c.httpClient, c.cfg, req)
+	default: // llm.OpenAI or empty — both route to OpenAI-compatible chat completions
 		req := openai.BuildRequest(c.cfg, c.system, messages, c.tools)
-		for ev, err := range openai.StreamChatCompletion(ctx, c.httpClient, c.cfg.BaseURL, c.cfg.APIKey, req) {
-			if !yield(ev, err) {
-				return
-			}
+		if err := applyHook(ctx, c.hooks.OpenAI, req, c.cfg); err != nil {
+			return errorSeq(err)
 		}
+		return openai.StreamChatCompletion(ctx, c.httpClient, c.cfg.BaseURL, c.cfg.APIKey, req)
 	}
 }
 
 // Compact sends a single non-streaming chat request and returns the
 // assistant text. It satisfies llm.Compactor for session compaction.
-func (c *Client) Compact(ctx context.Context, prompt string) (string, error) {
-	if c.anthropic {
-		return anthropic.Compact(ctx, c.httpClient, c.cfg, prompt)
+func (c *Client) Compact(ctx context.Context, req llm.CompactRequest) (llm.CompactResult, error) {
+	switch c.cfg.API {
+	case llm.Anthropic:
+		return anthropic.Compact(ctx, c.httpClient, c.cfg, req)
+	case llm.Gemini:
+		greReq := gemini.BuildRequest("", []llm.Message{{Role: llm.RoleUser, Content: req.Prompt}}, nil)
+		greReq.SetMaxOutputTokens(req.MaxTokens)
+		if err := c.applyGeminiThinking(ctx, &greReq); err != nil {
+			return llm.CompactResult{}, err
+		}
+		return gemini.CompactRequest(ctx, c.httpClient, c.cfg, &greReq)
+	case llm.OpenAIResponses:
+		respReq := responses.NewCompactRequest(c.cfg.Name, req.Prompt, req.MaxTokens)
+		if err := applyHook(ctx, c.hooks.OpenAIResponses, respReq, c.cfg); err != nil {
+			return llm.CompactResult{}, err
+		}
+		return responses.CompactRequest(ctx, c.httpClient, c.cfg, respReq)
+	default:
+		oaiReq := openai.NewCompactRequest(c.cfg.Name, req.Prompt, req.MaxTokens)
+		if err := applyHook(ctx, c.hooks.OpenAI, oaiReq, c.cfg); err != nil {
+			return llm.CompactResult{}, err
+		}
+		return openai.CompactRequest(ctx, c.httpClient, c.cfg, oaiReq)
 	}
-	if c.gemini {
-		return gemini.Compact(ctx, c.httpClient, c.cfg, prompt)
-	}
-	return openai.Compact(ctx, c.httpClient, c.cfg, prompt)
 }
 
-// isAnthropicProvider reports whether the config targets the Anthropic
-// Messages API: either an anthropic base URL or a claude model name.
-func isAnthropicProvider(cfg llm.ModelConfig) bool {
-	base := strings.ToLower(cfg.BaseURL)
-	if strings.Contains(base, "anthropic") {
-		return true
+// applyGeminiThinking runs the Gemini hook. Without a preset hook, budget
+// style is the safe default for unknown models.
+func (c *Client) applyGeminiThinking(ctx context.Context, req *gemini.GeminiRequest) error {
+	if c.hooks.Gemini != nil {
+		return applyHook(ctx, c.hooks.Gemini, req, c.cfg)
 	}
-	return strings.HasPrefix(strings.ToLower(cfg.Name), "claude")
+	req.ApplyBudgetThinking(c.cfg.Think)
+	return nil
 }
 
-// isGeminiProvider reports a Gemini model or Google AI Studio base URL.
-func isGeminiProvider(cfg llm.ModelConfig) bool {
-	base := strings.ToLower(cfg.BaseURL)
-	name := strings.ToLower(cfg.Name)
-	if strings.Contains(base, "generativelanguage.googleapis.com") ||
-		strings.Contains(base, "aiplatform.googleapis.com") ||
-		strings.Contains(base, "cloudcode-pa.googleapis.com") {
-		return true
+func errorSeq(err error) iter.Seq2[llm.StreamEvent, error] {
+	return func(yield func(llm.StreamEvent, error) bool) {
+		yield(llm.StreamEvent{}, err)
 	}
-	return strings.HasPrefix(name, "gemini") || strings.HasPrefix(name, "antigravity-")
 }

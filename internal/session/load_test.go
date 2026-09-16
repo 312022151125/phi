@@ -83,6 +83,42 @@ func TestSessionPersistUsageRoundTrip(t *testing.T) {
 	assert.Equal(t, 5, entry.Usage.CachedTokens())
 }
 
+// A resumed session must show its own token counts, so replay has to read
+// usage from the entry (llm.Message.Usage does not survive a reload).
+func TestReplaySnapshotUsageAfterReload(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewSessionManager(dir, WithSessionDir(dir), WithShouldFlush(true))
+	require.NoError(t, err)
+
+	_, err = m.Append(llm.Message{Role: llm.RoleUser, Content: "hello"})
+	require.NoError(t, err)
+	_, err = m.Append(llm.Message{
+		Role:    llm.RoleAssistant,
+		Content: "done",
+		Usage: llm.Usage{
+			PromptTokens:        12,
+			CompletionTokens:    7,
+			TotalTokens:         19,
+			PromptTokensDetails: &llm.PromptTokensDetails{CachedTokens: 5},
+		},
+	})
+	require.NoError(t, err)
+
+	loaded, err := OpenSession(m.File())
+	require.NoError(t, err)
+
+	snap := ReplaySnapshot(loaded.BuildContext(), nil)
+	require.Len(t, snap.Messages, 2)
+	want := TokenUsage{PromptTokens: 12, CompletionTokens: 7, CachedTokens: 5, TotalTokens: 19}
+	assert.Equal(t, want, snap.Messages[1].Usage)
+	assert.Equal(t, want, snap.LastUsage())
+}
+
+func TestSnapshotLastUsageEmpty(t *testing.T) {
+	snap := Snapshot{Messages: []Message{{ID: "1", Role: RoleUser}, {ID: "2", Role: RoleAssistant}}}
+	assert.False(t, snap.LastUsage().Reported())
+}
+
 func TestSessionPersistCompaction(t *testing.T) {
 	dir := t.TempDir()
 	m, err := NewSessionManager(dir, WithSessionDir(dir), WithShouldFlush(true))
@@ -95,6 +131,10 @@ func TestSessionPersistCompaction(t *testing.T) {
 	_, err = m.AppendCompaction(Compaction{
 		Summary:          "conversation summary",
 		FirstKeptEntryID: keptID,
+		Details: CompactionDetails{
+			ReadFiles:     []string{"a.go"},
+			ModifiedFiles: []string{"b.go"},
+		},
 	})
 	require.NoError(t, err)
 	_, err = m.Append(llm.Message{Role: llm.RoleUser, Content: "after"})
@@ -108,10 +148,43 @@ func TestSessionPersistCompaction(t *testing.T) {
 	assert.Equal(t, EntryCompaction, ctx[0].GetType())
 	ce := ctx[0].(CompactionEntry)
 	assert.Equal(t, "conversation summary", ce.Compaction.Summary)
+	assert.Equal(t, []string{"a.go"}, ce.Compaction.Details.ReadFiles)
+	assert.Equal(t, []string{"b.go"}, ce.Compaction.Details.ModifiedFiles)
 
 	got := messageContents(ctx)
 	want := messageContents(m.BuildContext())
 	assert.Equal(t, want, got)
+}
+
+// A resumed session rebuilds its marker from the persisted entry, so the
+// pre-cut token count has to survive the round trip too.
+func TestReplaySnapshotCompactionTokensBefore(t *testing.T) {
+	dir := t.TempDir()
+	m, err := NewSessionManager(dir, WithSessionDir(dir), WithShouldFlush(true))
+	require.NoError(t, err)
+
+	keptID, err := m.Append(llm.Message{Role: llm.RoleAssistant, Content: "kept"})
+	require.NoError(t, err)
+	_, err = m.AppendCompaction(Compaction{
+		Summary:          "conversation summary",
+		FirstKeptEntryID: keptID,
+		TokensBefore:     15000,
+	})
+	require.NoError(t, err)
+
+	loaded, err := OpenSession(m.File())
+	require.NoError(t, err)
+
+	snap := ReplaySnapshot(loaded.BuildContext(), nil)
+	require.NotEmpty(t, snap.Messages)
+	marker := snap.Messages[0]
+	assert.Equal(t, RoleCompaction, marker.Role)
+	assert.Equal(t, 15000, marker.TokensBefore)
+
+	items := Project(snap)
+	require.NotEmpty(t, items)
+	assert.Equal(t, ItemCompaction, items[0].Kind)
+	assert.Equal(t, 15000, items[0].TokensBefore)
 }
 
 func TestFindSessionFilePrefix(t *testing.T) {

@@ -21,6 +21,9 @@ type CompactionPreparation struct {
 	IsMidTurnCut        bool
 	TokensBefore        int
 	PreviousSummary     string
+	// ReserveTokens is the headroom compaction keeps from the context window;
+	// summaries are capped at a fraction of it.
+	ReserveTokens int
 	// TODO: wire into Compact / AppendCompaction so hook preserveData
 	// survives across compaction rounds (currently collected but unused).
 	PreviousPreserveData map[string]any
@@ -85,6 +88,15 @@ func PrepareCompact(
 		}
 	}
 
+	// Nothing falls outside keepRecentTokens: the cut point is the first entry,
+	// so there is nothing to summarize. Persisting a summary here would replace
+	// the previous summary with "No prior history." (and only add a message to
+	// the context), so report an empty preparation instead; the caller skips
+	// compaction on an empty FirstKeptEntryId.
+	if len(messagesToSummarize) == 0 && len(turnPrefixMessages) == 0 {
+		return &CompactionPreparation{}, nil
+	}
+
 	previousSummary := ""
 	var previousPreserveData map[string]any
 	if preCompactionIndex >= 0 {
@@ -107,28 +119,17 @@ func PrepareCompact(
 		PreviousPreserveData: previousPreserveData,
 		FileOps:              *fileOps,
 		IsMidTurnCut:         cutPoint.isMidTurnCut,
+		ReserveTokens:        settings.reverseTokens,
 	}, nil
 }
 
-// CompactionResult is the outcome of a compaction run: the generated
-// summary plus the bookkeeping needed to persist the compaction entry.
-type CompactionResult struct {
-	Summary          string
-	FirstKeptEntryID string
-	TokensBefore     int
-	// HookDefinition-specific data (e.g., ArtifactIndex, version markers for structured compaction)
-	Details any
-	// HookDefinition-provided data to persist alongside compaction entry.
-	PreserveData map[string]any
-}
-
 // Compact generates a summary for preparation via llm and returns the
-// resulting CompactionResult.
+// session.Compaction to persist.
 func Compact(
 	ctx context.Context,
 	preparation CompactionPreparation,
 	llm llm.Compactor,
-) (CompactionResult, error) {
+) (session.Compaction, error) {
 	var (
 		summary string
 		err     error
@@ -139,7 +140,7 @@ func Compact(
 		summary, err = summarizeHistory(ctx, preparation, llm)
 	}
 	if err != nil {
-		return CompactionResult{}, err
+		return session.Compaction{}, err
 	}
 
 	readFiles, modifiedFiles := computeFileLists(&preparation.FileOps)
@@ -148,11 +149,14 @@ func Compact(
 		summary += "\n\n" + fileOperations
 	}
 
-	return CompactionResult{
+	return session.Compaction{
 		Summary:          summary,
 		FirstKeptEntryID: preparation.FirstKeptEntryId,
 		TokensBefore:     preparation.TokensBefore,
-		Details:          CompactionDetails{ReadFiles: readFiles, ModifiedFiles: modifiedFiles},
+		Details: session.CompactionDetails{
+			ReadFiles:     readFiles,
+			ModifiedFiles: modifiedFiles,
+		},
 	}, nil
 }
 
@@ -184,6 +188,7 @@ func summarizeMidTurnCut(
 			llm,
 			preparation.MessagesToSummarize,
 			preparation.PreviousSummary,
+			summarizationCap(preparation.ReserveTokens, historySummaryRatio),
 		)
 	}()
 
@@ -193,6 +198,7 @@ func summarizeMidTurnCut(
 			ctx,
 			llm,
 			preparation.TurnPrefixMessages,
+			summarizationCap(preparation.ReserveTokens, turnPrefixSummaryRatio),
 		)
 	}()
 
@@ -222,23 +228,19 @@ func summarizeHistory(
 		llm,
 		preparation.MessagesToSummarize,
 		preparation.PreviousSummary,
+		summarizationCap(preparation.ReserveTokens, historySummaryRatio),
 	)
 }
 
-// CompactionDetails lists the files read and modified in the summarized
-// history; it is persisted with the compaction entry.
-type CompactionDetails struct {
-	ReadFiles     []string
-	ModifiedFiles []string
-}
-
+// getLastAssistantUsage reads usage from the entry, not llm.Message: the
+// latter is json:"-" and so reads as zero for every reloaded session.
 func getLastAssistantUsage(entries []session.MessageEntry) llm.Usage {
 	for i := range slices.Backward(entries) {
 		entry := entries[i]
 		if entry.GetType() == session.EntryMessage {
 			msgEntry := entry.(session.SessionMessageEntry)
 			if msgEntry.Message.Role == llm.RoleAssistant {
-				return msgEntry.Message.Usage
+				return msgEntry.Usage
 			}
 		}
 	}

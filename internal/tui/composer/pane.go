@@ -155,6 +155,9 @@ func (c *ComposerPane) Wire(
 	c.mention.OnAccept = c.acceptMention
 	c.slash.OnAccept = c.acceptSlash
 	c.question.OnAccept = c.acceptQuestion
+	// Tab must never run a command, so slash gets a fill-only completer.
+	// mention/question edit the composer already: accept is the fallback.
+	c.slash.OnComplete = c.completeSlash
 }
 
 // HideCompleters closes mention, slash, question, and @ pickers.
@@ -332,11 +335,26 @@ func (c *ComposerPane) AddPendingImage(att imgutil.Attachment) {
 	}
 }
 
-// SetModelLabel updates the model name in the composer header.
-func (c *ComposerPane) SetModelLabel(name string) {
-	if c != nil {
-		c.Chat.TopRightLabel.Text = name
+// SetModelLabel updates the model name and thinking level in the composer header.
+// When thinkLevel is non-empty and not "off", it is appended (e.g. "claude-sonnet-4.20250514 • high").
+// Spans carry their own styles — BorderLabel.Style is ignored once Spans is set.
+func (c *ComposerPane) SetModelLabel(name, thinkLevel string) {
+	if c == nil {
+		return
 	}
+	id := c.theme.IdentityOrSuccess()
+	if thinkLevel != "" && thinkLevel != "off" {
+		chrome := footer.ChromeLabelStyle(c.theme)
+		c.Chat.TopRightLabel = layout.BorderLabel{
+			Spans: []layout.BorderSpan{
+				{Text: name, Style: id},
+				{Text: " • ", Style: chrome},
+				{Text: thinkLevel, Style: id},
+			},
+		}
+		return
+	}
+	c.Chat.TopRightLabel = layout.BorderLabel{Text: name, Style: id}
 }
 
 // SetBranchLabel updates the path label in the composer footer.
@@ -391,7 +409,11 @@ func (c *ComposerPane) SetTheme(th components.Theme) {
 	c.Chat.BorderStyle = th.Border
 	c.Chat.TextStyle = th.Foreground
 	c.Chat.BottomRightLabel.Style = footer.PathLabelStyle(th)
-	c.Chat.TopRightLabel.Style = th.IdentityOrSuccess()
+	if len(c.Chat.TopRightLabel.Spans) >= 3 {
+		c.SetModelLabel(c.Chat.TopRightLabel.Spans[0].Text, c.Chat.TopRightLabel.Spans[2].Text)
+	} else {
+		c.Chat.TopRightLabel.Style = th.IdentityOrSuccess()
+	}
 	c.palette.Theme = th
 	c.listPicker.Theme = th
 	c.mention.Theme = th
@@ -928,17 +950,7 @@ func (c *ComposerPane) acceptSlash(item mention.Item) {
 	if c == nil {
 		return
 	}
-	_, start, end, ok := chat.ActiveSlash(c.Chat.Value, c.Chat.Cursor)
-	if !ok {
-		start, end = 0, c.Chat.Cursor
-	}
-	insert := ""
-	if c.commands != nil {
-		insert = c.commands.LookupInsert(item.Path)
-	}
-	if insert == "" {
-		insert = "/" + item.Path
-	}
+	start, end, insert := c.slashTarget(item)
 	c.Chat.ReplaceRange(start, end, insert)
 	c.slash.Hide()
 	c.Chat.SlashOpen = false
@@ -948,6 +960,38 @@ func (c *ComposerPane) acceptSlash(item mention.Item) {
 			c.drainBus()
 		}
 	}
+}
+
+// completeSlash fills the composer with the command and stops there.
+// Enter on a no-arg command runs it; Tab must only complete.
+func (c *ComposerPane) completeSlash(item mention.Item) {
+	if c == nil {
+		return
+	}
+	start, end, insert := c.slashTarget(item)
+	// The trailing space closes the command token; without it ActiveSlash keeps
+	// matching and the picker would reopen on the command just inserted.
+	if !strings.HasSuffix(insert, " ") {
+		insert += " "
+	}
+	c.Chat.ReplaceRange(start, end, insert)
+	c.slash.Hide()
+	c.Chat.SlashOpen = false
+}
+
+// slashTarget resolves the composer range to replace and the insert text.
+func (c *ComposerPane) slashTarget(item mention.Item) (start, end int, insert string) {
+	_, start, end, ok := chat.ActiveSlash(c.Chat.Value, c.Chat.Cursor)
+	if !ok {
+		start, end = 0, c.Chat.Cursor
+	}
+	if c.commands != nil {
+		insert = c.commands.LookupInsert(item.Path)
+	}
+	if insert == "" {
+		insert = "/" + item.Path
+	}
+	return start, end, insert
 }
 
 func newChatInput(theme components.Theme, model, cwd string) chat.ChatInput {

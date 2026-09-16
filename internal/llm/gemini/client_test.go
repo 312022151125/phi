@@ -39,7 +39,7 @@ func TestGetStreamURL(t *testing.T) {
 
 	for _, tc := range testcases {
 		t.Run(tc.name, func(t *testing.T) {
-			url := getStreamURL(tc.model, tc.baseURL, tc.apiKey)
+			url := getURL(tc.model, tc.baseURL, tc.apiKey, true)
 			assert.Equal(t, tc.expect, url)
 		})
 	}
@@ -94,26 +94,74 @@ func TestBuildRequestUserContent(t *testing.T) {
 	assert.Equal(t, "aGVsbG8=", parts[1].InlineData.Data)
 }
 
-func TestDisableThinking(t *testing.T) {
-	testcases := []struct {
-		name  string
-		model string
-		want  string
-	}{
-		{name: "gemini_2x_budget_zero", model: "gemini-2.5-flash", want: `"thinkingBudget":0`},
-		{name: "gemini_3_pro_lowest_level", model: "gemini-3-pro", want: `"thinkingLevel":"LOW"`},
-		{name: "gemini_3_flash_minimal", model: "gemini-3-flash", want: `"thinkingLevel":"MINIMAL"`},
-	}
-	for _, tc := range testcases {
-		t.Run(tc.name, func(t *testing.T) {
-			var req GeminiRequest
-			req.DisableThinking(tc.model)
-			require.NotNil(t, req.ThinkingConfig)
-			body, err := json.Marshal(req.ThinkingConfig)
-			require.NoError(t, err)
-			assert.Contains(t, string(body), tc.want)
-		})
-	}
+func TestApplyBudgetThinking(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		var req GeminiRequest
+		req.ApplyBudgetThinking(llm.ThinkConfig{})
+		require.NotNil(t, req.ThinkingConfig)
+		body, err := json.Marshal(req.ThinkingConfig)
+		require.NoError(t, err)
+		assert.Contains(t, string(body), `"thinkingBudget":0`)
+	})
+	t.Run("enabled", func(t *testing.T) {
+		testcases := []struct {
+			mode llm.ThinkMode
+			want string
+		}{
+			{mode: llm.Low, want: `"thinkingBudget":2048`},
+			{mode: llm.Medium, want: `"thinkingBudget":8192`},
+			{mode: llm.High, want: `"thinkingBudget":16384`},
+		}
+		for _, tc := range testcases {
+			t.Run(string(tc.mode), func(t *testing.T) {
+				var req GeminiRequest
+				req.ApplyBudgetThinking(llm.ThinkConfig{Enabled: true, Mode: tc.mode})
+				body, err := json.Marshal(req.ThinkingConfig)
+				require.NoError(t, err)
+				assert.Contains(t, string(body), tc.want)
+			})
+		}
+	})
+}
+
+func TestApplyLevelThinking(t *testing.T) {
+	t.Run("disabled", func(t *testing.T) {
+		testcases := []struct {
+			name string
+			off  string
+			want string
+		}{
+			{name: "default_minimal", want: `"thinkingLevel":"MINIMAL"`},
+			{name: "custom_low", off: "LOW", want: `"thinkingLevel":"LOW"`},
+		}
+		for _, tc := range testcases {
+			t.Run(tc.name, func(t *testing.T) {
+				var req GeminiRequest
+				req.ApplyLevelThinking(llm.ThinkConfig{}, tc.off)
+				body, err := json.Marshal(req.ThinkingConfig)
+				require.NoError(t, err)
+				assert.Contains(t, string(body), tc.want)
+			})
+		}
+	})
+	t.Run("enabled", func(t *testing.T) {
+		testcases := []struct {
+			mode llm.ThinkMode
+			want string
+		}{
+			{mode: llm.Medium, want: `"thinkingLevel":"MEDIUM"`},
+			{mode: llm.High, want: `"thinkingLevel":"HIGH"`},
+		}
+		for _, tc := range testcases {
+			t.Run(string(tc.mode), func(t *testing.T) {
+				var req GeminiRequest
+				req.ApplyLevelThinking(llm.ThinkConfig{Enabled: true, Mode: tc.mode}, "MINIMAL")
+				body, err := json.Marshal(req.ThinkingConfig)
+				require.NoError(t, err)
+				assert.Contains(t, string(body), tc.want)
+			})
+		}
+	})
 }
 
 // processForTest runs processStream and returns the yielded events.
@@ -145,9 +193,7 @@ func TestProcessStreamTextAndUsage(t *testing.T) {
 	var text strings.Builder
 	var done *llm.StreamEvent
 	for _, ev := range events {
-		if ev.Type == llm.StreamEventTypeError {
-			t.Fatalf("stream error: %s", ev.Err)
-		}
+		require.NotEqual(t, llm.StreamEventTypeError, ev.Type, "stream error: %s", ev.Err)
 		switch ev.Type {
 		case llm.StreamEventTypeDelta:
 			text.WriteString(ev.Delta.Content)
@@ -178,9 +224,7 @@ func TestProcessStreamThinking(t *testing.T) {
 	var text, reasoning strings.Builder
 	var done *llm.StreamEvent
 	for _, ev := range events {
-		if ev.Type == llm.StreamEventTypeError {
-			t.Fatalf("stream error: %s", ev.Err)
-		}
+		require.NotEqual(t, llm.StreamEventTypeError, ev.Type, "stream error: %s", ev.Err)
 		switch ev.Type {
 		case llm.StreamEventTypeDelta:
 			text.WriteString(ev.Delta.Content)
@@ -200,22 +244,49 @@ func TestProcessStreamThinking(t *testing.T) {
 
 func TestCompactUsesNonStreamingEndpoint(t *testing.T) {
 	var gotPath string
+	var gotGenerationConfig map[string]int
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPath = r.URL.Path
+		var sent struct {
+			GenerationConfig map[string]int `json:"generationConfig"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&sent)
+		gotGenerationConfig = sent.GenerationConfig
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"candidates":[{"content":{"parts":[{"text":"summary"}]}}]}`)
+		fmt.Fprint(w, `{"candidates":[{"content":{"parts":[{"text":"summary"}]},"finishReason":"STOP"}]}`)
 	}))
 	defer srv.Close()
 
-	out, err := Compact(
+	res, err := Compact(
 		t.Context(),
 		srv.Client(),
 		llm.ModelConfig{Name: "gemini-2.5-flash", BaseURL: srv.URL, APIKey: "k"},
-		"summarize",
+		llm.CompactRequest{Prompt: "summarize", MaxTokens: 13107},
 	)
 	require.NoError(t, err)
-	assert.Equal(t, "summary", out)
+	assert.Equal(t, "summary", res.Text)
+	assert.False(t, res.Truncated)
 	assert.Equal(t, "/models/gemini-2.5-flash:generateContent", gotPath)
+	assert.Equal(t, map[string]int{"maxOutputTokens": 13107}, gotGenerationConfig)
+}
+
+// MAX_TOKENS means the model stopped at the cap: the text is a prefix.
+func TestCompactRequestReportsTruncatedCandidate(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"candidates":[{"content":{"parts":[{"text":"partial"}]},"finishReason":"MAX_TOKENS"}]}`)
+	}))
+	defer srv.Close()
+
+	res, err := CompactRequest(
+		t.Context(),
+		srv.Client(),
+		llm.ModelConfig{Name: "gemini-2.5-flash", BaseURL: srv.URL, APIKey: "k"},
+		&GeminiRequest{Contents: []content{{Role: "user", Parts: []part{{Text: "x"}}}}},
+	)
+	require.NoError(t, err)
+	assert.Equal(t, "partial", res.Text)
+	assert.True(t, res.Truncated)
 }
 
 func TestCompactFormatsAPIError(t *testing.T) {
@@ -232,7 +303,7 @@ func TestCompactFormatsAPIError(t *testing.T) {
 		t.Context(),
 		srv.Client(),
 		llm.ModelConfig{Name: "gemini-2.5-flash", BaseURL: srv.URL, APIKey: "bad"},
-		"summarize",
+		llm.CompactRequest{Prompt: "summarize"},
 	)
 	require.Error(t, err)
 	assert.Equal(t, "gemini API error (400): API key not valid. Please pass a valid API key.", err.Error())
