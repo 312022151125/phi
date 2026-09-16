@@ -12,6 +12,35 @@ import (
 	"github.com/pulseaiclub/phi/internal/llm/openai"
 )
 
+func TestLookupGPTPresets(t *testing.T) {
+	tests := []struct {
+		name          string
+		contextWindow int
+		thinking      llm.ThinkConfig
+	}{
+		{name: "gpt-6-astra", contextWindow: 272_000, thinking: llm.ThinkConfig{Enabled: true, Mode: llm.Max}},
+		{name: "gpt-5.6-sol", contextWindow: 272_000, thinking: llm.ThinkConfig{Enabled: true, Mode: llm.High}},
+		{name: "gpt-5.6-terra", contextWindow: 272_000, thinking: llm.ThinkConfig{Enabled: true, Mode: llm.High}},
+		{name: "gpt-5.6-luna", contextWindow: 272_000, thinking: llm.ThinkConfig{Enabled: true, Mode: llm.High}},
+		{name: "gpt-5-chat-latest", contextWindow: 128_000, thinking: llm.ThinkConfig{}},
+		{name: "gpt-5.5", contextWindow: 272_000, thinking: llm.ThinkConfig{Enabled: true, Mode: llm.High}},
+		{name: "gpt-5.5-pro", contextWindow: 1_050_000, thinking: llm.ThinkConfig{Enabled: true, Mode: llm.High}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, ok := Lookup(tt.name)
+			require.True(t, ok)
+			assert.Equal(t, "https://api.openai.com/v1", p.Config.BaseURL)
+			assert.Equal(t, tt.contextWindow, p.Config.ContextWindow)
+			assert.True(t, p.Config.ImageEnabled)
+			assert.Equal(t, llm.OpenAIResponses, p.Config.API)
+			assert.Equal(t, tt.thinking, p.Config.Think)
+			assert.Empty(t, p.Hooks)
+		})
+	}
+}
+
 func TestLookupDeepSeekFlash(t *testing.T) {
 	p, ok := Lookup("deepseek-flash")
 	require.True(t, ok)
